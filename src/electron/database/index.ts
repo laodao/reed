@@ -37,6 +37,7 @@ import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pa
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { KbDimensionRepository } from '@core/database/repositories/kb-dimension.repository'
+import { KbBrainArtifactRepository } from '@core/database/repositories/kb-brain-artifact.repository'
 import { KbConsumptionLogRepository } from '@core/database/repositories/kb-consumption-log.repository'
 import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
 import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
@@ -192,6 +193,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbNoteReviews: KbNoteReviewRepository | null = null
   public kbEvents: KbEventRepository | null = null
   public kbDimensions: KbDimensionRepository | null = null
+  public kbBrainArtifacts: KbBrainArtifactRepository | null = null
   public kbConsumptionLogs: KbConsumptionLogRepository | null = null
   public kbQaLogs: KbQaLogRepository | null = null
   public kbAutomationLogs: KbAutomationLogRepository | null = null
@@ -1016,6 +1018,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createKbBrainDimensions(this.dataSource)
     // 知识大脑 v3 M2：体系树/阶段表载荷（实体 attrs、边章节区间、卡 structure_stages）
+    const { addKbBrainV4Structures } = await import(
+      '@core/database/migrations/add-kb-brain-v4-structures'
+    )
+    await addKbBrainV4Structures(this.dataSource)
     const { addKbBrainV3Structures } = await import(
       '@core/database/migrations/add-kb-brain-v3-structures'
     )
@@ -4693,6 +4699,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)
     this.kbEvents = new KbEventRepository(this.dataSource)
     this.kbDimensions = new KbDimensionRepository(this.dataSource)
+    this.kbBrainArtifacts = new KbBrainArtifactRepository(this.dataSource)
     this.kbConsumptionLogs = new KbConsumptionLogRepository(this.dataSource)
     this.kbQaLogs = new KbQaLogRepository(this.dataSource)
     this.kbAutomationLogs = new KbAutomationLogRepository(this.dataSource)

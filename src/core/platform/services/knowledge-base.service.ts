@@ -21,6 +21,7 @@ import {
   matchChapter,
   type ChapterLookup,
 } from '@core/platform/services/kb-chapter-lookup'
+import { parseBrainConfig } from './kb-brain/brain-config'
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
@@ -987,16 +988,26 @@ export class KnowledgeBaseService {
   /**
    * 章节摘要调度（M2）：文档处理完成后异步生成章节摘要。
    * fire-and-forget——不阻塞 reprocess 返回；未装配/异常只记日志。
+   * v4：启用大脑消化的库跳过（章级结构化阅读卡接管摘要职责，净成本对冲——
+   * 2026-10-16 v4 总设计决策；书级产线读卡，卡缺失降级读旧摘要）。
    */
   private scheduleChapterSummaries(documentId: string): void {
     const db = getCoreDatabaseManager()
     if (!db.kbChapters) return
-    try {
-      const service = new KbChapterSummaryService({ repo: db.kbChapters })
-      service.scheduleDocumentSummaries(documentId)
-    } catch (e: unknown) {
-      console.warn(`[KB] 章节摘要调度失败（不影响主流程）: ${e instanceof Error ? e.message : String(e)}`)
-    }
+    void (async () => {
+      try {
+        const doc = db.kbDocuments ? await db.kbDocuments.findById(documentId) : null
+        if (doc) {
+          const kb = db.knowledgeBases ? await db.knowledgeBases.findById(doc.knowledgeBaseId) : null
+          const cfg = kb?.brainConfig ? parseBrainConfig(kb.brainConfig) : null
+          if (cfg?.enabled && cfg.digestion.enabled) return
+        }
+        const service = new KbChapterSummaryService({ repo: db.kbChapters! })
+        service.scheduleDocumentSummaries(documentId)
+      } catch (e: unknown) {
+        console.warn(`[KB] 章节摘要调度失败（不影响主流程）: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    })()
   }
 
   /**

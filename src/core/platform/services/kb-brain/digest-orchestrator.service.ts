@@ -31,11 +31,14 @@ import type {
   KbEventParticipant
 } from '@core/database/repositories/kb-event.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
+import type { KbBrainArtifactRepository } from '@core/database/repositories/kb-brain-artifact.repository'
 import type { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import type { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { AtomizeService, AdjudicateService, type LocatedScene } from './atomize.service'
 import { buildAtomizeSystem } from './prompts'
+import { KbReadingCardService, serializeCard, cardHash } from './reading-card.service'
+import type { ReadingCard } from './schemas'
 import { KbBrainProfileService } from './profile.service'
 import { KbBookPassesService } from './book-passes.service'
 import { markDigestLive, markDigestDone } from './liveness'
@@ -141,6 +144,8 @@ export interface KbBrainRepos {
   } | null
   /** 场面事件原料（v2 P0 故事轨；未装配时场面轨跳过） */
   events: KbEventRepository | null
+  /** 书级过程工件（v4 漏斗；旧库未装配时书级过程关跳过） */
+  artifacts: KbBrainArtifactRepository | null
 }
 
 export interface KbBrainDigestDeps {
@@ -237,7 +242,8 @@ export class KbBrainDigestService {
           chunks: db.kbChunks,
           vectors: db.kbVectors,
           inverted: db.kbInvertedIndex,
-          events: db.kbEvents ?? null
+          events: db.kbEvents ?? null,
+          artifacts: db.kbBrainArtifacts ?? null
         }
       })
   }
@@ -404,7 +410,8 @@ export class KbBrainDigestService {
           chapter.title,
           chapter.content ?? '',
           chapter.contentHash,
-          workingCfg
+          workingCfg,
+          { ordering: chapter.ordering, bookName: docRow.name, total: chapterRows.length }
         )
         insertedThisRun.push(...inserted)
         // 审核拦截章（moderation=true）不计入失败——它 outcome 同为 exhausted，
@@ -511,7 +518,7 @@ export class KbBrainDigestService {
     }
   }
 
-  /** 章级基础遍：台账幂等 → 原子化 → 实体 → 裁决 → 入池。
+  /** 章级基础遍：阅读卡（v4 步骤 0）→ 台账幂等 → 原子化 → 实体 → 裁决 → 入池。
    *  'digested'=本轮真跑 | 'skipped-same'=同 hash 跳过 | 'busy'=并发运行中 | 'exhausted'=重试耗尽 */
   async digestChapter(
     kbId: string,
@@ -520,7 +527,9 @@ export class KbBrainDigestService {
     chapterTitle: string,
     content: string,
     chapterHash: string | null,
-    cfg: KbBrainConfig
+    cfg: KbBrainConfig,
+    /** 阅读卡上下文（章号/书名/总章数；缺省时卡遍降级为章号 0——仅测试路径） */
+    extras?: { ordering?: number; bookName?: string; total?: number }
   ): Promise<{
     outcome: 'digested' | 'skipped-same' | 'busy' | 'exhausted'
     /** 云审核拦截章：pass 留 failed 痕迹，但整书按跳过继续（moderationSkipped 汇总） */
@@ -530,6 +539,9 @@ export class KbBrainDigestService {
     const repos = this.reposFn()
     if (!repos) return { outcome: 'skipped-same', inserted: [] }
     const { atoms, entities, edges, passes } = repos
+
+    // 0. 章级阅读卡（v4 漏斗地基）：fail-soft——卡失败只留台账，不阻断 base 遍
+    await this.produceChapterCard(kbId, documentId, chapterId, chapterTitle, content, chapterHash, cfg, extras, repos)
 
     const decision = await passes.ensurePass({
       knowledgeBaseId: kbId,
@@ -848,6 +860,68 @@ export class KbBrainDigestService {
     }
   }
 
+  /**
+   * 章级阅读卡产出（v4 步骤 0，fail-soft）：台账幂等（passType='card'）→ LLM 产卡 →
+   * 章号硬校验 → 落 brain_card。失败只留台账（审核拦截封账），绝不阻断 base 遍。
+   */
+  private async produceChapterCard(
+    kbId: string,
+    documentId: string,
+    chapterId: string,
+    chapterTitle: string,
+    content: string,
+    chapterHash: string | null,
+    cfg: KbBrainConfig,
+    extras: { ordering?: number; bookName?: string; total?: number } | undefined,
+    repos: KbBrainRepos
+  ): Promise<void> {
+    const decision = await repos.passes.ensurePass({
+      knowledgeBaseId: kbId,
+      documentId,
+      chapterId,
+      passType: 'card',
+      passKey: 'card',
+      chapterHash,
+    })
+    if (decision.action === 'skip') return
+    const pass = decision.pass
+    await repos.passes.setRunning(pass.id)
+    try {
+      // 前置页/空章：合法零产出（与 base 遍同判）
+      if (!content.trim() || isNonNarrativeChapter(chapterTitle, null)) {
+        await repos.passes.setDone(pass.id, {}, { calls: 0, tokensIn: 0, tokensOut: 0 })
+        return
+      }
+      const cardService = new KbReadingCardService({
+        llm: this.injectedLlm,
+        modelOverride: () => (cfg.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}),
+      })
+      const knownNames = await this.knownEntityNames(kbId, repos.entities)
+      const card: ReadingCard = await cardService.produceCard({
+        bookName: extras?.bookName ?? '本书',
+        chapterNo: extras?.ordering ?? 0,
+        total: extras?.total ?? 0,
+        chapterTitle,
+        content,
+        knownNames: knownNames.length > 0 ? knownNames : undefined,
+        contentType: cfg.profile?.contentType ?? '',
+      })
+      await repos.chapters.updateBrainCard(chapterId, { card: serializeCard(card), hash: cardHash(card) })
+      await repos.passes.setDone(pass.id, { hasCard: 1 }, { calls: 1, tokensIn: 0, tokensOut: 0 })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      // 云端审核拦截：重试无意义，封账（与 base 遍同判）；其余失败留痕可重试。
+      // 两者都不上抛——卡缺失走降级链（消费方读旧摘要），base 遍照常。
+      if (isModerationRejection(msg)) {
+        await repos.passes.markExhausted(pass.id, msg)
+        logger.warn(`[kb-brain] 章卡被云内容审核拦截 ch=${chapterId}，跳过（可换模型后人工重试）`)
+        return
+      }
+      await repos.passes.setFailed(pass.id, msg.slice(0, 300))
+      logger.warn(`[kb-brain] 章卡产出失败 ch=${chapterId}（不阻断 base 遍）: ${msg}`)
+    }
+  }
+
   /** 场面轨落库（v2 P0）：替换式重建 + 参与者实体解析 + event: 向量入池（失败不阻塞） */
   private async persistScenes(
     repos: KbBrainRepos,
@@ -1019,6 +1093,95 @@ export class KbBrainDigestService {
     if (processed > 0)
       logger.info(`[kb-brain] 场面补采: kb=${kbId} 本轮 ${processed} 章 / ${sceneCount} 场面`)
     return { processed, scenes: sceneCount }
+  }
+
+  /**
+   * 存量书章卡补跑（v4）：已消化（digested）文档的章节逐章产卡。
+   * 台账幂等（passType='card'）——已有卡的章自动跳过；每轮 ≤batch 章（试点门量级），
+   * 成本熔断与消化同口径；正文分页拉取（整本一次拉取触发 SQLITE_CANTOPEN 的教训）。
+   */
+  async backfillCards(
+    kbId: string,
+    opts?: { batch?: number }
+  ): Promise<{ processed: number; cards: number }> {
+    const repos = this.reposFn()
+    if (!repos) return { processed: 0, cards: 0 }
+    const kb = await repos.kbs.findById(kbId)
+    if (!kb) return { processed: 0, cards: 0 }
+    const cfg = safeParseConfig(kb.brainConfig)
+    if (!cfg?.enabled || !cfg.digestion.enabled) return { processed: 0, cards: 0 }
+    if (await this.costBreakerTripped(kbId, repos.passes, cfg.dailyCostLimit)) return { processed: 0, cards: 0 }
+
+    const batch = opts?.batch ?? 200
+    const docs = (await repos.docs.findByKnowledgeBaseId(kbId)).filter(
+      d => d.brainStatus === 'digested' || d.brainStatus === 'digesting'
+    )
+    const knownNames = await this.knownEntityNames(kbId, repos.entities)
+    const cardService = new KbReadingCardService({
+      llm: this.injectedLlm,
+      modelOverride: () => (cfg.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}),
+    })
+    let processed = 0
+    let cards = 0
+    const PAGE = 100
+    outer: for (const doc of docs) {
+      for (let offset = 0; ; offset += PAGE) {
+        const chapterRows = await repos.chapters.findByDocumentPaged(doc.id, {
+          includeContent: true,
+          includeCard: true,
+          limit: PAGE,
+          offset,
+        })
+        if (chapterRows.length === 0) break
+        for (const chapter of chapterRows) {
+          if (processed >= batch) break outer
+          if (isNonNarrativeChapter(chapter.title, chapter.parentTitle)) continue
+          if (chapter.brainCard) continue // 已有卡（含重处理复用）——幂等
+          const decision = await repos.passes.ensurePass({
+            knowledgeBaseId: kbId,
+            documentId: doc.id,
+            chapterId: chapter.id,
+            passType: 'card',
+            passKey: 'card',
+            chapterHash: chapter.contentHash,
+          })
+          if (decision.action === 'skip') continue
+          const pass = decision.pass
+          await repos.passes.setRunning(pass.id)
+          processed += 1
+          try {
+            const content = chapter.content ?? ''
+            if (!content.trim()) {
+              await repos.passes.setDone(pass.id, {}, { calls: 0, tokensIn: 0, tokensOut: 0 })
+              continue
+            }
+            const card = await cardService.produceCard({
+              bookName: doc.name,
+              chapterNo: chapter.ordering,
+              total: 0,
+              chapterTitle: chapter.title,
+              content,
+              knownNames: knownNames.length > 0 ? knownNames : undefined,
+              contentType: cfg.profile?.contentType ?? '',
+            })
+            await repos.chapters.updateBrainCard(chapter.id, { card: serializeCard(card), hash: cardHash(card) })
+            cards += 1
+            await repos.passes.setDone(pass.id, { hasCard: 1 }, { calls: 1, tokensIn: 0, tokensOut: 0 })
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            if (isModerationRejection(msg)) {
+              await repos.passes.markExhausted(pass.id, msg)
+              continue
+            }
+            await repos.passes.setFailed(pass.id, msg.slice(0, 300))
+            logger.warn(`[kb-brain] 章卡补跑失败 ch=${chapter.id}（跳过续跑）: ${msg}`)
+          }
+        }
+        if (chapterRows.length < PAGE) break
+      }
+    }
+    if (processed > 0) logger.info(`[kb-brain] 章卡补跑: kb=${kbId} 本轮 ${processed} 章 / ${cards} 卡`)
+    return { processed, cards }
   }
 
   /** KB_BRAIN_DAILY_COST_LIMIT 熔断判定（digestDocument 与场面补采共用口径） */
@@ -1506,6 +1669,15 @@ export async function backfillScenesForKb(
 ): Promise<{ processed: number; scenes: number }> {
   if (!activeService) return { processed: 0, scenes: 0 }
   return activeService.backfillScenes(kbId, { batch })
+}
+
+/** 存量书章卡补跑（v4）：已消化文档在阅读卡上线前完成消化的，按库补产章卡（自动化挂 6h 冷却） */
+export async function backfillCardsForKb(
+  kbId: string,
+  batch?: number
+): Promise<{ processed: number; cards: number }> {
+  if (!activeService) return { processed: 0, cards: 0 }
+  return activeService.backfillCards(kbId, { batch })
 }
 
 /* ==================== 内部工具 ==================== */

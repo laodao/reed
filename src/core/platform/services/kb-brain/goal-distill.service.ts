@@ -26,6 +26,8 @@ import {
 } from './llm'
 import type { KbBrainGoal } from './brain-config'
 import { isNonNarrativeChapter } from './digest-orchestrator.service'
+import { parseCard } from './reading-card.service'
+import type { ReadingCard } from './schemas'
 
 const logger = createLogger('KbBrainGoalDistill')
 
@@ -209,18 +211,20 @@ export class KbGoalDistillService {
     const repos = this.reposFn()
     if (!repos) throw new Error('知识大脑未启用（旧库）')
 
-    // 1. 取材：全库章节摘要（未生成摘要的回退正文前段）
+    // 1. 取材：全库章卡（v4）→ 摘要 → 正文前段三级降级。卡取材按目标域选字段
+    //（梗概+事件+人物事实/论点——比纯摘要信息密度高一个量级）
     const docs = await repos.docs.findByKnowledgeBaseId(kbId)
     const units: Array<{ label: string; text: string; documentId: string; chapterId: string }> = []
     for (const doc of docs) {
       const book = shortBookName(doc.name)
-      // 摘要缺失时回退正文采样 → 需要 content（显式 opt-in）
-      const chapters = await repos.chapters.findByDocument(doc.id, { includeContent: true })
+      // 摘要缺失时回退正文采样 → 需要 content（显式 opt-in）；卡消费显式 opt-in
+      const chapters = await repos.chapters.findByDocument(doc.id, { includeContent: true, includeCard: true })
       chapters.forEach((c, i) => {
         // 非叙事章节（版权/简介/评析/剧照等前置页）不进取材——书评摘录会污染经验卡
         if (isNonNarrativeChapter(c.title, c.parentTitle)) return
+        const cardText = cardMaterialOf(parseCard(c.brainCard))
         const summary = c.summary?.trim()
-        const text = summary || c.content?.slice(0, SUMMARY_CHARS) || ''
+        const text = cardText || summary || c.content?.slice(0, SUMMARY_CHARS) || ''
         if (!text) return
         units.push({
           label: `《${book}》#${i + 1} ${c.title}`,
@@ -659,4 +663,32 @@ function buildThemeCardUser(
     '【素材】',
     ...lines
   ].join('\n')
+}
+
+
+/**
+ * 卡 → 取材文本（v4）：按信息密度选取域字段——梗概必带；小说带事件+人物事实+
+ * 伏笔动作，知识带论点+概念；无卡（parseCard 失败）返回 ''，由调用方降级摘要。
+ */
+export function cardMaterialOf(card: ReadingCard | null): string {
+  if (!card) return ''
+  const lines: string[] = [card.summary.trim()]
+  if (card.profile === 'novel') {
+    if (card.events.length) lines.push(`事件：${card.events.join('；')}`)
+    for (const c of card.characters) {
+      const facts = c.facts.map(f => f.t).join('；')
+      if (facts) lines.push(`${c.name}：${facts}${c.endState ? `（章末：${c.endState}）` : ''}`)
+    }
+    for (const f of card.foreshadow) lines.push(`伏笔[${f.action}]${f.label}：${f.t}`)
+  } else if (card.profile === 'knowledge') {
+    for (const c of card.claims) lines.push(`论点：${c.t}${c.evidence?.length ? `（据：${c.evidence.join('；')}）` : ''}`)
+    for (const c of card.concepts) lines.push(`概念「${c.term}」：${c.definition}`)
+  } else {
+    for (const e of card.events) lines.push(e.t)
+    for (const c of card.characters) {
+      const facts = c.facts.map(f => f.t).join('；')
+      if (facts) lines.push(`${c.name}：${facts}`)
+    }
+  }
+  return lines.filter(Boolean).join('\n')
 }

@@ -11,6 +11,7 @@
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
+import type { KbBrainArtifactRepository } from '@core/database/repositories/kb-brain-artifact.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
 import { createLogger } from '@core/utils/logger'
 import {
@@ -27,7 +28,7 @@ const logger = createLogger('KbBookReview')
 export interface BookReviewDeps {
   llm?: BrainLlmFn
   modelOverride?: () => BrainModelRef
-  repos?: () => { notes: KbNoteRepository } | null
+  repos?: () => { notes: KbNoteRepository; artifacts?: KbBrainArtifactRepository | null } | null
 }
 
 export interface ReviewIssue {
@@ -39,7 +40,7 @@ export interface ReviewIssue {
 
 export class KbBookReviewService {
   private readonly scoped: KbScopedLlm
-  private readonly reposFn: () => { notes: KbNoteRepository } | null
+  private readonly reposFn: () => { notes: KbNoteRepository; artifacts?: KbBrainArtifactRepository | null } | null
   private readonly running = new Set<string>()
 
   constructor(deps: BookReviewDeps = {}) {
@@ -49,10 +50,10 @@ export class KbBookReviewService {
     })
     this.reposFn =
       deps.repos ??
-      ((): { notes: KbNoteRepository } | null => {
+      ((): { notes: KbNoteRepository; artifacts?: KbBrainArtifactRepository | null } | null => {
         const db = getCoreDatabaseManager()
         if (!db.kbNotes) return null
-        return { notes: db.kbNotes }
+        return { notes: db.kbNotes, artifacts: db.kbBrainArtifacts ?? null }
       })
   }
 
@@ -66,6 +67,21 @@ export class KbBookReviewService {
 
   private llmFor(kbId: string): BrainLlmFn {
     return this.scoped.llmFor(kbId)
+  }
+
+  /** 名册摘要文本（v4：复核/综述的人物与设定底料；无快照返回空） */
+  private async rosterDigest(artifacts: KbBrainArtifactRepository, _kbId: string, documentId: string): Promise<string> {
+    try {
+      const a = await artifacts.findByKey(documentId, 'roster')
+      if (!a) return ''
+      const snap = JSON.parse(a.body ?? '{}') as { characters?: Array<{ name: string; tier: string; aliases: string[]; sampleFacts: string[] }> }
+      return (snap.characters ?? [])
+        .slice(0, 30)
+        .map(c => `- ${c.name}（${c.tier}${c.aliases.length ? `/${c.aliases.join('/')}` : ''}）：${c.sampleFacts.join('；').slice(0, 100)}`)
+        .join('\n')
+    } catch {
+      return ''
+    }
   }
 
   /** 定位/创建文档的附属知识卡（复核报告/综述文章） */
@@ -94,17 +110,19 @@ export class KbBookReviewService {
     if (!repos) throw new Error('知识大脑未启用（旧库）')
     this.running.add(key)
     try {
+      // v4 取材切换：书级卡+名册为主，工作记忆可选（未跑精读的书不再被硬卡）
       const memory = await repos.notes.findReadingMemory(kbId, documentId)
-      if (!memory || !(memory.body ?? '').trim()) throw new Error('没有工作记忆——请先运行「全书精读」')
-
       const cards = await repos.notes.listBookCards(kbId, documentId)
       const cardDigest = cards
         .map(c => `【${c.title}】\n${(c.body ?? '').slice(0, 1500)}`)
         .join('\n\n')
+      const rosterDigest = repos.artifacts ? await this.rosterDigest(repos.artifacts, kbId, documentId) : ''
+      if (!(memory?.body ?? '').trim() && !cardDigest && !rosterDigest)
+        throw new Error('没有可复核的知识（既无工作记忆也无书级卡/名册）')
 
       const raw = await this.llmFor(kbId)({
         system: REVIEW_SYSTEM,
-        user: buildReviewUser(docName, memory.body ?? '', cardDigest),
+        user: buildReviewUser(docName, (memory?.body ?? '') || cardDigest || rosterDigest, [cardDigest, rosterDigest].filter(Boolean).join('\n\n')),
         maxTokens: BRAIN_LLM_MAX_TOKENS
       })
       const parsed = extractJsonFromResponse(raw) as
@@ -160,17 +178,19 @@ export class KbBookReviewService {
     if (!repos) throw new Error('知识大脑未启用（旧库）')
     this.running.add(key)
     try {
+      // v4 取材切换：同复核——卡+名册为主，记忆可选
       const memory = await repos.notes.findReadingMemory(kbId, documentId)
-      if (!memory || !(memory.body ?? '').trim()) throw new Error('没有工作记忆——请先运行「全书精读」')
-
       const cards = await repos.notes.listBookCards(kbId, documentId)
       const cardDigest = cards
         .map(c => `【${c.title}】\n${(c.body ?? '').slice(0, 1200)}`)
         .join('\n\n')
+      const rosterDigest = repos.artifacts ? await this.rosterDigest(repos.artifacts, kbId, documentId) : ''
+      if (!(memory?.body ?? '').trim() && !cardDigest && !rosterDigest)
+        throw new Error('没有可综述的知识（既无工作记忆也无书级卡/名册）')
 
       const raw = await this.llmFor(kbId)({
         system: BOOK_SUMMARY_SYSTEM,
-        user: buildBookSummaryUser(docName, memory.body ?? '', cardDigest),
+        user: buildBookSummaryUser(docName, (memory?.body ?? '') || rosterDigest, [cardDigest, rosterDigest].filter(Boolean).join('\n\n')),
         maxTokens: BRAIN_LLM_MAX_TOKENS
       })
       const article = raw.trim()

@@ -12,7 +12,7 @@ import { extractJsonFromResponse } from '@core/platform/services/ai-call'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createLogger } from '@core/utils/logger'
 import { PROFILE_SYSTEM, buildProfileUser } from './prompts'
-import { defaultBrainLlm, type BrainLlmFn, BRAIN_LLM_MAX_TOKENS } from './llm'
+import { defaultBrainLlm, type BrainLlmFn, BRAIN_LLM_MAX_TOKENS, type BrainModelRef } from './llm'
 import {
   mergeBrainConfig,
   normalizeProfile,

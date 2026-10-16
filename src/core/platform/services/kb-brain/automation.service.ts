@@ -30,7 +30,8 @@ import {
 import {
   enqueueDigestForExisting,
   reviveExhaustedFor,
-  backfillScenesForKb
+  backfillScenesForKb,
+  backfillCardsForKb
 } from './digest-orchestrator.service'
 import { getKbLayerRelabelService, KbLayerRelabelService } from './layer-relabel.service'
 import { getKbRejudgeService } from './rejudge.service'
@@ -55,7 +56,7 @@ import { parseModelRef } from './llm'
 
 const logger = createLogger('KbBrainAutomation')
 
-/** 各动作冷却（ms）：补标/书级/目标/归纳/冶炼 24h，清理/伏笔 7d，耗尽章复活 24h，场面补采 6h（一轮 200 章） */
+/** 各动作冷却（ms）：补标/书级/目标/归纳/冶炼 24h，清理/伏笔 7d，耗尽章复活 24h，场面/章卡补采 6h（一轮 200 章） */
 const COOLDOWN = {
   relabel: 24 * 3600_000,
   rejudge: 24 * 3600_000,
@@ -64,12 +65,14 @@ const COOLDOWN = {
   /** 四件套（精读/图谱/复核/综述）按文档 7 天一轮——重活在自动化里的最低频档 */
   quartet: 7 * 24 * 3600_000,
   bookPasses: 24 * 3600_000,
+  review: 24 * 3600_000,
   goal: 24 * 3600_000,
   consolidate: 24 * 3600_000,
   cleanup: 7 * 24 * 3600_000,
   foreshadow: 7 * 24 * 3600_000,
   reviveExhausted: 24 * 3600_000,
   sceneBackfill: 6 * 3600_000,
+  cardBackfill: 6 * 3600_000,
   smelt: 24 * 3600_000,
   corpusMerge: 7 * 24 * 3600_000
 } as const
@@ -106,6 +109,8 @@ export interface KbBrainAutomationDeps {
   }
   /** 存量场面补采（v2 P0 故事轨回填；缺省走 digest-orchestrator 的 activeService） */
   sceneBackfill?: (kbId: string, batch?: number) => Promise<{ processed: number; scenes: number }>
+  /** 存量章卡补跑（v4 漏斗；缺省走 digest-orchestrator 的 activeService） */
+  cardBackfill?: (kbId: string, batch?: number) => Promise<{ processed: number; cards: number }>
   /** 冶炼管线（v2 P1；缺省走 smelt-pipeline——每库按 brainConfig.models 现构造服务，模型按库隔离） */
   smelt?: { isRunning(kbId: string): boolean; runAll(kbId: string, modelRef?: string): Promise<unknown> }
   /** 品类归并（v2 P3：跨书实体归并 + 变体矩阵；缺省合并 corpus-merge 与 corpus-passes） */
@@ -130,7 +135,7 @@ export interface KbBrainAutomationDeps {
   /** 动作日志（v2 P4 undo 依据；缺省 automation-log 单例） */
   autoLog?: { record(kbId: string, action: string, detail: Record<string, unknown>): Promise<unknown> }
   relabel?: Pick<KbLayerRelabelService, 'isRunning' | 'run' | 'setModelOverride'>
-  bookPasses?: Pick<KbBookPassesService, 'isRunningKb' | 'runForKnowledgeBase' | 'setModelOverride'>
+  bookPasses?: Pick<KbBookPassesService, 'isRunningKb' | 'runForKnowledgeBase' | 'runReviews' | 'setModelOverride'>
   goals?: Pick<KbGoalDistillService, 'isRunning' | 'runGoal' | 'setModelOverride'>
   consolidate?: { isRunning(kbId: string): boolean; run(kbId: string): Promise<unknown> }
   cleanup?: { isRunning(kbId: string): boolean; run(kbId: string): Promise<unknown> }
@@ -141,7 +146,7 @@ export interface AutomationRepos {
   kbs: Pick<KnowledgeBaseRepository, 'findAll' | 'findById' | 'updateBrainState'>
   docs: Pick<KbDocumentRepository, 'findByKnowledgeBaseId' | 'updateBrainStatus'>
   atoms: Pick<KbAtomRepository, 'statsByKb'>
-  passes: Pick<KbDigestPassRepository, 'costByKb' | 'listByDocument'>
+  passes: Pick<KbDigestPassRepository, 'costByKb' | 'listByDocument' | 'resetToPending'>
   /** 场面事件量（v2 P1 冶炼增长门的数据源；旧库未装配时为 null——冶炼步骤跳过） */
   events?: { countByKb(kbId: string): Promise<number> } | null
 }
@@ -196,6 +201,9 @@ export class KbBrainAutomationService {
   }
   private get sceneBackfillFn(): NonNullable<KbBrainAutomationDeps['sceneBackfill']> {
     return this.depsDeps.sceneBackfill ?? ((kbId, batch) => backfillScenesForKb(kbId, batch))
+  }
+  private get cardBackfillFn(): NonNullable<KbBrainAutomationDeps['cardBackfill']> {
+    return this.depsDeps.cardBackfill ?? ((kbId, batch) => backfillCardsForKb(kbId, batch))
   }
   private get smelt(): NonNullable<KbBrainAutomationDeps['smelt']> {
     return this.depsDeps.smelt ?? getKbSmeltPipelineService()
@@ -449,6 +457,20 @@ export class KbBrainAutomationService {
       })
     }
 
+    // 1.5b 存量章卡补跑（v4 漏斗）：已消化文档的阅读卡回填，每轮 ≤200 章、
+    //      6h 冷却 + 成本熔断，台账幂等推进（书级归并取材的地基）
+    if (this.cool(state, 'lastCardBackfillAt', COOLDOWN.cardBackfill)) {
+      await step('card-backfill', async () => {
+        const out = await this.cardBackfillFn(kbId)
+        this.mark(state, 'lastCardBackfillAt')
+        await this.saveState(kbId, repos.kbs, state)
+        if (out.processed > 0)
+          logger.info(
+            `[kb-brain-auto] kb=${kbId} 章卡补跑 ${out.processed} 章 / ${out.cards} 卡`
+          )
+      })
+    }
+
     // 1.6 冶炼层（v2 P1）：事件原料够量（首跑 ≥16）且较上次明显增长（≥10%+1）才跑——
     //     阶段序（套路→案例→原理→品类认知）与 fail-soft 在 smelt-pipeline 内部；成本入台账对熔断可见
     if (auto.smelt && repos.events && !this.smelt.isRunning(kbId)) {
@@ -581,6 +603,25 @@ export class KbBrainAutomationService {
         )
         this.mark(state, 'lastBookPassesAt')
         await this.saveState(kbId, repos.kbs, state)
+      })
+    }
+
+    // 3.2 书级审校修复（v4 V4-4）：成品卡交叉核对→问题带章号→≤3 单元自动修复；
+    //     台账指纹带 24h 时间桶（同日幂等跳过，跨日自动复审），冷却防空转
+    if (
+      auto.bookPasses &&
+      !this.bookPasses.isRunningKb(kbId) &&
+      this.cool(state, 'lastReviewAt', COOLDOWN.review)
+    ) {
+      await step('book-review', async () => {
+        this.bookPasses.setModelOverride(kbId, this.modelOverride(cfg))
+        const docs = (await repos.docs.findByKnowledgeBaseId(kbId)).filter(d => d.brainStatus === 'digested')
+        if (docs.length === 0) return
+        const out = await this.bookPasses.runReviews(kbId, cfg.profile?.contentType ?? '', docs.map(d => d.id))
+        this.mark(state, 'lastReviewAt')
+        await this.saveState(kbId, repos.kbs, state)
+        if (out.docs > 0)
+          logger.info(`[kb-brain-auto] kb=${kbId} 书级审校 ${out.docs} 篇 / ${out.issues} 问题`)
       })
     }
 

@@ -11,6 +11,7 @@
  * - 溯源：每条边 evidence 存 {说明, 章节}
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import type { KbBrainArtifactRepository } from '@core/database/repositories/kb-brain-artifact.repository'
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
@@ -65,6 +66,8 @@ export interface GraphBuildResult {
 
 export interface GraphBuildRepos {
   notes: KbNoteRepository
+  /** 书级过程工件（v4：名册快照优先于工作记忆；旧库未装配走记忆） */
+  artifacts?: KbBrainArtifactRepository | null
   entities: {
     listActiveWithAliases(
       kbId: string,
@@ -138,7 +141,7 @@ export class KbGraphBuildService {
       ((): GraphBuildRepos | null => {
         const db = getCoreDatabaseManager()
         if (!db.kbNotes || !db.kbBrainEntities || !db.kbKnowledgeEdges) return null
-        return { notes: db.kbNotes, entities: db.kbBrainEntities, edges: db.kbKnowledgeEdges }
+        return { notes: db.kbNotes, entities: db.kbBrainEntities, edges: db.kbKnowledgeEdges, artifacts: db.kbBrainArtifacts ?? null }
       })
   }
 
@@ -150,19 +153,56 @@ export class KbGraphBuildService {
     return this.running.has(kbId)
   }
 
+  /** v4 材料：名册人物行 + 人物档案卡「关系」节（无工件/卡时返回空走记忆降级） */
+  private async buildMaterial(kbId: string, repos: GraphBuildRepos, documentId: string): Promise<string> {
+    const sections: string[] = []
+    if (repos.artifacts) {
+      try {
+        const a = await repos.artifacts.findByKey(documentId, 'roster')
+        if (a) {
+          const snap = JSON.parse(a.body ?? '{}') as { characters?: Array<{ name: string; tier: string; aliases: string[]; sampleFacts: string[] }> }
+          const lines = (snap.characters ?? [])
+            .filter(c => c.tier !== 'passerby')
+            .slice(0, 40)
+            .map(c => `- ${c.name}（${c.tier}${c.aliases.length ? `/${c.aliases.join('/')}` : ''}）：${c.sampleFacts.join('；').slice(0, 120)}`)
+          if (lines.length) sections.push(`【名册·人物】\n${lines.join('\n')}`)
+        }
+      } catch {
+        // 快照损坏：走降级
+      }
+    }
+    try {
+      const { rows } = await repos.notes.listByStatus(kbId, 'proposed', 1, 20, 'character-dossier')
+      const pub = rows.length === 0 ? await repos.notes.listByStatus(kbId, 'published', 1, 20, 'character-dossier') : { rows }
+      const lines = pub.rows
+        .map(r => {
+          const m = (r.body ?? '').match(/## 关系\n?([\s\S]*?)(?=\n## |$)/)
+          return m?.[1] ? `《${r.title ?? ''}》关系：${m[1].trim().slice(0, 400)}` : ''
+        })
+        .filter(Boolean)
+      if (lines.length) sections.push(`【人物档案·关系】\n${lines.join('\n')}`)
+    } catch {
+      // 无取材通道：走降级
+    }
+    return sections.join('\n\n')
+  }
+
   async run(kbId: string, documentId: string): Promise<GraphBuildResult> {
     if (this.running.has(kbId)) throw new Error('图谱构建进行中，请稍候')
     const repos = this.reposFn()
     if (!repos) throw new Error('知识大脑未启用（旧库）')
     this.running.add(kbId)
     try {
+      // v4 取材切换：名册 + 人物档案卡关系为主，工作记忆降级兜底
+      const material = await this.buildMaterial(kbId, repos, documentId)
       const note = await repos.notes.findReadingMemory(kbId, documentId)
-      if (!note || !(note.body ?? '').trim()) throw new Error('没有工作记忆——请先运行「全书精读」')
+      if (!material && !(note?.body ?? '').trim())
+        throw new Error('没有可抽取的知识材料（既无名册/人物档案，也无工作记忆）')
 
       const llm = this.scoped.llmFor(kbId)
       const raw = await llm({
         system: GRAPH_EXTRACT_SYSTEM,
-        user: buildGraphExtractUser(note.body ?? ''),
+        user: buildGraphExtractUser(material || (note?.body ?? '')),
         maxTokens: BRAIN_LLM_MAX_TOKENS
       })
       const parsed = extractJsonFromResponse(raw)

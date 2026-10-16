@@ -71,6 +71,14 @@ export class KbChapterEntity {
   @Column({ name: 'summary_error', type: 'varchar', nullable: true })
   summaryError!: string | null
 
+  /** 章级结构化阅读卡（v4，JSON；书级漏斗统一中间层，NULL=未产卡） */
+  @Column({ name: 'brain_card', type: 'text', nullable: true })
+  brainCard!: string | null
+
+  /** 阅读卡内容指纹（消费方廉价失效判断） */
+  @Column({ name: 'brain_card_hash', type: 'varchar', nullable: true })
+  brainCardHash!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

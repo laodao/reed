@@ -293,6 +293,28 @@ export class KbBrainPackService {
     if (archives.length > 0) {
       sections.push({ title: '代表作档案（书级大纲）', lines: archives.map((a) => `- ${a.title}`) })
     }
+    // v4 漏斗成品：人物档案与设定档案（名册分级建档的多级归并产物）
+    const dossiers = await this.published(kbId, 'character-dossier', LIMITS.outlineArchives)
+    if (dossiers.length > 0) {
+      sections.push({
+        title: '人物档案（主要人物定位/特质/弧线参照）',
+        lines: dossiers.map((d) => {
+          const head = (d.body ?? '').split('\n').find((l) => l.trim() && !l.startsWith('#')) ?? ''
+          return `- ${d.title.replace(/^《.*?》人物档案：/, '')}——${head.slice(0, 120)}`
+        }),
+      })
+    }
+    const worlds = await this.published(kbId, 'setting-dossier', LIMITS.outlineStructures)
+    if (worlds.length > 0) {
+      sections.push({
+        title: '设定档案（体系/势力/地理惯例参照）',
+        lines: worlds.map((w) => `- ${w.title.replace(/^《.*?》设定档案：/, '')}——${(w.description ?? '').slice(0, 120)}`),
+      })
+    }
+    const styles = await this.published(kbId, 'style-profile', LIMITS.outlineArchives)
+    if (styles.length > 0) {
+      sections.push({ title: '文风画像（行文风格参照）', lines: styles.map((st) => `- ${st.title}`) })
+    }
     void task
     void topK
     return sections

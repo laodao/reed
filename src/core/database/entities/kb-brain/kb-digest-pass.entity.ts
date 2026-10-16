@@ -17,7 +17,7 @@ import { Column, Entity, Index, PrimaryColumn, Unique } from 'typeorm'
  * smelt=冶炼层（v2 P1：pattern-induct/case-study/principle/genre-insight 的成本记账行，
  * passKey 含阶段与运行时戳——冶炼幂等靠卡层同题去重/实例合并，台账行只管成本可见）
  */
-export type KbDigestPassType = 'base' | 'lens' | 'book' | 'distill' | 'metabolize' | 'events' | 'smelt' | 'reading'
+export type KbDigestPassType = 'base' | 'lens' | 'book' | 'distill' | 'metabolize' | 'events' | 'smelt' | 'reading' | 'card'
 
 export type KbDigestPassStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 

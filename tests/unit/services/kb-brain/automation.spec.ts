@@ -165,6 +165,11 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
         calls.push(`bookpass:${kbId}:${ct}:${docIds.join(',')}`)
         return { running: false, totalDocs: docIds.length, processedDocs: docIds.length }
       },
+      // v4：书级审校（24h 时间桶指纹；与书级汇总同用 bookpass 前缀记调用）
+      runReviews: async (kbId: string, _ct: string, docIds: string[]) => {
+        calls.push(`bookreview:${kbId}:${docIds.join(',')}`)
+        return { docs: docIds.length, issues: 0 }
+      },
     },
     goals: {
       isRunning: () => false,
@@ -220,13 +225,15 @@ describe('KbBrainAutomationService', () => {
       'relabel:kb1',
       'bookpass:model',
       'bookpass:kb1:novel:doc1',
+      'bookpass:model',
+      'bookreview:kb1:doc1',
       'goal:model',
       'goal:g1',
       'consolidate',
       'cleanup',
       'foreshadow',
     ])
-    expect(result.ran).toEqual(['scene-backfill', 'smelt', 'corpus-merge', 'layer-relabel', 'rejudge', 'dimension-induct', 'book-passes', 'quartet', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
+    expect(result.ran).toEqual(['scene-backfill', 'card-backfill', 'smelt', 'corpus-merge', 'layer-relabel', 'rejudge', 'dimension-induct', 'book-passes', 'book-review', 'quartet', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
     // 记账：目标运行时间 + 论断基线、补标基线、场面补采冷却、冶炼基线
     const auto = deps.savedStates.at(-1)?.automation as Record<string, unknown>
     const goalRuns = auto.goalRuns as Record<string, { at: string; atoms: number }>

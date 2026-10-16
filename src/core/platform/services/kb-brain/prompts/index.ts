@@ -928,3 +928,201 @@ export const BOOK_KNOWLEDGE_MAP_SYSTEM = `你是知识架构师。给定一本�
 （按依赖关系给出阅读/学习顺序建议；仅当给定论断能支撑时写，否则写"（给定材料不足以排序）"）
 
 只基于给定论断归纳，不编造。`
+
+/* ==================== V4 章级结构化阅读卡（整书漏斗统一中间层） ==================== */
+
+const READING_CARD_COMMON_RULES = `【硬性纪律】
+- 只记原文出现的事实；每条事实都带 ch 字段=本章章号（题面已给出，必须逐字使用）；由上下文推断的写 "inferred": true。
+- 人物事实写「此后一直有效」的单点结论（身份/师承/能力/立场/生死），不写情节链——"某人已叛出师门"✓，"某人先败后逃再被劝回"✗。
+- 伏笔只登记【已经发生】的动作（埋下/强化/误导/部分揭示/完全揭示/回收）；对后文的猜测不登记。
+- 书内事实是合法产出——本卡是知识库的证据层，不要做「换书测试」式自我审查，那是另一条产线的纪律。
+- 某域本章没有内容就输出空数组，不要编造；纯过场章除 summary 外全部为空是合法输出。
+- 只输出一个 JSON 对象，不要任何解释或代码围栏。`
+
+export const READING_CARD_SYSTEM_NOVEL = `你是整书知识库的章级笔记员。读完给定章节正文，产出一份结构化「阅读卡」（JSON）——它是后续名册、编年段、卷梗概、全书主线、人物档案、设定档案、伏笔线的唯一原料，不是给人读的摘要。
+
+【各域收什么】
+- summary：≤400字。谁、在哪、做了什么、结果如何、章末悬念。信息完整优先于文笔。
+- events：≤8条。本章关键事件，因果单句（"X因为Y做了Z，导致W"）。
+- characters：≤12人。本章出场人物：name=规范名（全书通用称呼，优先用已知名表中的写法）；aliases=本章出现的别称；facts=≤6条人物事实（身份/师承/能力/立场/生死/关系变更）；endState=本章结束时此人的处境。
+- world：≤10条。本章出现的设定事实，domain 取 势力/地理/体系/规则/物品/其他；name=设定对象名；facts=≤6条（体系规则、地理格局、组织制度、物品品阶——剥离情节仍成立的世界事实）。
+- foreshadow：≤6条。伏笔动作：label=伏笔线索的短名（同一线索全书用同一个 label）；action 取 plant=埋设 / reinforce=强化 / misdirect=误导 / partial_reveal=部分揭示 / reveal=揭示 / payoff=回收；t=发生了什么。
+- style：≤2条。本章值得写作者学习的写法观察（t=做法结论，why=好在哪里）；只收有可迁移价值的，不收常规叙事。
+- hook：章末悬念一句话（可省）。
+
+${READING_CARD_COMMON_RULES}
+
+【输出形态】
+{"v":1,"profile":"novel","summary":"…","events":["…"],"hook":"…","characters":[{"name":"…","aliases":["…"],"facts":[{"t":"…","ch":N}],"endState":"…"}],"world":[{"domain":"体系","name":"…","facts":[{"t":"…","ch":N}]}],"foreshadow":[{"label":"…","action":"plant","t":"…","ch":N}],"style":[{"t":"…","why":"…"}]}`
+
+export const READING_CARD_SYSTEM_KNOWLEDGE = `你是整书知识库的章级笔记员。读完给定章节正文，产出一份结构化「阅读卡」（JSON）——它是后续术语名册、论证段、知识体系图的唯一原料，不是给人读的摘要。
+
+【各域收什么】
+- summary：≤400字。本章回答什么问题、给出什么结论、论证路径是什么。
+- claims：≤6条。本章核心论点：t=论点单句（自包含，脱离本章可读）；ch=本章章号；evidence=≤3条论据/例证要点；kind 取 主张/方法/框架/反例。
+- concepts：≤10条。本章出现的术语概念：term=术语名；definition=本章给出的定义（首次定义或对前文的修正）；ch=本章章号；refines=若本条是对前文某术语的修正/细化，写那个术语名。
+- methods：≤4条。本章给出的方法/流程/操作步骤：name=方法名；steps=关键步骤列表；ch=本章章号。
+- quotes：≤2条。值得摘录的原文金句（逐字，≤120字）：t=原文；why=为什么值得摘；ch=本章章号。
+
+${READING_CARD_COMMON_RULES}
+
+【输出形态】
+{"v":1,"profile":"knowledge","summary":"…","claims":[{"t":"…","ch":N,"evidence":["…"],"kind":"主张"}],"concepts":[{"term":"…","definition":"…","ch":N}],"methods":[{"name":"…","steps":["…"],"ch":N}],"quotes":[{"t":"…","why":"…","ch":N}]}`
+
+export const READING_CARD_SYSTEM_HISTORY = `你是整书知识库的章级笔记员。读完给定章节正文，产出一份结构化「阅读卡」（JSON）——它是后续人物名册、大事年表、制度沿革的唯一原料，不是给人读的摘要。
+
+【各域收什么】
+- summary：≤400字。本章覆盖的时间段与核心事件线。
+- events：≤8条。时序事件：t=何时何地谁做了什么结果如何（自包含）；ch=本章章号。
+- characters：≤12人。出场人物：name=规范名；aliases=别称/官称；facts=≤6条长效事实（身份/立场/主张/关系/命运）；endState=本章结束时的处境。
+- world：≤10条。制度与背景事实：domain 取 制度/背景/地理/其他；facts=≤6条（典章制度、社会结构、时代背景——剥离个别人物仍成立）。
+- quotes：≤2条。值得摘录的原文（史评/名句/关键表述，≤120字）：t=原文；why；ch=本章章号。
+
+${READING_CARD_COMMON_RULES}
+
+【输出形态】
+{"v":1,"profile":"history","summary":"…","events":[{"t":"…","ch":N}],"characters":[{"name":"…","facts":[{"t":"…","ch":N}]}],"world":[{"domain":"制度","name":"…","facts":[{"t":"…","ch":N}]}],"quotes":[{"t":"…","why":"…","ch":N}]}`
+
+export function buildReadingCardSystem(contentType?: string): string {
+  if (contentType === 'knowledge') return READING_CARD_SYSTEM_KNOWLEDGE
+  if (contentType === 'history') return READING_CARD_SYSTEM_HISTORY
+  return READING_CARD_SYSTEM_NOVEL
+}
+
+/** 阅读卡用户提示（章号 N 全文注入；超长章由调用方截断） */
+export function buildReadingCardUser(input: {
+  bookName: string
+  chapterNo: number
+  total: number
+  chapterTitle: string
+  content: string
+  knownNames?: string[]
+  contentType: string
+}): string {
+  const known =
+    input.knownNames && input.knownNames.length > 0
+      ? `\n【已知名表（characters.name / world.name 优先使用这些写法）】${input.knownNames.slice(0, 300).join('、')}`
+      : ''
+  return `【书目】《${input.bookName}》共 ${input.total} 章；本章为第 ${input.chapterNo} 章：《${input.chapterTitle}》（画像=${input.contentType}）。所有事实的 ch 都必须等于 ${input.chapterNo}。${known}
+
+【本章正文】
+${input.content}
+
+请输出本章阅读卡 JSON。`
+}
+
+/* ==================== V4 书级归并产线（编年段/卷/名册/档案/伏笔线/文风） ==================== */
+
+export const CHRONICLE_SYSTEM = `你是整书结构化漏斗的编年员。给定一段连续章节的阅读卡（每章梗概/事件/人物事实/设定事实/伏笔动作），归纳这一段的结构化产物，输出 JSON。这是「章→段」的第一级归并：只消费卡片，不读原文。
+
+【产出】
+- summary：≤600 字段梗概。按因果组织（不是逐章流水账）：这一段的阶段目标、主要冲突、关键转折、段落结果。
+- points：≤20 条剧情点。每条 {title, summary, startCh, endCh}——title=剧情点短名；summary=≤150字因果描述；startCh/endCh=剧情点跨越的章号范围（必须落在本段章号区间内）。
+【纪律】只综合卡片已有信息；卡片没讲的阶段结果写「未交代」，禁止编造；每条剧情点必须能追溯到卡片章节。
+只输出 JSON：{"summary":"…","points":[{"title":"…","summary":"…","startCh":N,"endCh":N}]}`
+
+export function buildChronicleUser(segmentId: string, chapterRange: string, cardDigest: string): string {
+  return `【段】${segmentId}（覆盖 ${chapterRange}）
+
+【本段各章阅读卡】
+${cardDigest}
+
+请输出本段编年 JSON。`
+}
+
+export const VOLUME_SYSTEM = `你是整书结构化漏斗的卷册归纳员。给定一卷内各编年段的梗概与剧情点，写这一卷的卷梗概，输出 JSON：{"summary":"≤800字卷梗概（本卷主线、主要冲突、开局与收束、与前后卷的钩子）","turns":["关键转折 ≤5条，各带章号"]}.
+【纪律】只综合编年段已有信息；没写的写「未交代」；转折必须带章号。只输出 JSON。`
+
+export function buildVolumeUser(volumeName: string, segmentDigest: string): string {
+  return `【卷】${volumeName}
+
+【本卷各编年段】
+${segmentDigest}
+
+请输出卷梗概 JSON。`
+}
+
+export const CHARACTER_DOSSIER_SYSTEM = `你是人物档案师。给定一个人物的全书卡内事实（可含各卷小传），写一份结构化人物档案，输出 JSON：{"summary":"一句话简介（≤60字）","coreProfile":"核心档案 ≤400字：身份/性格/能力/立场——全书稳定特征","relationships":"关键关系 ≤300字：与谁、什么关系、变化节点（带章号）","latestState":"最新状态 ≤150字：以最后一次出场为准","timeline":"经历时间线 ≤500字：变化写进经历，逐条带章号"}.
+【纪律】稳定特征进 coreProfile，变化进 timeline；没有卡片证据的不写；推断内容标注「推断」。只输出 JSON。`
+
+export function buildCharacterDossierUser(name: string, factsDigest: string): string {
+  return `【人物】${name}
+
+【全书卡内事实（带章号）${factsDigest.includes('卷小传') ? '，含各卷小传' : ''}】
+${factsDigest}
+
+请输出人物档案 JSON。`
+}
+
+export const WORLD_DOSSIER_SYSTEM = `你是设定整理师。给定一个设定类别下的名册条目与全书卡内设定事实，写该类别的设定档案，输出 JSON：{"overview":"类别概览 ≤300字","items":[{"title":"条目名","content":"≤400字条目内容，冲突说法全部列出并各带章号"}]}.
+【纪律】境界/等级类条目按层级从低到高排序；只收卡片有证据的条目；一个条目一句话讲清「它是什么、规则是什么、代价是什么」。只输出 JSON。`
+
+export function buildWorldDossierUser(category: string, digest: string): string {
+  return `【设定类别】${category}
+
+【名册条目与卡内事实（带章号）】
+${digest}
+
+请输出设定档案 JSON。`
+}
+
+export const FORESHADOW_LINES_SYSTEM = `你是伏笔线整理员。给定一组「疑似同一条伏笔」的动作记录（埋设/强化/误导/部分揭示/揭示/回收，各带章号），判断它们是否属于同一条伏笔线并给出整理结果，输出 JSON：{"groups":[{"label":"伏笔线短名（全书通用）","coreQuestion":"这条线悬置的核心问题一句话","beats":[{"action":"plant|reinforce|misdirect|partial_reveal|reveal|payoff","ch":N,"note":"发生了什么"}]}]}.
+【纪律】只并确属同一线的动作；拿不准就保持分开（错并比漏并危害大）；没有卡片证据的核心问题写「待确认」。只输出 JSON。`
+
+export const STYLE_PROFILE_SYSTEM = `你是文风分析师。给定一本书的卡内文风观察与抽样原文片段，写一份文风画像，输出 markdown（无代码围栏）：
+## 总体风格（叙事视角/句式/节奏 ≤200字）
+## 分项观察（对白/描写/章末手法/情绪调度，各 ≤150字，引用片段佐证）
+## 可迁移写法（≤5条：怎么做+示例+何时用）
+【纪律】每条观察尽量引用抽样片段；没有证据的判断不写。`
+
+export function buildStyleProfileUser(notes: string, excerpts: string): string {
+  return `【卡内文风观察（带章号）】
+${notes}
+
+【抽样原文片段（带章号）】
+${excerpts}
+
+请输出文风画像 markdown。`
+}
+
+/* ---------- V4 名册裁决 ---------- */
+
+export const ROSTER_PART_SYSTEM = `你是名册员。给定一批编号的名字条目（人物或设定词/术语，各带出现章数、首末章、示例事实），输出**决定**而不是名册，JSON：
+{"groups":[[编号,编号]],"tiers":[{"ref":编号,"tier":"…","reason":"一句话"}],"categories":[{"ref":编号,"category":"…"}]}
+- groups：确属同一对象的编号放一组（组内任意一个即可，不必全列）；拿不准**不要**并——错并比漏并危害大。
+- tiers：人物取 protagonist=主角/major=主要配角/minor=次要配角/passerby=路人（按出场跨度与情节分量）；术语取 core=核心概念/supporting=支撑概念/reference=示例引用。每条给 reason。
+- categories：设定词/术语的类别（势力/地理/体系/规则/物品/概念/制度/背景/其他）。
+- 没写 tiers 的条目：人物按 passerby、术语按 reference 处理。
+只输出 JSON。`
+
+export function buildRosterPartUser(items: string[]): string {
+  return `【名字条目】
+${items.join('\n')}
+
+请输出名册决定 JSON。`
+}
+
+export const ROSTER_MERGE_SYSTEM = `你是名册终审员。各分片的名册已由程序合并，下面是**跨分片的疑似同对象候选簇**（可能是同一人物/设定，也可能只是名字相近）。只并确属同一对象的，输出 JSON：{"groups":[[条目编号,条目编号]]}（不需要合并的簇不要输出；拿不准不并）。只输出 JSON。`
+
+export function buildRosterMergeUser(clusters: string[]): string {
+  return `【候选簇】
+${clusters.join('\n\n')}
+
+请输出合并决定 JSON。`
+}
+
+/* ---------- V4 审校修复（V4-4） ---------- */
+
+export const BOOK_REVIEW_SYSTEM = `你是书级知识审校员。给定某领域的全部成品卡摘要与抽查的章级阅读卡/名册条目，交叉核对两者的矛盾，输出 JSON：
+{"issues":[{"unitKey":"问题所属成品（如 character:12 / world:体系 / book:outline）","description":"问题描述 ≤150字","chapterOrders":[章号],"suggestion":"修复建议 ≤100字"}]}
+【查什么】人物档案与卡内事实冲突；设定前后不一（各带章号的说法矛盾未并列）；主线阶段与编年剧情点错位；伏笔线状态与动作节拍矛盾；概念定义与论点链冲突。
+【纪律】每个问题必须给出可核验的章号证据；没有矛盾就输出空 issues——宁少报不误报。只输出 JSON。`
+
+export function buildBookReviewUser(domain: string, material: string): string {
+  return `【审校领域】${domain}
+
+【材料】
+${material}
+
+请输出审校结果 JSON。`
+}

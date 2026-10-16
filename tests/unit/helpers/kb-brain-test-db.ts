@@ -13,6 +13,7 @@ import { addKbEntityScope } from '@core/database/migrations/add-kb-entity-scope'
 import { addKbAtomRole } from '@core/database/migrations/add-kb-atom-role'
 import { createKbBrainDimensions } from '@core/database/migrations/create-kb-brain-dimensions'
 import { addKbBrainV3Structures } from '@core/database/migrations/add-kb-brain-v3-structures'
+import { addKbBrainV4Structures } from '@core/database/migrations/add-kb-brain-v4-structures'
 import { createKbConsumptionLog } from '@core/database/migrations/create-kb-consumption-log'
 import { createKbBrainP4Tables } from '@core/database/migrations/create-kb-brain-p4-tables'
 import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
@@ -48,6 +49,8 @@ export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   // 语义边仓储已是统一图存储 facade——graph_edges 必须就绪
   await createUnifiedGraphTables(ds)
   await createKbChapters(ds)
+  // v4：章卡列 + 工件表（必须在 kb_chapters 建表之后）
+  await addKbBrainV4Structures(ds)
   // 存量表：切片（大脑检索的 docLen/结果解析需要）
   await ds.query(`CREATE TABLE IF NOT EXISTS kb_chunks (
     id varchar PRIMARY KEY, user_id varchar,

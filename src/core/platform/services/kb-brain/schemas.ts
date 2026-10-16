@@ -658,3 +658,493 @@ export function validateConsolidateOutput(data: unknown, bounds: { count: number
   }
   return out
 }
+
+/* ---------- V4 READING CARD 输出（章级结构化阅读卡，整书漏斗统一中间层） ---------- */
+
+export const FORESHADOW_ACTIONS = ['plant', 'reinforce', 'misdirect', 'partial_reveal', 'reveal', 'payoff'] as const
+export type ForeshadowAction = (typeof FORESHADOW_ACTIONS)[number]
+
+/** 带章号的事实（卡内一切事实的最小单元；ch=章号，程序校验必须等于本章） */
+export interface ReadingCardFact {
+  t: string
+  ch: number
+  inferred?: boolean
+}
+
+export interface NovelReadingCard {
+  v: 1
+  profile: 'novel'
+  summary: string
+  events: string[]
+  hook?: string
+  characters: Array<{
+    name: string
+    aliases?: string[]
+    facts: ReadingCardFact[]
+    endState?: string
+  }>
+  world: Array<{ domain: string; name: string; facts: ReadingCardFact[] }>
+  foreshadow: Array<{ label: string; action: ForeshadowAction; t: string; ch: number }>
+  style: Array<{ t: string; why?: string }>
+}
+
+export interface KnowledgeReadingCard {
+  v: 1
+  profile: 'knowledge'
+  summary: string
+  claims: Array<{ t: string; ch: number; evidence?: string[]; kind?: string }>
+  concepts: Array<{ term: string; definition: string; ch: number; refines?: string }>
+  methods: Array<{ name: string; steps?: string[]; ch: number }>
+  quotes: Array<{ t: string; why?: string; ch: number }>
+}
+
+export interface HistoryReadingCard {
+  v: 1
+  profile: 'history'
+  summary: string
+  events: Array<{ t: string; ch: number }>
+  characters: Array<{
+    name: string
+    aliases?: string[]
+    facts: ReadingCardFact[]
+    endState?: string
+  }>
+  world: Array<{ domain: string; name: string; facts: ReadingCardFact[] }>
+  quotes: Array<{ t: string; why?: string; ch: number }>
+}
+
+export type ReadingCard = NovelReadingCard | KnowledgeReadingCard | HistoryReadingCard
+
+const cardFact = {
+  type: 'object',
+  properties: {
+    t: { type: 'string', minLength: 1 },
+    ch: { type: 'integer' },
+    inferred: { type: 'boolean' },
+  },
+  required: ['t', 'ch'],
+  additionalProperties: false,
+} as const
+
+const cardCharacters = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', minLength: 1 },
+      aliases: { type: 'array', items: { type: 'string', minLength: 1 } },
+      facts: { type: 'array', items: cardFact },
+      endState: { type: 'string' },
+    },
+    required: ['name', 'facts'],
+    additionalProperties: false,
+  },
+} as const
+
+const cardWorld = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      domain: { type: 'string', minLength: 1 },
+      name: { type: 'string', minLength: 1 },
+      facts: { type: 'array', items: cardFact },
+    },
+    required: ['domain', 'name', 'facts'],
+    additionalProperties: false,
+  },
+} as const
+
+const cardQuotes = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      t: { type: 'string', minLength: 1 },
+      why: { type: 'string' },
+      ch: { type: 'integer' },
+    },
+    required: ['t', 'ch'],
+    additionalProperties: false,
+  },
+} as const
+
+const NOVEL_CARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    v: { enum: [1] },
+    profile: { enum: ['novel'] },
+    summary: { type: 'string', minLength: 1 },
+    events: { type: 'array', items: { type: 'string', minLength: 1 } },
+    hook: { type: 'string' },
+    characters: cardCharacters,
+    world: cardWorld,
+    foreshadow: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          label: { type: 'string', minLength: 1 },
+          action: { enum: [...FORESHADOW_ACTIONS] },
+          t: { type: 'string', minLength: 1 },
+          ch: { type: 'integer' },
+        },
+        required: ['label', 'action', 't', 'ch'],
+        additionalProperties: false,
+      },
+    },
+    style: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { t: { type: 'string', minLength: 1 }, why: { type: 'string' } },
+        required: ['t'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['v', 'profile', 'summary'],
+  additionalProperties: false,
+} as const
+
+const KNOWLEDGE_CARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    v: { enum: [1] },
+    profile: { enum: ['knowledge'] },
+    summary: { type: 'string', minLength: 1 },
+    claims: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          t: { type: 'string', minLength: 1 },
+          ch: { type: 'integer' },
+          evidence: { type: 'array', items: { type: 'string', minLength: 1 } },
+          kind: { type: 'string' },
+        },
+        required: ['t', 'ch'],
+        additionalProperties: false,
+      },
+    },
+    concepts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          term: { type: 'string', minLength: 1 },
+          definition: { type: 'string', minLength: 1 },
+          ch: { type: 'integer' },
+          refines: { type: 'string' },
+        },
+        required: ['term', 'definition', 'ch'],
+        additionalProperties: false,
+      },
+    },
+    methods: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1 },
+          steps: { type: 'array', items: { type: 'string', minLength: 1 } },
+          ch: { type: 'integer' },
+        },
+        required: ['name', 'ch'],
+        additionalProperties: false,
+      },
+    },
+    quotes: cardQuotes,
+  },
+  required: ['v', 'profile', 'summary'],
+  additionalProperties: false,
+} as const
+
+const HISTORY_CARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    v: { enum: [1] },
+    profile: { enum: ['history'] },
+    summary: { type: 'string', minLength: 1 },
+    events: { type: 'array', items: cardFact },
+    characters: cardCharacters,
+    world: cardWorld,
+    quotes: cardQuotes,
+  },
+  required: ['v', 'profile', 'summary'],
+  additionalProperties: false,
+} as const
+
+const READING_CARD_SCHEMA = { oneOf: [NOVEL_CARD_SCHEMA, KNOWLEDGE_CARD_SCHEMA, HISTORY_CARD_SCHEMA] } as const
+
+/** 卡域数量上限（护栏：防跑飞；空域合法——过场章/纯理论章不算失败） */
+export const READING_CARD_LIMITS = {
+  characters: 12,
+  factsPerCharacter: 6,
+  world: 10,
+  events: 8,
+  foreshadow: 6,
+  style: 2,
+  claims: 6,
+  concepts: 10,
+  methods: 4,
+  quotes: 2,
+  summaryChars: 500,
+  cardChars: 8000,
+} as const
+
+const validateReadingCard = new Ajv({ allErrors: true }).compile(READING_CARD_SCHEMA)
+
+function capFacts<T extends { t: string; ch: number }>(list: T[] | undefined, cap: number): T[] {
+  return (list ?? []).filter((f) => typeof f?.t === 'string' && f.t.trim()).slice(0, cap)
+}
+
+/** 域内裁剪与清洗：空条目剔除、数组封顶、字符串修剪——模型多吐从致命降为可容忍 */
+export function normalizeReadingCard(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  const d = data as Record<string, unknown>
+  const L = READING_CARD_LIMITS
+  const out: Record<string, unknown> = { v: 1, profile: d.profile, summary: typeof d.summary === 'string' ? d.summary.trim().slice(0, L.summaryChars * 2) : d.summary }
+  if (d.profile === 'novel') {
+    out.events = (Array.isArray(d.events) ? d.events : []).filter((e) => typeof e === 'string' && e.trim()).slice(0, L.events)
+    out.hook = typeof d.hook === 'string' && d.hook.trim() ? d.hook.trim() : undefined
+    out.characters = (Array.isArray(d.characters) ? d.characters : [])
+      .filter((c) => typeof (c as Record<string, unknown>)?.name === 'string' && ((c as Record<string, unknown>).name as string).trim() !== '')
+      .slice(0, L.characters)
+      .map((c) => {
+        const x = c as Record<string, unknown>
+        return {
+          name: x.name,
+          aliases: Array.isArray(x.aliases) ? x.aliases.filter((a) => typeof a === 'string' && a.trim()).slice(0, 8) : undefined,
+          facts: capFacts(x.facts as never, L.factsPerCharacter),
+          endState: typeof x.endState === 'string' && x.endState.trim() ? x.endState.trim() : undefined,
+        }
+      })
+    out.world = (Array.isArray(d.world) ? d.world : [])
+      .filter((w) => typeof (w as Record<string, unknown>)?.domain === 'string' && typeof (w as Record<string, unknown>)?.name === 'string')
+      .slice(0, L.world)
+      .map((w) => {
+        const x = w as Record<string, unknown>
+        return { domain: x.domain, name: x.name, facts: capFacts(x.facts as never, L.factsPerCharacter) }
+      })
+    out.foreshadow = (Array.isArray(d.foreshadow) ? d.foreshadow : [])
+      .filter((f) => {
+        const x = f as Record<string, unknown>
+        return typeof x?.label === 'string' && x.label.trim() && typeof x?.action === 'string' && typeof x?.t === 'string' && x.t.trim() && Number.isInteger(x?.ch)
+      })
+      .slice(0, L.foreshadow)
+    out.style = (Array.isArray(d.style) ? d.style : [])
+      .filter((f) => typeof (f as Record<string, unknown>)?.t === 'string' && ((f as Record<string, unknown>).t as string).trim() !== '')
+      .slice(0, L.style)
+  } else if (d.profile === 'knowledge') {
+    out.claims = (Array.isArray(d.claims) ? d.claims : [])
+      .filter((c) => typeof (c as Record<string, unknown>)?.t === 'string' && Number.isInteger((c as Record<string, unknown>)?.ch))
+      .slice(0, L.claims)
+      .map((c) => {
+        const x = c as Record<string, unknown>
+        return {
+          t: x.t,
+          ch: x.ch,
+          evidence: Array.isArray(x.evidence) ? x.evidence.filter((e) => typeof e === 'string' && e.trim()).slice(0, 3) : undefined,
+          kind: typeof x.kind === 'string' ? x.kind : undefined,
+        }
+      })
+    out.concepts = (Array.isArray(d.concepts) ? d.concepts : [])
+      .filter((c) => typeof (c as Record<string, unknown>)?.term === 'string' && typeof (c as Record<string, unknown>)?.definition === 'string' && Number.isInteger((c as Record<string, unknown>)?.ch))
+      .slice(0, L.concepts)
+    out.methods = (Array.isArray(d.methods) ? d.methods : [])
+      .filter((m) => typeof (m as Record<string, unknown>)?.name === 'string' && Number.isInteger((m as Record<string, unknown>)?.ch))
+      .slice(0, L.methods)
+    out.quotes = (Array.isArray(d.quotes) ? d.quotes : [])
+      .filter((q) => typeof (q as Record<string, unknown>)?.t === 'string' && Number.isInteger((q as Record<string, unknown>)?.ch))
+      .slice(0, L.quotes)
+  } else if (d.profile === 'history') {
+    out.events = capFacts(d.events as never, L.events)
+    out.characters = (Array.isArray(d.characters) ? d.characters : [])
+      .filter((c) => typeof (c as Record<string, unknown>)?.name === 'string' && ((c as Record<string, unknown>).name as string).trim() !== '')
+      .slice(0, L.characters)
+      .map((c) => {
+        const x = c as Record<string, unknown>
+        return { name: x.name, aliases: x.aliases, facts: capFacts(x.facts as never, L.factsPerCharacter), endState: x.endState }
+      })
+    out.world = (Array.isArray(d.world) ? d.world : [])
+      .filter((w) => typeof (w as Record<string, unknown>)?.domain === 'string' && typeof (w as Record<string, unknown>)?.name === 'string')
+      .slice(0, L.world)
+      .map((w) => {
+        const x = w as Record<string, unknown>
+        return { domain: x.domain, name: x.name, facts: capFacts(x.facts as never, L.factsPerCharacter) }
+      })
+    out.quotes = (Array.isArray(d.quotes) ? d.quotes : [])
+      .filter((q) => typeof (q as Record<string, unknown>)?.t === 'string' && Number.isInteger((q as Record<string, unknown>)?.ch))
+      .slice(0, L.quotes)
+  }
+  return out
+}
+
+/**
+ * 校验 + 章号硬校验（F1 同款纪律）：卡内一切事实的 ch 必须等于本章章号——
+ * 防模型跨章编造；错误全部列出（供回喂重试的纠错 prompt 使用）。
+ */
+export function validateReadingCardOutput(data: unknown, bounds: { ch: number }): ReadingCard {
+  const normalized = normalizeReadingCard(data)
+  if (!validateReadingCard(normalized)) {
+    throw new Error(`reading-card 输出校验失败: ${ajv.errorsText(validateReadingCard.errors)}`)
+  }
+  const card = normalized as ReadingCard
+  const stray: string[] = []
+  const check = (ch: unknown, path: string): void => {
+    if (ch !== bounds.ch) stray.push(`${path}(ch=${String(ch)}≠${bounds.ch})`)
+  }
+  if (card.profile === 'novel') {
+    card.characters.forEach((c, i) => c.facts.forEach((f, j) => check(f.ch, `characters[${i}].facts[${j}]`)))
+    card.world.forEach((w, i) => w.facts.forEach((f, j) => check(f.ch, `world[${i}].facts[${j}]`)))
+    card.foreshadow.forEach((f, i) => check(f.ch, `foreshadow[${i}]`))
+  } else if (card.profile === 'knowledge') {
+    card.claims.forEach((c, i) => check(c.ch, `claims[${i}]`))
+    card.concepts.forEach((c, i) => check(c.ch, `concepts[${i}]`))
+    card.methods.forEach((m, i) => check(m.ch, `methods[${i}]`))
+    card.quotes.forEach((q, i) => check(q.ch, `quotes[${i}]`))
+  } else {
+    card.events.forEach((e, i) => check(e.ch, `events[${i}]`))
+    card.characters.forEach((c, i) => c.facts.forEach((f, j) => check(f.ch, `characters[${i}].facts[${j}]`)))
+    card.world.forEach((w, i) => w.facts.forEach((f, j) => check(f.ch, `world[${i}].facts[${j}]`)))
+    card.quotes.forEach((q, i) => check(q.ch, `quotes[${i}]`))
+  }
+  if (stray.length > 0) {
+    throw new Error(`reading-card 章号越界（本章=${bounds.ch}）: ${stray.slice(0, 6).join('；')}`)
+  }
+  if (JSON.stringify(card).length > READING_CARD_LIMITS.cardChars) {
+    throw new Error(`reading-card 超过 ${READING_CARD_LIMITS.cardChars} 字上限，请压缩各域条目`)
+  }
+  return card
+}
+
+/* ---------- V4 ROSTER 输出（名册分片裁决与跨片合并） ---------- */
+
+export const ROSTER_TIERS = ['protagonist', 'major', 'minor', 'passerby', 'core', 'supporting', 'reference'] as const
+export type RosterTier = (typeof ROSTER_TIERS)[number]
+
+export interface RosterPartOutput {
+  groups: number[][]
+  tiers: Array<{ ref: number; tier: RosterTier; reason?: string }>
+  categories: Array<{ ref: number; category: string }>
+}
+
+const ROSTER_PART_SCHEMA = {
+  type: 'object',
+  properties: {
+    groups: { type: 'array', items: { type: 'array', items: { type: 'integer' }, minItems: 2 } },
+    tiers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          ref: { type: 'integer' },
+          tier: { enum: [...ROSTER_TIERS] },
+          reason: { type: 'string' },
+        },
+        required: ['ref', 'tier'],
+        additionalProperties: false,
+      },
+    },
+    categories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { ref: { type: 'integer' }, category: { type: 'string', minLength: 1 } },
+        required: ['ref', 'category'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['groups', 'tiers', 'categories'],
+  additionalProperties: false,
+} as const
+
+const validateRosterPart = new Ajv({ allErrors: true, removeAdditional: true }).compile(ROSTER_PART_SCHEMA)
+
+export function parseRosterPartOutput(data: unknown, bounds: { count: number }): RosterPartOutput {
+  // 注意：不经过 consolidate 归一（形态不同会洗坏载荷）；坏字段由 ajv removeAdditional 剥除
+  if (!validateRosterPart(data)) {
+    throw new Error(`roster-part 输出校验失败: ${ajv.errorsText(validateRosterPart.errors)}`)
+  }
+  const out = data as RosterPartOutput
+  const inBounds = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < bounds.count
+  return {
+    groups: out.groups.map((g) => [...new Set(g.filter(inBounds))]).filter((g) => g.length >= 2),
+    tiers: out.tiers.filter((t) => inBounds(t.ref)),
+    categories: out.categories.filter((c) => inBounds(c.ref) && typeof c.category === 'string'),
+  }
+}
+
+export interface RosterMergeOutput {
+  groups: number[][]
+}
+
+const ROSTER_MERGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    groups: { type: 'array', items: { type: 'array', items: { type: 'integer' }, minItems: 2 } },
+  },
+  required: ['groups'],
+  additionalProperties: false,
+} as const
+
+const validateRosterMerge = new Ajv({ allErrors: true, removeAdditional: true }).compile(ROSTER_MERGE_SCHEMA)
+
+export function parseRosterMergeOutput(data: unknown, bounds: { count: number }): RosterMergeOutput {
+  if (!validateRosterMerge(data)) {
+    throw new Error(`roster-merge 输出校验失败: ${ajv.errorsText(validateRosterMerge.errors)}`)
+  }
+  const out = data as RosterMergeOutput
+  const inBounds = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < bounds.count
+  return { groups: out.groups.map((g) => [...new Set(g.filter(inBounds))]).filter((g) => g.length >= 2) }
+}
+
+/* ---------- V4 BOOK REVIEW 输出（书级审校修复回路） ---------- */
+
+export interface ReviewIssue {
+  unitKey: string
+  description: string
+  chapterOrders: number[]
+  suggestion?: string
+}
+
+const REVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          unitKey: { type: 'string', minLength: 1 },
+          description: { type: 'string', minLength: 1 },
+          chapterOrders: { type: 'array', items: { type: 'integer' } },
+          suggestion: { type: 'string' },
+        },
+        required: ['unitKey', 'description'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['issues'],
+  additionalProperties: false,
+} as const
+
+const validateReview = new Ajv({ allErrors: true, removeAdditional: true }).compile(REVIEW_SCHEMA)
+
+export function parseReviewIssues(data: unknown, bounds: { max: number }): ReviewIssue[] {
+  if (!validateReview(data)) {
+    throw new Error(`book-review 输出校验失败: ${ajv.errorsText(validateReview.errors)}`)
+  }
+  const issues = (data as { issues: ReviewIssue[] }).issues
+  return issues
+    .map((i) => ({
+      unitKey: i.unitKey.slice(0, 120),
+      description: i.description.slice(0, 300),
+      chapterOrders: (i.chapterOrders ?? []).filter((n) => Number.isInteger(n) && n >= 0).slice(0, 20),
+      suggestion: typeof i.suggestion === 'string' ? i.suggestion.slice(0, 200) : undefined,
+    }))
+    .slice(0, bounds.max)
+}

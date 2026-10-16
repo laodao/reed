@@ -583,6 +583,10 @@ async function initDatabase(): Promise<void> {
   )
   await createKbBrainDimensions(ds)
   // 知识大脑 v3 M2：体系树/阶段表载荷（与 Electron 端同构）
+  const { addKbBrainV4Structures } = await import(
+    '@core/database/migrations/add-kb-brain-v4-structures'
+  )
+  await addKbBrainV4Structures(ds)
   const { addKbBrainV3Structures } = await import(
     '@core/database/migrations/add-kb-brain-v3-structures'
   )

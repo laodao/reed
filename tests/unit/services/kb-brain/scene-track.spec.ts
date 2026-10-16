@@ -135,6 +135,14 @@ describe('场面轨全链（双轨落库 + 回填 + 级联）', () => {
       if (req.system.includes('裁决员')) {
         return JSON.stringify({ duplicates: [], contradictions: [], novel: [] })
       }
+      if (req.system.includes('章级笔记员')) {
+        const m = req.user.match(/本章为第 (\d+) 章/)
+        const ch = Number(m?.[1] ?? 1)
+        return JSON.stringify({
+          v: 1, profile: 'novel', summary: `第${ch}章梗概。`,
+          events: [], characters: [], world: [], foreshadow: [], style: [],
+        })
+      }
       if (req.system.includes('场面记录员')) return SCENE_BACKFILL_RESP
       return ATOMIZE_WITH_SCENES
     }) as BrainLlmFn,

@@ -87,6 +87,16 @@ describe('KbBrainDigestService 全链路', () => {
     return {
       llm: (async req => {
         llmCalls.push({ system: req.system, user: req.user })
+        // v4：章级阅读卡遍（章级笔记员）返回合法卡 JSON（章号随用户提示）
+        if (req.system.includes('章级笔记员')) {
+          const m = req.user.match(/本章为第 (\d+) 章/)
+          const ch = Number(m?.[1] ?? 1)
+          return JSON.stringify({
+            v: 1, profile: 'novel', summary: `第${ch}章：程野与苏晚的舱内会合。`,
+            events: [], characters: [{ name: '程野', facts: [{ t: '失去左臂', ch }] }],
+            world: [], foreshadow: [], style: [],
+          })
+        }
         // 无候选时不触发裁决调用；有候选（ adjudicate prompt 含 NEW FACTS）返回全 novel
         if (req.system.includes('裁决员')) {
           const n = (req.user.match(/\[\d+\] /g) ?? []).length
@@ -271,8 +281,10 @@ describe('KbBrainDigestService 全链路', () => {
     const atoms = await atomRepo.findByDocument('doc-emb', { lensNoteId: null })
     expect(atoms.length).toBe(2)
     const passRows = await new KbDigestPassRepository(ds).listByDocument('doc-emb')
-    expect(passRows[0].status).toBe('done')
-    const stats = JSON.parse(passRows[0].statsJson ?? '{}') as { vectorsFailed: number }
+    // v4：card 遍先行，base 遍按 passType 定位
+    const baseRow = passRows.find((r) => r.passType === 'base')
+    expect(baseRow?.status).toBe('done')
+    const stats = JSON.parse(baseRow?.statsJson ?? '{}') as { vectorsFailed: number }
     expect(stats.vectorsFailed).toBe(2)
   })
 
@@ -414,6 +426,14 @@ describe('KbBrainDigestService 全链路', () => {
     deps.llm = (async req => {
       if (req.user.includes('程野推开舱门')) {
         throw new Error('data_inspection_failed: input may contain inappropriate content')
+      }
+      if (req.system.includes('章级笔记员')) {
+        const m = req.user.match(/本章为第 (\d+) 章/)
+        const ch = Number(m?.[1] ?? 1)
+        return JSON.stringify({
+          v: 1, profile: 'novel', summary: `第${ch}章梗概。`,
+          events: [], characters: [], world: [], foreshadow: [], style: [],
+        })
       }
       if (req.system.includes('裁决员')) {
         return JSON.stringify({

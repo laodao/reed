@@ -37,6 +37,11 @@ export type KbNoteType =
   | 'reading-review'
   | 'book-summary'
   | 'anti-pattern'
+  // v4 整书结构化漏斗：名册（人审卡）/ 人物档案 / 设定档案 / 文风画像
+  | 'roster'
+  | 'character-dossier'
+  | 'setting-dossier'
+  | 'style-profile'
 
 export type KbNoteStatus = 'proposed' | 'draft' | 'published' | 'archived'
 
@@ -96,6 +101,10 @@ export class KbNoteEntity {
   /** 视角卡：注意力框架 {attendTo:[],questions:[]}（JSON；视角遍 prompt 素材） */
   @Column({ name: 'lens_attention', type: 'text', nullable: true })
   lensAttention!: string | null
+
+  /** 阶段表载荷（v3 M2：structure-map/character-arc，[{name,position,function,...}]；迁移 add-kb-brain-v3-structures） */
+  @Column({ name: 'structure_stages', type: 'text', nullable: true })
+  structureStages!: string | null
 
   /** 经典性（浮现式判定=实例数×引用×收藏，P4 周期重算） */
   @Column({ name: 'classic_score', type: 'float', default: 0 })

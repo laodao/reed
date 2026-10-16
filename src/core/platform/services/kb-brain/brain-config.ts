@@ -140,6 +140,9 @@ export interface KbBrainState {
     smeltEvents?: number
     /** 品类归并（v2 P3，7d 冷却——归并低频重活） */
     lastCorpusMergeAt?: string
+    /** v4：章卡补跑 / 书级审校 上次执行时间 */
+    lastCardBackfillAt?: string
+    lastReviewAt?: string
   }
 }
 
