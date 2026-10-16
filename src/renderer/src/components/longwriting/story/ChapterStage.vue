@@ -1424,9 +1424,16 @@ async function executeGeneration() {
   const outline = currentOutlineForAction.value
   const outlineId = outline.id
 
+  // W1.1 参数贯通：对话框收集的参数随章法工作流进生成管线（空值=按大纲预估/默认文风）
+  const genParams = {
+    targetWords: generateForm.value.targetWords > 0 ? generateForm.value.targetWords : undefined,
+    style: generateForm.value.style || undefined,
+    extraPrompt: generateForm.value.extraPrompt.trim() || undefined
+  }
+
   showGenerateDialog.value = false
   currentOutlineForAction.value = null
-  await runChapterWorkflow(outlineId)
+  await runChapterWorkflow(outlineId, { ...genParams })
 }
 
 /**
@@ -1434,7 +1441,14 @@ async function executeGeneration() {
  * 一律走章法工作流 writeChapterFull：设计卡→自检→出场实体→一致性门禁→写→存→图谱→写后检查。
  * 工作流已落库，成功后从返回的 content 刷新编辑缓冲并同步自动保存水位。
  */
-async function runChapterWorkflow(outlineId: string, opts?: { overwrite?: boolean }) {
+interface ChapterGenParams {
+  targetWords?: number
+  style?: string
+  extraPrompt?: string
+  overwrite?: boolean
+}
+
+async function runChapterWorkflow(outlineId: string, opts?: ChapterGenParams) {
   if (generatingMap.value[outlineId]) {
     ElMessage.warning('该章节正在生成中')
     return
@@ -1445,7 +1459,12 @@ async function runChapterWorkflow(outlineId: string, opts?: { overwrite?: boolea
       `wf-${outlineId}-${Date.now()}`,
       props.projectId,
       outlineId,
-      { overwrite: opts?.overwrite }
+      {
+        overwrite: opts?.overwrite,
+        targetWords: opts?.targetWords,
+        style: opts?.style,
+        extraPrompt: opts?.extraPrompt
+      }
     )
     if (!result.success) {
       const err = result.error || '生成失败'
@@ -1458,7 +1477,8 @@ async function runChapterWorkflow(outlineId: string, opts?: { overwrite?: boolea
             type: 'warning'
           })
           generatingMap.value[outlineId] = false
-          return runChapterWorkflow(outlineId, { overwrite: true })
+          // 覆盖重写沿用本次对话框收集的生成参数
+          return runChapterWorkflow(outlineId, { ...opts, overwrite: true })
         } catch { /* 用户取消 */ }
       }
       ElMessage.error(err)

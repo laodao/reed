@@ -1492,10 +1492,15 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       _eventId: string,
       projectId: string,
       outlineId: string,
-      opts?: { targetWords?: number; overwrite?: boolean; providerConfigId?: string; modelId?: string }
+      opts?: { targetWords?: number; style?: string; extraPrompt?: string; overwrite?: boolean; providerConfigId?: string; modelId?: string }
     ) => {
       try {
-        const outcome = await runChapterWorkflowSync(projectId, outlineId, opts?.overwrite === true)
+        // W1.1 参数贯通：生成参数随 run 输入进工作流（不再被节点硬编码 2500 旁路）
+        const outcome = await runChapterWorkflowSync(projectId, outlineId, opts?.overwrite === true, undefined, {
+          targetWords: opts?.targetWords,
+          style: opts?.style,
+          extraPrompt: opts?.extraPrompt,
+        })
         if (!outcome.ok) return { success: false, error: outcome.error, eventId: _eventId }
         return { success: true, data: outcome.data, eventId: _eventId }
       } catch (error: any) {

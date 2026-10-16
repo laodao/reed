@@ -96,6 +96,10 @@ export interface ChapterWritingMethodOptions {
   outlineId: string
   overwrite?: boolean
   targetWords?: number
+  /** 写作风格（W1.1 参数贯通；空=默认文风） */
+  style?: string
+  /** 用户附加写作要求（W1.1 参数贯通；与共识账本合并注入「附加要求」分区） */
+  extraPrompt?: string
   /** 进度回调（工作流节点转 emitProgress；工具转 task:progress 事件） */
   onProgress?: (p: ChapterWritingProgress) => void
   signal?: AbortSignal
@@ -333,6 +337,12 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   onProgress?.({ step: 'gate', message: '一致性门禁检查（R1-R11+RV 未处理疑点会拒绝生成）' })
 
   onProgress?.({ step: 'write', message: '生成正文（设计卡+全书概要+前情事实注入）' })
+  // W1.1：用户附加要求与共识账本同注「九、附加要求」分区——账本修正优先级更高，置于最前
+  const userExtra = opts.extraPrompt?.trim() || ''
+  const consensusBlock = consensusText
+    ? `【作者已拍板的共识与修正（最高优先级，与大纲/上文冲突时以此为准，禁止出现被否决的写法）】\n${consensusText}`
+    : ''
+  const mergedExtra = [consensusBlock, userExtra].filter(Boolean).join('\n\n') || undefined
   const writeResult = await ai.generateChapter(
     `wf-write-${Date.now()}`,
     projectId,
@@ -340,9 +350,8 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
     opts.targetWords,
     stageModel.providerConfigId,
     stageModel.modelId,
-    undefined,
-    // 正文生成同样注入共识账本——大纲本身可能是旧设定，账本修正优先级更高
-    consensusText ? `【作者已拍板的共识与修正（最高优先级，与大纲/上文冲突时以此为准，禁止出现被否决的写法）】\n${consensusText}` : undefined,
+    opts.style,
+    mergedExtra,
     // overwrite：写前门禁放行仅引用本章的旧稿疑点（旧稿正文正是被替换对象）
     { overwrite: opts.overwrite === true },
   )

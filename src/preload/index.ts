@@ -2108,8 +2108,9 @@ const electronAPI = {
     // 章节工作台（38 号）：上下文预览 + 按勾选上下文生成
     chapterContextPreview: (projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) =>
       ipcRenderer.invoke('longwriting:chapterContextPreview', projectId, outlineId, opts),
-    /** 唯一正文写作入口：章法工作流全流程（含写后一致性检查），无旁路 */
-    writeChapterFull: (eventId: string, projectId: string, outlineId: string, opts?: { targetWords?: number; overwrite?: boolean; providerConfigId?: string; modelId?: string }) =>
+    /** 唯一正文写作入口：章法工作流全流程（含写后一致性检查），无旁路。
+     *  W1.1：targetWords/style/extraPrompt 随 run 输入进工作流（空=按大纲预估字数/默认文风） */
+    writeChapterFull: (eventId: string, projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string; overwrite?: boolean; providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:writeChapterFull', eventId, projectId, outlineId, opts),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),

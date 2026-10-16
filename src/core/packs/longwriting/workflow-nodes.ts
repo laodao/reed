@@ -47,7 +47,9 @@ const chapterWritingNode: WorkflowNodeHandler = {
       projectId?: string
       outlineId?: string
       overwrite?: boolean
-      targetWords?: number
+      targetWords?: number | string
+      style?: string
+      extraPrompt?: string
     }
     const projectId = stringifyValue(cfg.projectId ?? '')
     const outlineId = stringifyValue(cfg.outlineId ?? '')
@@ -55,6 +57,12 @@ const chapterWritingNode: WorkflowNodeHandler = {
     if (!outlineId) return { status: 'failed', error: '缺少 outlineId' }
     // 工作流模板传参是字符串（'true'/'false'）——不能直接真值判断
     const overwrite = cfg.overwrite === true || stringifyValue(cfg.overwrite ?? '') === 'true'
+    // W1.1 参数贯通：目标字数经模板解析可能是 string/undefined——防御转数字；
+    // 空 = 交由执行器回退大纲预估字数（显式参数 > estimatedWords > 默认）
+    const numTarget = Number(cfg.targetWords)
+    const targetWords = Number.isFinite(numTarget) && numTarget > 0 ? numTarget : undefined
+    const style = stringifyValue(cfg.style ?? '').trim() || undefined
+    const extraPrompt = stringifyValue(cfg.extraPrompt ?? '').trim() || undefined
 
     const { runChapterWritingMethod } = await import(
       '@core/packs/longwriting/services/chapter-writing-executor'
@@ -66,7 +74,9 @@ const chapterWritingNode: WorkflowNodeHandler = {
         projectId,
         outlineId,
         overwrite,
-        targetWords: cfg.targetWords,
+        targetWords,
+        style,
+        extraPrompt,
         signal: ctx.signal,
         onProgress: (p) => ctx.emitProgress(-1, `${p.step}：${p.message}`),
       })
