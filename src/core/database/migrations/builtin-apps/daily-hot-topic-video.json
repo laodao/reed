@@ -1,0 +1,369 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 每日热点自动成片（邮箱选题→吃瓜报告→短视频）",
+  "description": "每天 7:35 自动拉取邮箱（默认 254400283@qq.com，约 7:19 送达的每日互联网热门话题搜集）→ AI 识别日报邮件并提取话题清单 → 表单勾选选题（可多选）→ 循环逐主题调用「吃瓜热点事件分析报告」（报告长图+短视频脚本入资产库）→ 配置齐 模型/配音音色/配音Provider/文生图Provider 后自动接「短视频脚本生成视频V3」（大纲/素材板人工审核通过后合成成片）。",
+  "category": "新闻资讯",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 320 },
+        "config": {
+          "inputs": [
+            { "key": "emailAccount", "label": "热点邮件邮箱账号", "type": "string", "required": false, "defaultValue": "254400283@qq.com", "help": "系统设置 → 邮箱账号 里的账号（填邮箱地址或账号 ID）；该账号需已完成服务器与授权码配置" },
+            { "key": "subjectKeyword", "label": "邮件主题包含关键词（可选）", "type": "string", "required": false, "defaultValue": "", "help": "填了则只搜主题含该词的邮件；留空 = AI 自动从当天收件箱识别热点日报" },
+            { "key": "maxTopics", "label": "最多提取话题数", "type": "number", "required": false, "defaultValue": 12 },
+            { "key": "model", "label": "文本模型（选题/吃瓜报告/视频文案）", "type": "model", "modelTypes": ["text", "multimodal"], "required": false, "help": "留空 = 系统默认模型（报告与脚本仍会生成）；但视频生成要求显式选择模型，留空将跳过成片" },
+            { "key": "stylePrompt", "label": "吃瓜报告风格提示词（可选）", "type": "textarea", "required": false, "defaultValue": "", "help": "如：民国报纸风 / 港媒八卦小报风 / 公众号长文风；留空 = 常规清晰报告" },
+            { "key": "request", "label": "吃瓜偏好（可选）", "type": "textarea", "required": false, "defaultValue": "" },
+            { "key": "videoType", "label": "短视频V3 视频类型预设", "type": "select", "required": false, "defaultValue": "news-talk", "options": [
+              { "label": "财经深度", "value": "financial-deep" },
+              { "label": "资讯口播", "value": "news-talk" },
+              { "label": "知识科普", "value": "knowledge" },
+              { "label": "电商种草", "value": "ecommerce" },
+              { "label": "品牌宣传", "value": "brand" },
+              { "label": "旅行记录", "value": "travel" }
+            ] },
+            { "key": "visualStrategy", "label": "短视频V3 画面策略", "type": "select", "required": false, "defaultValue": "auto", "options": [
+              { "label": "自动（按视频类型）", "value": "auto" },
+              { "label": "意象化空镜（imagery）", "value": "imagery" },
+              { "label": "素材驱动（asset）", "value": "asset" }
+            ] },
+            { "key": "stockCredentialId", "label": "真实素材库凭据（可选）", "type": "select-dynamic", "source": "credentials", "required": false, "help": "配置 Pexels/Pixabay API Key 后优先使用真实视频素材" },
+            { "key": "imageModelId", "label": "文生图模型 ID（短视频V3）", "type": "string", "required": false, "defaultValue": "krea2", "help": "生成兜底画面的图像模型；与「文生图 Provider」配套" },
+            { "key": "ttsVoiceId", "label": "配音音色 ID（自动成片必填）", "type": "string", "required": false, "defaultValue": "", "help": "留空则只生成报告与脚本、跳过视频" },
+            { "key": "ttsVoiceProvider", "label": "配音 Provider（自动成片必填）", "type": "select-dynamic", "source": "providerConfigs", "required": false },
+            { "key": "imageProvider", "label": "文生图 Provider（自动成片必填）", "type": "select-dynamic", "source": "providerConfigs", "required": false }
+          ]
+        }
+      },
+      {
+        "id": "mailSearch",
+        "type": "tool-call",
+        "name": "搜索今日邮件",
+        "position": { "x": 280, "y": 320 },
+        "config": {
+          "toolType": "preset",
+          "toolId": "preset:email-search",
+          "params": [
+            { "key": "accountId", "value": "{{start.emailAccount}}" },
+            { "key": "since", "value": "{{sys.today}}" },
+            { "key": "subject", "value": "{{start.subjectKeyword}}" },
+            { "key": "limit", "value": "30" }
+          ]
+        }
+      },
+      {
+        "id": "mailPick",
+        "type": "code",
+        "name": "整理收件摘要",
+        "position": { "x": 500, "y": 320 },
+        "config": {
+          "code": "const payload = inputs.payload || {};\nconst messages = Array.isArray(payload.messages) ? payload.messages : [];\nconst lines = messages.map(function (m, i) {\n  return '[' + (i + 1) + '] uid=' + m.uid + ' | ' + String(m.date || '').slice(0, 16).replace('T', ' ') + ' | 来自 ' + (m.from || '') + ' | 主题：' + (m.subject || '');\n});\nreturn {\n  hasMail: messages.length > 0 ? 'yes' : 'no',\n  count: messages.length,\n  listText: lines.join('\\n'),\n  error: payload.success === false ? String(payload.error || '邮件查询失败') : ''\n};",
+          "inputs": [
+            { "key": "payload", "value": "{{mailSearch.json}}" }
+          ]
+        }
+      },
+      {
+        "id": "mailGate",
+        "type": "condition",
+        "name": "今天有邮件吗",
+        "position": { "x": 720, "y": 320 },
+        "config": {
+          "branches": [
+            { "branchId": "hasMail", "label": "有邮件", "conditions": [{ "left": "{{mailPick.result.hasMail}}", "operator": "eq", "right": "yes" }] },
+            { "branchId": "noMail", "label": "无邮件", "conditions": [{ "left": "{{mailPick.result.hasMail}}", "operator": "ne", "right": "yes" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noMail"
+        }
+      },
+      {
+        "id": "noMailMsg",
+        "type": "message",
+        "name": "无邮件提示",
+        "position": { "x": 940, "y": 560 },
+        "config": {
+          "content": "今日（{{sys.today}}）未在 {{start.emailAccount}} 收件箱找到热点邮件（{{mailPick.result.count}} 封）。可能原因：每日热点搜集还没送达、主题关键词不匹配、或邮箱账号配置有误。{{mailPick.result.error}}"
+        }
+      },
+      {
+        "id": "pickMail",
+        "type": "llm-chat",
+        "name": "AI 识别热点日报邮件",
+        "position": { "x": 940, "y": 320 },
+        "config": {
+          "systemPrompt": "你是邮件分拣员。从今天的收件箱摘要中找出「每日互联网热门话题/热点日报」类邮件：优先主题含 热点/热搜/热榜/日报/早报/资讯 等关键词、或发件人为资讯聚合服务的邮件，同一主题多封时取最新一封。找不到明显日报时，选日期最新的一封。只输出 JSON，不要解释。",
+          "prompt": "今天日期：{{sys.today}}\n收件箱摘要（最新在前）：\n{{mailPick.result.listText}}\n\n只输出 JSON：{\"uid\": 数字, \"subject\": \"所选邮件主题\", \"reason\": \"选择理由（20字内）\"}",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "mailRead",
+        "type": "tool-call",
+        "name": "读取日报正文",
+        "position": { "x": 1160, "y": 320 },
+        "config": {
+          "toolType": "preset",
+          "toolId": "preset:email-read",
+          "params": [
+            { "key": "accountId", "value": "{{start.emailAccount}}" },
+            { "key": "uid", "value": "{{pickMail.parsed.uid}}" }
+          ]
+        }
+      },
+      {
+        "id": "bodyPrep",
+        "type": "code",
+        "name": "正文清洗",
+        "position": { "x": 1380, "y": 320 },
+        "config": {
+          "code": "const msg = inputs.message || {};\nlet body = String(msg.text || '').trim();\nif (!body) {\n  body = String(msg.html || '')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<[^>]+>/g, '\\n')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\nreturn { subject: String(msg.subject || ''), from: String(msg.from || ''), body: body.slice(0, 30000) };",
+          "inputs": [
+            { "key": "message", "value": "{{mailRead.json.message}}" }
+          ]
+        }
+      },
+      {
+        "id": "topicsExtract",
+        "type": "llm-chat",
+        "name": "AI 提取热点话题清单",
+        "position": { "x": 1600, "y": 320 },
+        "config": {
+          "systemPrompt": "你是热点编辑。从邮件正文中提取当日互联网热门话题清单。规则：\n1. 只要真正的话题/事件（有具体人物/公司/作品/事件名），排除广告、订阅提醒、栏目预告、往期回顾\n2. title 是具体的话题关键词（8~30 字，能直接当搜索引擎关键词，如「某某公司宣布裁员20%」），不要宽泛分类词（如「科技」「财经」）\n3. summary 一句话简介（40 字内）\n4. heat 标注热度：高/中/低\n5. 按热度从高到低排序，最多 {{start.maxTopics}} 条；话题不足就少输出\n只输出 JSON，不要解释。",
+          "prompt": "邮件主题：{{bodyPrep.result.subject}}\n发件人：{{bodyPrep.result.from}}\n正文：\n{{bodyPrep.result.body}}\n\n只输出 JSON：{\"topics\":[{\"title\":\"话题关键词\",\"summary\":\"一句话简介\",\"heat\":\"高|中|低\"}]}",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "topicGate",
+        "type": "condition",
+        "name": "提取到话题了吗",
+        "position": { "x": 1820, "y": 320 },
+        "config": {
+          "branches": [
+            { "branchId": "hasTopics", "label": "有话题", "conditions": [{ "left": "{{topicsExtract.parsed.topics}}", "operator": "not_empty" }] },
+            { "branchId": "noTopics", "label": "无话题", "conditions": [{ "left": "{{topicsExtract.parsed.topics}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noTopics"
+        }
+      },
+      {
+        "id": "noTopicsMsg",
+        "type": "message",
+        "name": "无话题提示",
+        "position": { "x": 2040, "y": 560 },
+        "config": {
+          "content": "已读取邮件《{{bodyPrep.result.subject}}》，但未能从中提取出今日热点话题，流水线结束。"
+        }
+      },
+      {
+        "id": "topicForm",
+        "type": "form-collect",
+        "name": "今日选题（勾选确认）",
+        "position": { "x": 2040, "y": 320 },
+        "config": {
+          "formTitle": "📋 今日热点选题（{{sys.today}}）——勾选想做的主题（可多选），确认后逐主题生成吃瓜报告与短视频",
+          "fields": [
+            { "key": "topics", "label": "热点话题", "type": "list-check", "source": "{{topicsExtract.parsed.topics}}", "itemLabel": "{{item.title}}（{{item.summary}}｜热度:{{item.heat}}）", "itemKey": "{{item.title}}", "defaultChecked": false },
+            { "key": "note", "label": "补充要求（可选，转给吃瓜报告与脚本）", "type": "string", "required": false, "defaultValue": "" }
+          ],
+          "timeoutMs": null
+        }
+      },
+      {
+        "id": "cancelMsg",
+        "type": "message",
+        "name": "取消提示",
+        "position": { "x": 2260, "y": 620 },
+        "config": {
+          "content": "已取消本次选题，流水线结束（热点邮件明天会再次拉取）。"
+        }
+      },
+      {
+        "id": "selectPrep",
+        "type": "code",
+        "name": "整理已选主题",
+        "position": { "x": 2260, "y": 320 },
+        "config": {
+          "code": "const checked = Array.isArray(inputs.checked) ? inputs.checked : [];\nconst topics = Array.isArray(inputs.topics) ? inputs.topics : [];\nconst note = String(inputs.note || '').trim();\nconst selected = checked.map(function (t) {\n  const hit = topics.find(function (x) { return x && x.title === t; });\n  return hit ? { title: hit.title, summary: hit.summary || '', heat: hit.heat || '' } : { title: String(t), summary: '', heat: '' };\n}).filter(function (x) { return x.title; });\nreturn { selected: selected, note: note, count: selected.length, titlesText: selected.map(function (x) { return x.title; }).join('、') };",
+          "inputs": [
+            { "key": "checked", "value": "{{topicForm.values.topics.checked}}" },
+            { "key": "topics", "value": "{{topicsExtract.parsed.topics}}" },
+            { "key": "note", "value": "{{topicForm.values.note}}" }
+          ]
+        }
+      },
+      {
+        "id": "selGate",
+        "type": "condition",
+        "name": "选了主题吗",
+        "position": { "x": 2480, "y": 320 },
+        "config": {
+          "branches": [
+            { "branchId": "go", "label": "已选主题", "conditions": [{ "left": "{{selectPrep.result.selected}}", "operator": "not_empty" }] },
+            { "branchId": "none", "label": "未选主题", "conditions": [{ "left": "{{selectPrep.result.selected}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "none"
+        }
+      },
+      {
+        "id": "noSelMsg",
+        "type": "message",
+        "name": "未选提示",
+        "position": { "x": 2700, "y": 560 },
+        "config": {
+          "content": "未勾选任何主题，本次流水线结束。"
+        }
+      },
+      {
+        "id": "topicLoop",
+        "type": "loop",
+        "name": "逐主题生产",
+        "position": { "x": 2700, "y": 320 },
+        "config": { "listExpression": "{{selectPrep.result.selected}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "gossipSub",
+        "type": "sub-workflow",
+        "name": "吃瓜热点事件分析报告",
+        "position": { "x": 2940, "y": 320 },
+        "config": {
+          "definitionId": "builtin_def_gossip-event-report",
+          "inputs": [
+            { "key": "event", "value": "{{topicLoop.item.title}}" },
+            { "key": "model", "value": "{{start.model}}" },
+            { "key": "stylePrompt", "value": "{{start.stylePrompt}}" },
+            { "key": "request", "value": "{{selectPrep.result.note}}" }
+          ]
+        }
+      },
+      {
+        "id": "v3Gate",
+        "type": "condition",
+        "name": "视频生成闸门",
+        "position": { "x": 3160, "y": 320 },
+        "config": {
+          "branches": [
+            { "branchId": "make", "label": "生成视频", "conditions": [
+              { "left": "{{gossipSub.result}}", "operator": "not_empty" },
+              { "left": "{{start.model}}", "operator": "not_empty" },
+              { "left": "{{start.ttsVoiceId}}", "operator": "not_empty" },
+              { "left": "{{start.ttsVoiceProvider}}", "operator": "not_empty" },
+              { "left": "{{start.imageProvider}}", "operator": "not_empty" }
+            ] },
+            { "branchId": "skip", "label": "跳过视频", "conditions": [
+              { "left": "{{gossipSub.result}}", "operator": "is_empty" },
+              { "left": "{{start.ttsVoiceId}}", "operator": "is_empty" }
+            ] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "skip"
+        }
+      },
+      {
+        "id": "v3Sub",
+        "type": "sub-workflow",
+        "name": "短视频脚本生成视频V3",
+        "position": { "x": 3400, "y": 240 },
+        "config": {
+          "definitionId": "builtin_def_script-to-video-v3",
+          "inputs": [
+            { "key": "scriptSource", "value": "text" },
+            { "key": "scriptText", "value": "{{gossipSub.result}}" },
+            { "key": "topic", "value": "{{topicLoop.item.title}}" },
+            { "key": "keyPoints", "value": "{{topicLoop.item.summary}}" },
+            { "key": "model", "value": "{{start.model}}" },
+            { "key": "videoType", "value": "{{start.videoType}}" },
+            { "key": "visualStrategy", "value": "{{start.visualStrategy}}" },
+            { "key": "stockCredentialId", "value": "{{start.stockCredentialId}}" },
+            { "key": "imageModelId", "value": "{{start.imageModelId}}" },
+            { "key": "voiceId", "value": "{{start.ttsVoiceId}}" },
+            { "key": "voiceProviderConfigId", "value": "{{start.ttsVoiceProvider}}" },
+            { "key": "imageProviderConfigId", "value": "{{start.imageProvider}}" }
+          ]
+        }
+      },
+      {
+        "id": "skipVideoMsg",
+        "type": "message",
+        "name": "跳过视频提示",
+        "position": { "x": 3400, "y": 480 },
+        "config": {
+          "content": "「{{topicLoop.item.title}}」跳过视频生成：吃瓜脚本未生成，或 模型/配音音色/配音Provider/文生图Provider 未配齐。报告与脚本资产不受影响；在流水线「开始」输入中配齐后重跑，或手动运行「短视频脚本生成视频V3」引用脚本资产即可成片。"
+        }
+      },
+      {
+        "id": "doneMsg",
+        "type": "message",
+        "name": "完成汇总",
+        "position": { "x": 3660, "y": 320 },
+        "config": {
+          "content": "今日热点流水线完成：{{topicLoop.count}} 个主题（{{selectPrep.result.titlesText}}）。吃瓜报告/长图/短视频脚本已存资产库；通过视频闸门的主题已交由「短视频脚本生成视频V3」处理——请在 工作流 → 审核 中完成各视频的大纲与素材板审核，通过后自动合成成片并通知。"
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 3880, "y": 320 },
+        "config": {
+          "title": "每日热点流水线完成",
+          "message": "{{topicLoop.count}} 个主题处理完毕（{{selectPrep.result.titlesText}}）；报告与脚本已入资产库，视频生成进度见工作流运行详情与审核中心。",
+          "level": "success"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 4100, "y": 320 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "mailSearch", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "mailSearch", "targetNodeId": "mailPick", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "mailPick", "targetNodeId": "mailGate", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "mailGate", "targetNodeId": "pickMail", "kind": "branch", "branchId": "hasMail" },
+      { "id": "e5", "sourceNodeId": "mailGate", "targetNodeId": "noMailMsg", "kind": "branch", "branchId": "noMail" },
+      { "id": "e6", "sourceNodeId": "noMailMsg", "targetNodeId": "end", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "pickMail", "targetNodeId": "mailRead", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "mailRead", "targetNodeId": "bodyPrep", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "bodyPrep", "targetNodeId": "topicsExtract", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "topicsExtract", "targetNodeId": "topicGate", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "topicGate", "targetNodeId": "topicForm", "kind": "branch", "branchId": "hasTopics" },
+      { "id": "e12", "sourceNodeId": "topicGate", "targetNodeId": "noTopicsMsg", "kind": "branch", "branchId": "noTopics" },
+      { "id": "e13", "sourceNodeId": "noTopicsMsg", "targetNodeId": "end", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "topicForm", "targetNodeId": "selectPrep", "kind": "approve" },
+      { "id": "e15", "sourceNodeId": "topicForm", "targetNodeId": "cancelMsg", "kind": "reject" },
+      { "id": "e16", "sourceNodeId": "cancelMsg", "targetNodeId": "end", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "selectPrep", "targetNodeId": "selGate", "kind": "normal" },
+      { "id": "e18", "sourceNodeId": "selGate", "targetNodeId": "topicLoop", "kind": "branch", "branchId": "go" },
+      { "id": "e19", "sourceNodeId": "selGate", "targetNodeId": "noSelMsg", "kind": "branch", "branchId": "none" },
+      { "id": "e20", "sourceNodeId": "noSelMsg", "targetNodeId": "end", "kind": "normal" },
+      { "id": "e21", "sourceNodeId": "topicLoop", "targetNodeId": "gossipSub", "kind": "loop-body" },
+      { "id": "e22", "sourceNodeId": "gossipSub", "targetNodeId": "v3Gate", "kind": "normal" },
+      { "id": "e23", "sourceNodeId": "v3Gate", "targetNodeId": "v3Sub", "kind": "branch", "branchId": "make" },
+      { "id": "e24", "sourceNodeId": "v3Gate", "targetNodeId": "skipVideoMsg", "kind": "branch", "branchId": "skip" },
+      { "id": "e25", "sourceNodeId": "v3Sub", "targetNodeId": "topicLoop", "kind": "loop-back" },
+      { "id": "e26", "sourceNodeId": "skipVideoMsg", "targetNodeId": "topicLoop", "kind": "loop-back" },
+      { "id": "e27", "sourceNodeId": "topicLoop", "targetNodeId": "doneMsg", "kind": "loop-done" },
+      { "id": "e28", "sourceNodeId": "doneMsg", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e29", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [{ "type": "cron", "expression": "35 7 * * *", "timezone": "Asia/Shanghai", "preset": "daily", "enabled": true }],
+  "settings": { "maxOutputChars": 800000, "maxDurationMs": 43200000 }
+}

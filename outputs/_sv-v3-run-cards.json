@@ -1,0 +1,288 @@
+{
+  "runId": "wfrun_1789604555647_ag8gd6p4y",
+  "status": "succeeded",
+  "rows": [
+    {
+      "source": "stock-video",
+      "relevance": -1,
+      "searchQuery": "city aerial timelapse",
+      "provider": "pexels",
+      "stockId": "11933153",
+      "pageUrl": "https://www.pexels.com/video/city-at-night-11933153/",
+      "author": "Gerson  Bahena",
+      "license": "pexels",
+      "duration": 12,
+      "caption": "8月规上工业增5.2%超预期",
+      "concept": "8月规上工业增速超预期反弹",
+      "subject": "集装箱堆场、货轮、城市天际线",
+      "setting": "沿海港口与周边城区",
+      "imagePath": "",
+      "clipPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11933153.mp4",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604695282160995723eabea0b8c1f90eb8f6ac3e313c526（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#11933153（1080×1920，13s）｜检索词「city aerial timelapse」｜授权：pexels｜未质检"
+    },
+    {
+      "source": "stock-video",
+      "relevance": -1,
+      "searchQuery": "car assembly line",
+      "provider": "pexels",
+      "stockId": "34948758",
+      "pageUrl": "https://www.pexels.com/video/efficient-motorcycle-assembly-in-modern-factory-34948758/",
+      "author": "Emrul Kausar Emon",
+      "license": "pexels",
+      "duration": 13,
+      "caption": "新能源汽车产量单月增21.9%",
+      "concept": "新动能产业增速跑赢大盘",
+      "subject": "自动化机械臂、新能源整车",
+      "setting": "新能源车企总装车间",
+      "imagePath": "",
+      "clipPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_34948758.mp4",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604705995637105f9e0c7bada5e282be23591e67a74a104（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#34948758（1080×1920，9s）｜检索词「car assembly line」｜授权：pexels｜未质检"
+    },
+    {
+      "source": "stock-video",
+      "relevance": -1,
+      "searchQuery": "steel mill plant",
+      "provider": "pexels",
+      "stockId": "35493065",
+      "pageUrl": "https://www.pexels.com/video/aerial-view-of-a-modern-cement-plant-in-desert-35493065/",
+      "author": "Mumtaz  Niazi",
+      "license": "pexels",
+      "duration": 12,
+      "caption": "水泥钢材原油加工量同比下滑",
+      "concept": "传统工业品产量同比大幅下滑",
+      "subject": "钢铁高炉、炼化装置管道",
+      "setting": "重化工业园区",
+      "imagePath": "",
+      "clipPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_35493065.mp4",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 0217896047182658b056a623bf426f62c797dc732369cf9cd4de4（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#35493065（2160×3840，12s）｜检索词「steel mill plant」｜授权：pexels｜未质检"
+    },
+    {
+      "source": "stock-video",
+      "relevance": -1,
+      "searchQuery": "warehouse logistics conveyor",
+      "provider": "pexels",
+      "stockId": "38052460",
+      "pageUrl": "https://www.pexels.com/video/industrial-factory-conveyor-system-overview-38052460/",
+      "author": "Gitti Whittaker",
+      "license": "pexels",
+      "duration": 11,
+      "caption": "规上工业产销率同比微降",
+      "concept": "工业产销率微降需求待回暖",
+      "subject": "高架仓储货架、叉车",
+      "setting": "通用商品仓储中心",
+      "imagePath": "",
+      "clipPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_38052460.mp4",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 0217896047631155fbc2824c96fe07bca989dad8a4db3a05a2656（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#38052460（1080×1920，15s）｜检索词「warehouse logistics conveyor」｜授权：pexels｜未质检"
+    },
+    {
+      "source": "stock-video",
+      "relevance": -1,
+      "searchQuery": "industrial city skyline",
+      "provider": "pexels",
+      "stockId": "38847574",
+      "pageUrl": "https://www.pexels.com/video/aerial-view-of-suburban-landscape-in-black-and-white-38847574/",
+      "author": "Altaf Shah",
+      "license": "pexels",
+      "duration": 10,
+      "caption": "工业反弹结构性特征明确",
+      "concept": "工业增长结构性分化特征明确",
+      "subject": "产业园区厂房灯光",
+      "setting": "城郊新旧动能产业聚集区",
+      "imagePath": "",
+      "clipPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_38847574.mp4",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604782886d5261995f9623e565b5d66b904398165ab7d9c（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#38847574（2160×3840，21s）｜检索词「industrial city skyline」｜授权：pexels｜未质检"
+    },
+    {
+      "source": "stock-video",
+      "relevance": -1,
+      "searchQuery": "crowd using smartphones night",
+      "provider": "pexels",
+      "stockId": "7815127",
+      "pageUrl": "https://www.pexels.com/video/man-using-smartphone-7815127/",
+      "author": "George Pak",
+      "license": "pexels",
+      "duration": 12,
+      "caption": "你的行业8月是涨是跌？",
+      "concept": "后续观察方向与互动引导",
+      "subject": "街头人群、手机屏幕",
+      "setting": "城市夜晚商业街",
+      "imagePath": "",
+      "clipPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_7815127.mp4",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604817723dceccb6eac83fbed179ddd9eacafd80e252130（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#7815127（2160×3840，11s）｜检索词「crowd using smartphones night」｜授权：pexels｜未质检"
+    }
+  ],
+  "timeline": [
+    {
+      "id": "start",
+      "status": "succeeded"
+    },
+    {
+      "id": "readScript",
+      "status": "succeeded"
+    },
+    {
+      "id": "readRef",
+      "status": "succeeded"
+    },
+    {
+      "id": "readBase",
+      "status": "succeeded"
+    },
+    {
+      "id": "refPick",
+      "status": "succeeded"
+    },
+    {
+      "id": "kbQuery",
+      "status": "succeeded"
+    },
+    {
+      "id": "kbText",
+      "status": "succeeded"
+    },
+    {
+      "id": "scriptSrc",
+      "status": "succeeded"
+    },
+    {
+      "id": "preset",
+      "status": "succeeded"
+    },
+    {
+      "id": "strategy",
+      "status": "succeeded"
+    },
+    {
+      "id": "writerPick",
+      "status": "succeeded"
+    },
+    {
+      "id": "writerCall",
+      "status": "succeeded"
+    },
+    {
+      "id": "writerMd",
+      "status": "succeeded"
+    },
+    {
+      "id": "outlineReview",
+      "status": "succeeded"
+    },
+    {
+      "id": "baseList",
+      "status": "succeeded"
+    },
+    {
+      "id": "shotsGen",
+      "status": "succeeded"
+    },
+    {
+      "id": "splitShots",
+      "status": "succeeded"
+    },
+    {
+      "id": "loopMat",
+      "status": "succeeded"
+    },
+    {
+      "id": "visualShot",
+      "status": "succeeded"
+    },
+    {
+      "id": "matItem",
+      "status": "succeeded"
+    },
+    {
+      "id": "visualShot",
+      "status": "succeeded"
+    },
+    {
+      "id": "matItem",
+      "status": "succeeded"
+    },
+    {
+      "id": "visualShot",
+      "status": "succeeded"
+    },
+    {
+      "id": "matItem",
+      "status": "succeeded"
+    },
+    {
+      "id": "visualShot",
+      "status": "succeeded"
+    },
+    {
+      "id": "matItem",
+      "status": "succeeded"
+    },
+    {
+      "id": "visualShot",
+      "status": "succeeded"
+    },
+    {
+      "id": "matItem",
+      "status": "succeeded"
+    },
+    {
+      "id": "visualShot",
+      "status": "succeeded"
+    },
+    {
+      "id": "matItem",
+      "status": "succeeded"
+    },
+    {
+      "id": "loopBase",
+      "status": "succeeded"
+    },
+    {
+      "id": "boardMerge",
+      "status": "succeeded"
+    },
+    {
+      "id": "boardReview",
+      "status": "succeeded"
+    },
+    {
+      "id": "segPlan",
+      "status": "succeeded"
+    },
+    {
+      "id": "loopVideo",
+      "status": "succeeded"
+    },
+    {
+      "id": "tts1",
+      "status": "succeeded"
+    },
+    {
+      "id": "segments",
+      "status": "succeeded"
+    },
+    {
+      "id": "comp1",
+      "status": "succeeded"
+    },
+    {
+      "id": "saveVideo",
+      "status": "succeeded"
+    },
+    {
+      "id": "saveOutline",
+      "status": "succeeded"
+    },
+    {
+      "id": "saveBoard",
+      "status": "succeeded"
+    },
+    {
+      "id": "notify1",
+      "status": "succeeded"
+    },
+    {
+      "id": "end",
+      "status": "succeeded"
+    }
+  ]
+}

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>④ 分镜</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div class="workbench sidebar-right">
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="00-project-list.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 / 第 1 集 · 茶馆相遇
+      </div>
+      <div class="stepper">
+        <a class="step done" href="01-stage-content.html"><span class="dot">✓</span><span>① 内容</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step done" href="02-stage-asset.html"><span class="dot">✓</span><span>② 资产</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step done" href="03-stage-script.html"><span class="dot">✓</span><span>③ 剧本</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step active" href="04-stage-storyboard.html"><span class="dot">●</span><span>④ 分镜</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="05-stage-production.html"><span class="dot">○</span><span>⑤ 画面+音频</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="06-stage-compose.html"><span class="dot">○</span><span>⑥ 合成</span></a>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>角色</span><span class="count">3</span></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>张三</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>李四</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>老板娘</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>地点</span><span class="count">2</span></div>
+        <div class="sidebar-item"><div class="thumb">🏛</div><div>茶馆</div></div>
+        <div class="sidebar-item"><div class="thumb">🌆</div><div>客栈 <span class="meta"><span class="tag tag-3d" style="font-size: 9px; padding: 1px 4px;">3D</span></span></div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>物品</span><span class="count">4</span></div>
+        <div class="sidebar-item"><div class="thumb">🗡</div><div>长剑</div></div>
+        <div class="sidebar-item"><div class="thumb">🪭</div><div>折扇</div></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="main-header">
+        <div>
+          <div class="main-title">④ 分镜阶段</div>
+          <div class="main-subtitle">3 个场景共 12 个分镜 · 累计预估 56s</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn">✨ AI 一键拆所有场景</button>
+          <button class="btn btn-success">完成本阶段 →</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 200px 1fr; gap: 16px;">
+
+        <!-- 左：场景树 -->
+        <div class="scene-tree">
+          <div class="scene-tree-item active">📁 场景 1 · 茶馆 · 黄昏 (4 镜)</div>
+          <div class="scene-tree-item shot">1.1 远景 · 5s</div>
+          <div class="scene-tree-item shot">1.2 中景 · 5s</div>
+          <div class="scene-tree-item shot">1.3 特写 · 3s</div>
+          <div class="scene-tree-item shot">1.4 中近景 · 4s</div>
+          <div class="scene-tree-item">📁 场景 2 · 茶馆 · 夜晚 (4 镜)</div>
+          <div class="scene-tree-item shot">2.1 远景 · 6s</div>
+          <div class="scene-tree-item shot">2.2 中景 · 5s</div>
+          <div class="scene-tree-item shot">2.3 特写 · 3s</div>
+          <div class="scene-tree-item shot">2.4 全景 · 8s</div>
+          <div class="scene-tree-item">📁 场景 3 · 客栈 · 白天 (4 镜)</div>
+          <div class="scene-tree-item shot">3.1 远景 · 5s</div>
+          <div class="scene-tree-item shot">3.2 推镜 · 6s</div>
+          <div class="scene-tree-item shot">3.3 特写 · 4s</div>
+          <div class="scene-tree-item shot">3.4 全景 · 6s</div>
+        </div>
+
+        <!-- 右：分镜网格 -->
+        <div>
+          <div style="background: var(--color-primary-light); border-left: 3px solid var(--color-primary); padding: 10px 14px; border-radius: 0 4px 4px 0; font-size: 13px; color: var(--color-text); margin-bottom: 14px;">
+            <strong>场景 1 · 茶馆 · 黄昏 · 阴天</strong>
+            ｜地点: <span class="tag tag-linked-lw" style="font-size: 11px;">📍 茶馆</span>
+            ｜出场: <span class="tag tag-linked-lw" style="font-size: 11px;">👤 张三</span> <span class="tag tag-linked-lw" style="font-size: 11px;">👤 李四</span>
+            ｜原文: "夕阳下他缓缓走入..."
+          </div>
+
+          <div class="shot-grid">
+
+            <div class="shot-card">
+              <div class="shot-thumb">
+                <span class="shot-no">1.1</span>
+                <span>🌅</span>
+                <span class="status done">✓</span>
+                <span class="duration">5.0s</span>
+              </div>
+              <div class="shot-body">
+                <div class="shot-title">远景 · 平视 · 固定</div>
+                <div class="shot-meta">2 关键帧 · 张三 + 李四 · 折扇</div>
+              </div>
+            </div>
+
+            <div class="shot-card active">
+              <div class="shot-thumb">
+                <span class="shot-no">1.2</span>
+                <span>👨</span>
+                <span class="status gen">⏳</span>
+                <span class="duration">5.0s</span>
+              </div>
+              <div class="shot-body">
+                <div class="shot-title">中景 · 仰拍 · 推镜</div>
+                <div class="shot-meta">5 关键帧 · 张三 · 折扇 (held)</div>
+              </div>
+            </div>
+
+            <div class="shot-card">
+              <div class="shot-thumb">
+                <span class="shot-no">1.3</span>
+                <span>👁</span>
+                <span class="status todo">○</span>
+                <span class="duration">3.0s</span>
+              </div>
+              <div class="shot-body">
+                <div class="shot-title">特写 · 平视 · 固定</div>
+                <div class="shot-meta">1 关键帧 · 李四 · surprised</div>
+              </div>
+            </div>
+
+            <div class="shot-card">
+              <div class="shot-thumb">
+                <span class="shot-no">1.4</span>
+                <span>👫</span>
+                <span class="status todo">○</span>
+                <span class="duration">4.0s</span>
+              </div>
+              <div class="shot-body">
+                <div class="shot-title">中近景 · 平视 · 摇镜</div>
+                <div class="shot-meta">3 关键帧 · 张三 + 李四</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 当前选中分镜的编辑面板 -->
+          <div class="keyframe-panel" style="margin-top: 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div>
+                <span style="font-weight: 600;">分镜 1.2 编辑</span>
+                <span style="margin-left: 10px; color: var(--color-text-tertiary); font-size: 12px;">已选中</span>
+              </div>
+              <a href="05-stage-production.html" class="btn btn-primary btn-sm">→ 进入画面+音频</a>
+            </div>
+
+            <div class="toolbar" style="border: none; padding: 0; margin: 0;">
+              <span style="font-size: 12px; color: var(--color-text-secondary);">景别:</span>
+              <select><option>中景</option><option>远景</option><option>全景</option><option>特写</option></select>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">角度:</span>
+              <select><option>仰拍</option><option>平视</option><option>俯拍</option></select>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">运镜:</span>
+              <select><option>推镜</option><option>固定</option><option>摇镜</option><option>移镜</option></select>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">时长:</span>
+              <input type="number" value="5.0" step="0.5" style="width: 60px;"> s
+            </div>
+
+            <div style="margin-top: 14px;">
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">关键帧数（按复杂度选；UI 默认呈"九宫格"形态）</div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="btn btn-sm">1</button>
+                <button class="btn btn-sm">2</button>
+                <button class="btn btn-sm">3</button>
+                <button class="btn btn-sm">4</button>
+                <button class="btn btn-primary btn-sm">5 (建议)</button>
+                <button class="btn btn-sm">6</button>
+                <button class="btn btn-sm">7</button>
+                <button class="btn btn-sm">8</button>
+                <button class="btn btn-sm">9</button>
+                <span style="font-size: 12px; color: var(--color-text-tertiary); margin-left: 12px;">
+                  推镜 + 推荐 3-5 帧 → keyframesToVideo
+                </span>
+              </div>
+            </div>
+
+            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-bg);">
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">画面描述（AI 生成关键帧时用）</div>
+              <textarea style="width: 100%; min-height: 60px; border: 1px solid var(--color-border); border-radius: 4px; padding: 8px; font-family: inherit; font-size: 13px;">
+张三推门而入，从沙发缓缓起身走向窗边的李四。镜头从张三脚部仰拍开始推近至面部，神情严肃，手中折扇紧握。</textarea>
+            </div>
+
+            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-bg);">
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">镜头内角色站位 / 表情 / 动作（独立配置）</div>
+              <div style="display: grid; grid-template-columns: 80px 1fr 1fr 1fr 1fr; gap: 8px; font-size: 12px; align-items: center;">
+                <div style="font-weight: 600;">张三</div>
+                <select><option>位置: center</option></select>
+                <select><option>表情: angry</option></select>
+                <select><option>朝向: front</option></select>
+                <select><option>动作: 持折扇</option></select>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block done"></div>
+        <div class="timeline-block partial"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">12 分镜已布局 · 1 已出片 · 累计预计 56s</span>
+      <button class="timeline-action">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="03-stage-script.html" class="btn btn-sm" style="background: white;">上一步</a>
+    <a href="05-stage-production.html" class="btn btn-primary btn-sm">下一步 → ⑤</a>
+  </div>
+</body>
+</html>

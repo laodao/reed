@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- CSP：worker-src 放开 blob: 供讲义「运行 JS」沙箱（Worker）使用；
+         注意仍**不**开 'unsafe-eval'——片段代码内联进 Worker 顶层执行，不需要 eval -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: local-image:; media-src 'self' file: local-image: local-file: local-video:;" />
+    <title>The Bot - AI 工具箱</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

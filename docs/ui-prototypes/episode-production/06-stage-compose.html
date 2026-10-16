@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>⑥ 合成 · 时间线</title>
+  <link rel="stylesheet" href="shell.css">
+  <style>
+    .preview-area {
+      background: linear-gradient(135deg, #1a1a2e, #2c3e50);
+      aspect-ratio: 16 / 9;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.6);
+      position: relative;
+      overflow: hidden;
+    }
+    .preview-area .play-btn {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .preview-area .timecode {
+      position: absolute;
+      bottom: 10px; left: 12px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .preview-area .preview-info {
+      position: absolute;
+      top: 10px; left: 12px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    /* 时间线 */
+    .timeline-area {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+
+    .timeline-ruler {
+      height: 18px;
+      background: var(--color-bg);
+      border-radius: 3px;
+      position: relative;
+      margin-bottom: 6px;
+      display: flex;
+    }
+    .timeline-ruler .tick {
+      flex: 1;
+      border-left: 1px solid var(--color-border);
+      font-size: 10px;
+      color: var(--color-text-tertiary);
+      padding: 2px 4px;
+    }
+    .timeline-ruler .tick:first-child { border-left: none; }
+
+    .track-row {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .track-label {
+      font-size: 11px;
+      color: var(--color-text-secondary);
+      text-align: right;
+      padding-right: 4px;
+    }
+    .track-content {
+      height: 36px;
+      background: var(--color-bg);
+      border-radius: 3px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+    }
+
+    .clip {
+      height: 100%;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: white;
+      cursor: pointer;
+      position: relative;
+    }
+    .clip.video1 { background: linear-gradient(135deg, #4a90e2, #357abd); }
+    .clip.video2 { background: linear-gradient(135deg, #5cb85c, #4a9d4a); }
+    .clip.video3 { background: linear-gradient(135deg, #f0ad4e, #d99443); }
+    .clip.audio { background: linear-gradient(135deg, #888, #666); }
+    .clip.subtitle { background: linear-gradient(135deg, #c2185b, #a01448); }
+    .clip.bgm { background: linear-gradient(135deg, #ddd, #aaa); color: var(--color-text-secondary); }
+    .clip.empty { background: var(--color-border); }
+
+    .clip .clip-name {
+      padding: 0 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 转场标记 */
+    .transition-marker {
+      width: 8px;
+      height: 100%;
+      background: rgba(192,24,91,0.6);
+      flex-shrink: 0;
+      position: relative;
+    }
+    .transition-marker::after {
+      content: '⇄';
+      position: absolute;
+      top: -16px; left: -2px;
+      font-size: 10px;
+      color: var(--color-danger);
+    }
+
+    .playhead {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 2px;
+      background: var(--color-danger);
+      pointer-events: none;
+      left: 30%;
+    }
+    .playhead::before {
+      content: '';
+      position: absolute;
+      top: -4px; left: -4px;
+      width: 10px; height: 10px;
+      background: var(--color-danger);
+      border-radius: 50%;
+    }
+
+    .export-options {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="workbench sidebar-right">
+
+    <!-- 顶部进度条 -->
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="00-project-list.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 · 第一季
+        <span class="ep-meta">/ 第 1 集 · 茶馆相遇</span>
+      </div>
+      <div class="stepper">
+        <a class="step done" href="01-stage-content.html"><span class="dot">✓</span><span>① 内容</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step done" href="02-stage-asset.html"><span class="dot">✓</span><span>② 资产</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step done" href="03-stage-script.html"><span class="dot">✓</span><span>③ 剧本</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step done" href="04-stage-storyboard.html"><span class="dot">✓</span><span>④ 分镜</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step done" href="05-stage-production.html"><span class="dot">✓</span><span>⑤ 画面+音频</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step active" href="06-stage-compose.html"><span class="dot">●</span><span>⑥ 合成</span></a>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-sm">设置</button>
+      </div>
+    </div>
+
+    <!-- 资产侧栏 -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>角色</span><span class="count">3</span></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>张三</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>李四</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>老板娘</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>地点</span><span class="count">2</span></div>
+        <div class="sidebar-item"><div class="thumb">🏛</div><div>茶馆</div></div>
+        <div class="sidebar-item"><div class="thumb">🌆</div><div>客栈</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>语音</span><span class="count">5</span></div>
+        <div class="sidebar-item"><div class="thumb voice">🎙</div><div>沉稳男声</div></div>
+        <div class="sidebar-item"><div class="thumb voice">🎙</div><div>温柔女声</div></div>
+      </div>
+    </div>
+
+    <!-- 主区域 -->
+    <div class="main">
+
+      <div class="main-header">
+        <div>
+          <div class="main-title">⑥ 合成成片</div>
+          <div class="main-subtitle">12 个分镜全部出片 · 累计 56 秒 · 即将合成 1080p MP4</div>
+        </div>
+        <button class="btn btn-success">📥 导出 MP4</button>
+      </div>
+
+      <!-- 预览窗口 -->
+      <div style="display: grid; grid-template-columns: 1fr 320px; gap: 16px; margin-bottom: 16px;">
+        <div class="preview-area">
+          <div class="preview-info">分镜 1.2 · 茶馆 · 黄昏 · 阴天</div>
+          <div class="play-btn">▶</div>
+          <div class="timecode">00:08.25 / 00:56.00</div>
+        </div>
+
+        <div class="export-options">
+          <div style="font-weight: 600; margin-bottom: 12px;">导出参数</div>
+          <div style="display: grid; gap: 10px;">
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 3px;">分辨率</div>
+              <select style="width: 100%; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 12px;">
+                <option>1080p (1920×1080) · 16:9</option>
+                <option>720p (1280×720) · 16:9</option>
+                <option>4K (3840×2160) · 16:9</option>
+                <option>1080p 竖屏 (1080×1920) · 9:16</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 3px;">帧率</div>
+              <select style="width: 100%; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 12px;">
+                <option>30 fps</option>
+                <option>24 fps</option>
+                <option>60 fps</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 3px;">编码</div>
+              <select style="width: 100%; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 12px;">
+                <option>H.264 (兼容广)</option>
+                <option>H.265 / HEVC (体积小)</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 3px;">字幕</div>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <input type="checkbox" checked> 烧入硬字幕
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px;">
+                <input type="checkbox"> 同时输出 .srt
+              </label>
+            </div>
+          </div>
+          <div style="margin-top: 14px; padding: 8px 10px; background: var(--color-bg); border-radius: 4px; font-size: 11px; color: var(--color-text-secondary);">
+            预估文件大小：~38 MB · 渲染时长 ~2 分钟
+          </div>
+        </div>
+      </div>
+
+      <!-- 时间线 -->
+      <div class="timeline-area">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="font-weight: 600;">时间线</div>
+          <div style="display: flex; gap: 6px; font-size: 12px; color: var(--color-text-tertiary);">
+            <span class="kbd">Space</span> 播放
+            <span class="kbd">←/→</span> 跳帧
+            <span class="kbd">M</span> 标记
+          </div>
+        </div>
+
+        <!-- 时间标尺 -->
+        <div class="track-row">
+          <div class="track-label"></div>
+          <div class="timeline-ruler">
+            <div class="tick">0s</div>
+            <div class="tick">10s</div>
+            <div class="tick">20s</div>
+            <div class="tick">30s</div>
+            <div class="tick">40s</div>
+            <div class="tick">50s</div>
+            <div class="tick">60s</div>
+          </div>
+        </div>
+
+        <!-- 视频轨 -->
+        <div class="track-row">
+          <div class="track-label">视频 V1</div>
+          <div class="track-content" style="position: relative;">
+            <div class="clip video1" style="width: 8.5%;"><span class="clip-name">1.1 远 5s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video1" style="width: 8.5%;"><span class="clip-name">1.2 中 5s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video1" style="width: 5%;"><span class="clip-name">1.3 特 3s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video1" style="width: 6.5%;"><span class="clip-name">1.4 中 4s</span></div>
+
+            <div class="clip empty" style="width: 1%;"></div>
+
+            <div class="clip video2" style="width: 10%;"><span class="clip-name">2.1 远 6s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video2" style="width: 8.5%;"><span class="clip-name">2.2 中 5s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video2" style="width: 5%;"><span class="clip-name">2.3 特 3s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video2" style="width: 13.5%;"><span class="clip-name">2.4 全 8s</span></div>
+
+            <div class="clip empty" style="width: 1%;"></div>
+
+            <div class="clip video3" style="width: 8.5%;"><span class="clip-name">3.1 远 5s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video3" style="width: 10%;"><span class="clip-name">3.2 推 6s</span></div>
+            <div class="transition-marker"></div>
+            <div class="clip video3" style="width: 6.5%;"><span class="clip-name">3.3 特 4s</span></div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+
+        <!-- 字幕轨 -->
+        <div class="track-row">
+          <div class="track-label">字幕</div>
+          <div class="track-content" style="position: relative;">
+            <div class="clip subtitle" style="width: 8.5%;"><span class="clip-name">夕阳下他...</span></div>
+            <div class="clip empty" style="width: 0.5%;"></div>
+            <div class="clip subtitle" style="width: 8.5%;"><span class="clip-name">你来了</span></div>
+            <div class="clip empty" style="width: 0.5%;"></div>
+            <div class="clip subtitle" style="width: 5%;"><span class="clip-name">惊讶</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip subtitle" style="width: 6%;"><span class="clip-name">等你很久了</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip subtitle" style="width: 10%;"><span class="clip-name">夜深时...</span></div>
+            <div class="clip empty" style="width: 0.5%;"></div>
+            <div class="clip subtitle" style="width: 8.5%;"><span class="clip-name">取出书信</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip subtitle" style="width: 13%;"><span class="clip-name">长剑微颤</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip subtitle" style="width: 25%;"><span class="clip-name">客栈续...</span></div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+
+        <!-- 旁白音轨 -->
+        <div class="track-row">
+          <div class="track-label">旁白 A1 🔊</div>
+          <div class="track-content" style="position: relative;">
+            <div class="clip audio" style="width: 8.5%;"><span class="clip-name">旁白 1.1</span></div>
+            <div class="clip empty" style="width: 0.5%;"></div>
+            <div class="clip audio" style="width: 22%;"><span class="clip-name">旁白 1.2-1.4</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip empty" style="width: 36%;"></div>
+            <div class="clip audio" style="width: 25%;"><span class="clip-name">旁白 3</span></div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+
+        <!-- 对话音轨 -->
+        <div class="track-row">
+          <div class="track-label">对话 A2 🔊</div>
+          <div class="track-content" style="position: relative;">
+            <div class="clip empty" style="width: 9%;"></div>
+            <div class="clip audio" style="width: 8.5%;"><span class="clip-name">张三 "你来了"</span></div>
+            <div class="clip empty" style="width: 0.5%;"></div>
+            <div class="clip audio" style="width: 5%;"><span class="clip-name">李四 反应</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip audio" style="width: 6%;"><span class="clip-name">李 "等你很久了"</span></div>
+            <div class="clip empty" style="width: 1%;"></div>
+            <div class="clip audio" style="width: 23%;"><span class="clip-name">场景 2 对话</span></div>
+            <div class="clip empty" style="width: 26%;"></div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+
+        <!-- BGM -->
+        <div class="track-row">
+          <div class="track-label">BGM A3 🔊</div>
+          <div class="track-content" style="position: relative;">
+            <div class="clip bgm" style="width: 28%;"><span class="clip-name">古风弦乐 缓 (loop) · 30%</span></div>
+            <div class="clip bgm" style="width: 36%;"><span class="clip-name">古风弦乐 缓 · 25%</span></div>
+            <div class="clip bgm" style="width: 25%;"><span class="clip-name">明朗笛声 · 20%</span></div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-bg); font-size: 12px; color: var(--color-text-secondary);">
+          <span>🎬 12 视频片段</span>
+          <span>⇄ 9 个转场（淡入淡出 / 硬切）</span>
+          <span>📄 12 段字幕</span>
+          <span>🔊 3 音轨（旁白/对话/BGM）</span>
+          <span style="margin-left: auto;">总时长 56s</span>
+        </div>
+      </div>
+
+      <!-- 完成 -->
+      <div style="background: var(--color-success-light); border-left: 3px solid var(--color-success); padding: 12px 14px; border-radius: 0 4px 4px 0; font-size: 13px; margin-top: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">✓</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: var(--color-success);">所有素材就绪 — 可以导出</div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 2px;">
+              12/12 分镜出片 · 字幕 / 旁白 / 对话 / BGM 全部混音 · 转场配置完成
+            </div>
+          </div>
+          <button class="btn btn-sm">▶ 完整预览</button>
+          <button class="btn btn-success">📥 导出 MP4</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 底部时间线（成片就绪状态） -->
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+      </div>
+      <span class="timeline-stat">12/12 分镜全完成 · 56s</span>
+      <button class="timeline-action">▶ 试播全片</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="05-stage-production.html" class="btn btn-sm" style="background: white;">上一步</a>
+    <a href="00-project-list.html" class="btn btn-primary btn-sm">完成 → 项目列表</a>
+  </div>
+</body>
+</html>

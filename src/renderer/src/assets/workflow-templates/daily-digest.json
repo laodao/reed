@@ -1,0 +1,27 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "定时每日摘要",
+  "description": "每天定时联网搜索 → LLM 汇总生成日报（发布并启用定时触发后生效）",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 220 }, "config": { "inputs": [{ "key": "topic", "label": "关注主题", "type": "string", "required": true, "defaultValue": "人工智能" }] } },
+      { "id": "ws_1", "type": "web-search", "name": "联网搜索", "position": { "x": 280, "y": 220 }, "config": { "query": "{{start.topic}} 最新进展 {{sys.today}}", "maxResults": 8 } },
+      { "id": "llm_1", "type": "llm-chat", "name": "汇总生成", "position": { "x": 500, "y": 220 }, "config": { "systemPrompt": "你是资讯编辑，把搜索结果整理为结构化日报（markdown），标注来源。", "prompt": "主题：{{start.topic}}\\n日期：{{sys.today}}\\n\\n搜索结果：\\n{{ws_1.results}}" } },
+      { "id": "report_1", "type": "report", "name": "日报输出", "position": { "x": 720, "y": 220 }, "config": { "title": "{{start.topic}}日报 {{sys.today}}", "template": "{{llm_1.content}}", "format": "markdown" } },
+      { "id": "notify_1", "type": "app-notify", "name": "完成通知", "position": { "x": 940, "y": 220 }, "config": { "title": "日报已生成", "message": "{{start.topic}}日报（{{sys.today}}）已完成", "level": "success" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 1140, "y": 220 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "ws_1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "ws_1", "targetNodeId": "llm_1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "llm_1", "targetNodeId": "report_1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "report_1", "targetNodeId": "notify_1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "notify_1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [{ "type": "cron", "expression": "0 9 * * *", "preset": "daily", "enabled": true }],
+  "settings": null
+}

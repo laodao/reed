@@ -1,0 +1,25 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "内容生成+人工审核",
+  "description": "LLM 生成内容 → 人工审核（可修改后批准）→ 报告输出",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 220 }, "config": { "inputs": [{ "key": "topic", "label": "主题", "type": "string", "required": true }] } },
+      { "id": "llm_1", "type": "llm-chat", "name": "生成初稿", "position": { "x": 280, "y": 220 }, "config": { "systemPrompt": "你是专业内容创作者，输出结构清晰的 markdown。", "prompt": "围绕「{{start.topic}}」写一篇简短文章" } },
+      { "id": "rev_1", "type": "human-review", "name": "人工审核", "position": { "x": 500, "y": 220 }, "config": { "payload": "{{llm_1.content}}", "timeoutMs": null, "timeoutPolicy": "fail", "interaction": "input", "editableFields": [{ "key": "output_result", "label": "内容", "type": "string" }] } },
+      { "id": "report_1", "type": "report", "name": "终稿报告", "position": { "x": 720, "y": 220 }, "config": { "title": "{{start.topic}}", "template": "# {{start.topic}}\n\n{{rev_1.output_result}}", "format": "markdown" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 940, "y": 220 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "llm_1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "llm_1", "targetNodeId": "rev_1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "rev_1", "targetNodeId": "report_1", "kind": "approve" },
+      { "id": "e4", "sourceNodeId": "report_1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

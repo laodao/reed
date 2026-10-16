@@ -1,0 +1,184 @@
+{
+  "runId": "wfrun_1789604555647_ag8gd6p4y",
+  "outline": "## 《8月工业数据出炉：5.2%增速背后的冷热差》\n**定位**：聚焦2026年8月规上工业核心数据，拆解增长背后的行业分化与潜在隐忧\n**结构**：钩子（增速超预期反弹）→事实（核心增长数据点）→质疑（数据间的结构矛盾）→观点（增长的结构性特征明确）→引导（互动提问）\n**总时长目标**：约70秒\n\n## 口播全文\n8月规模以上工业增加值同比增5.2%，比上个月直接快了0.7个百分点，这个反弹幅度超不少市场预期 | 其中制造业同比涨6.1%，出口交货值大涨11.1%，新能源汽车产量单月飙21.9%，高技术装备类行业增速普遍跑赢大盘 | 但更值得注意的是，为什么高增长的同时，水泥、钢材产量分别同比大降11.7%、5.5%，原油加工量也降了6.9% | 规上工业产销率同比还降了0.1个百分点，是否意味着部分下游需求仍未完全回暖 | 从公开数据看，这一轮工业反弹的结构性特征非常明确，新动能拉动力远大于传统产业 | 后续重点要看外需的高增能不能持续，内需补短板的力度会不会跟上 | 你所在的行业8月是涨是跌？评论区聊聊\n\n## 分段\n- **段落1** 作用：钩子｜要点：规上工业增加值5.2%增速超预期反弹｜口径：国家统计局公开数据｜口播：8月规模以上工业增加值同比增5.2%，比上个月直接快了0.7个百分点，这个反弹幅度超不少市场预期\n- **段落2** 作用：事实呈现｜要点：核心增长领域数据｜口径：国家统计局公开数据｜口播：其中制造业同比涨6.1%，出口交货值大涨11.1%，新能源汽车产量单月飙21.9%，高技术装备类行业增速普遍跑赢大盘\n- **段落3** 作用：第一组质疑｜要点：高增长与传统工业品产量下滑的矛盾｜口径：国家统计局公开数据｜口播：但更值得注意的是，为什么高增长的同时，水泥、钢材产量分别同比大降11.7%、5.5%，原油加工量也降了6.9%\n- **段落4** 作用：第二组质疑｜要点：增速反弹与产销率下滑的矛盾｜口径：国家统计局公开数据｜口播：规上工业产销率同比还降了0.1个百分点，是否意味着部分下游需求仍未完全回暖\n- **段落5** 作用：观点输出｜要点：增长的结构性特征｜口径：无（公开数据推导观点）｜口播：从公开数据看，这一轮工业反弹的结构性特征非常明确，新动能拉动力远大于传统产业\n- **段落6** 作用：收束+引导｜要点：后续观察方向+互动｜口径：无｜口播：后续重点要看外需的高增能不能持续，内需补短板的力度会不会跟上。你所在的行业8月是涨是跌？评论区聊聊\n\n## 质疑与观点依据（给审核人看的内部清单，不进入口播）\n- 质疑1：高技术行业高增与传统建材、上游加工品产量大幅下滑的矛盾，依据：素材中制造业增6.1%、新能源汽车增21.9%，同时水泥降11.7%、钢材降5.5%、原油加工量降6.9%\n- 质疑2：工业增加值增速反弹与产销率微降的矛盾，依据：素材中规上工业增加值同比增5.2%，但产销率同比降0.1个百分点\n- 观点依据：素材中分行业数据显示装备制造、电子信息类行业增速普遍在9%以上，远高于传统行业平均水平，结构性分化特征明确",
+  "board": {},
+  "segPlan": {
+    "h3List": [],
+    "segments": [
+      {
+        "cardIndex": 0,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11933153.mp4",
+        "duration": 12,
+        "caption": "8月规上工业增5.2%超预期",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 1,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_34948758.mp4",
+        "duration": 13,
+        "caption": "新能源汽车产量单月增21.9%",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 2,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_35493065.mp4",
+        "duration": 12,
+        "caption": "水泥钢材原油加工量同比下滑",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 3,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_38052460.mp4",
+        "duration": 11,
+        "caption": "规上工业产销率同比微降",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 4,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_38847574.mp4",
+        "duration": 10,
+        "caption": "工业反弹结构性特征明确",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 5,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_7815127.mp4",
+        "duration": 12,
+        "caption": "你的行业8月是涨是跌？",
+        "origin": "stock-video"
+      }
+    ],
+    "count": 6,
+    "h3Count": 0
+  },
+  "segments": {
+    "segments": [
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11933153.mp4",
+        "kind": "video",
+        "duration": 12,
+        "caption": "8月规上工业增5.2%超预期",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_34948758.mp4",
+        "kind": "video",
+        "duration": 13,
+        "caption": "新能源汽车产量单月增21.9%",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_35493065.mp4",
+        "kind": "video",
+        "duration": 12,
+        "caption": "水泥钢材原油加工量同比下滑",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_38052460.mp4",
+        "kind": "video",
+        "duration": 11,
+        "caption": "规上工业产销率同比微降",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_38847574.mp4",
+        "kind": "video",
+        "duration": 10,
+        "caption": "工业反弹结构性特征明确",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_7815127.mp4",
+        "kind": "video",
+        "duration": 12,
+        "caption": "你的行业8月是涨是跌？",
+        "motion": "none"
+      }
+    ],
+    "count": 6
+  },
+  "videoPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\videos\\脚本成片_mu4simer.mp4",
+  "nodeStatus": {
+    "start": "succeeded",
+    "readScript": "succeeded",
+    "readRef": "succeeded",
+    "readBase": "succeeded",
+    "refPick": "succeeded",
+    "kbQuery": "succeeded",
+    "kbText": "succeeded",
+    "scriptSrc": "succeeded",
+    "preset": "succeeded",
+    "strategy": "succeeded",
+    "writerPick": "succeeded",
+    "writerCall": "succeeded",
+    "writerMd": "succeeded",
+    "outlineReview": "succeeded",
+    "baseList": "succeeded",
+    "shotsGen": "succeeded",
+    "splitShots": "succeeded",
+    "loopMat": "succeeded",
+    "visualShot": "succeeded",
+    "matItem": "succeeded",
+    "loopBase": "succeeded",
+    "boardMerge": "succeeded",
+    "boardReview": "succeeded",
+    "segPlan": "succeeded",
+    "loopVideo": "succeeded",
+    "tts1": "succeeded",
+    "segments": "succeeded",
+    "comp1": "succeeded",
+    "saveVideo": "succeeded",
+    "saveOutline": "succeeded",
+    "saveBoard": "succeeded",
+    "notify1": "succeeded",
+    "end": "succeeded"
+  },
+  "notes": [
+    "终态 succeeded"
+  ],
+  "visualShotNotes": [
+    {
+      "status": "succeeded",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604695282160995723eabea0b8c1f90eb8f6ac3e313c526（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#11933153（1080×1920，13s）｜检索词「city aerial timelapse」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604705995637105f9e0c7bada5e282be23591e67a74a104（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#34948758（1080×1920，9s）｜检索词「car assembly line」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 0217896047182658b056a623bf426f62c797dc732369cf9cd4de4（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#35493065（2160×3840，12s）｜检索词「steel mill plant」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 0217896047631155fbc2824c96fe07bca989dad8a4db3a05a2656（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#38052460（1080×1920，15s）｜检索词「warehouse logistics conveyor」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604782886d5261995f9623e565b5d66b904398165ab7d9c（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#38847574（2160×3840，21s）｜检索词「industrial city skyline」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "视觉质检不可用（按检索词命中直接采用）：The parameter `messages.content.type` specified in the request are not valid: invalid value: `image`, supported values are: `text`, `image_url`, `video_url`, `input_audio`, and `file`. Request id: 021789604817723dceccb6eac83fbed179ddd9eacafd80e252130（provider=pc_mmyf038f_3do48dnca，model=ep-20260225205702-vh6zc）；真实视频素材采用：pexels#7815127（2160×3840，11s）｜检索词「crowd using smartphones night」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    }
+  ]
+}

@@ -1,0 +1,548 @@
+/**
+ * 全局样式入口
+ */
+
+// 变量
+@use './element-plus.scss';
+
+// ==================== CSS 变量（动态主题） ====================
+
+:root {
+  // 默认主题色（云水蓝·淡雅）
+  --color-primary: #6fa8dc;
+  --color-primary-light: #8fc0ea;
+  --color-primary-dark: #4f8ac4;
+  --color-primary-rgb: 111, 168, 220;
+  --color-secondary: #85b5e0;
+  --color-gradient: linear-gradient(135deg, #6fa8dc 0%, #a8ccf0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #3d6e9e 0%, #2a4f76 100%);
+  --color-glow: rgba(111, 168, 220, 0.35);
+  --color-accent: #f2f7fc;
+  --color-accent-light: #f7fbfe;
+  --color-accent-dark: #ddeaf7;
+
+  // 功能色
+  --color-success: #67c23a;
+  --color-warning: #e6a23c;
+  --color-danger: #f56c6c;
+  --color-info: #909399;
+
+  // 功能色浅色版本（Element Plus 风格）
+  --color-success-light-9: #f0f9eb;
+  --color-warning-light-9: #fdf6ec;
+  --color-danger-light-9: #fef0f0;
+  --color-info-light-9: #f4f4f5;
+
+  // 特性紫（新版人像设计"修改面部"等特性标识色；spec 2026-07-24 / 皮肤方案 D3）
+  --color-purple: #6d5efc;
+  --color-purple-light-3: #9a8ffc;
+  --color-purple-light-9: #f0edff;
+  --color-purple-dark-2: #5a4cf0;
+
+  // 主色浅色版本（Element Plus 风格，默认值，会被 JS 动态更新）
+  --color-primary-light-3: #7ba39c;
+  --color-primary-light-5: #9cb8b3;
+  --color-primary-light-7: #bdcdc9;
+  --color-primary-light-8: #ced9d7;
+  --color-primary-light-9: #e8f0ef;
+
+  // 文字颜色（兼容 Element Plus 风格）
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-placeholder: #c0c4cc;
+  --text-color-primary: var(--text-primary);
+  --text-color-regular: var(--text-regular);
+  --text-color-secondary: var(--text-secondary);
+  --text-color-placeholder: var(--text-placeholder);
+
+  // 边框颜色（兼容 Element Plus 风格）
+  --border-color: #dcdfe6;
+  --border-color-light: #e4e7ed;
+  --border-color-lighter: #ebeef5;
+  --border-color-extra-light: #f2f5fa;
+
+  // 填充颜色（Element Plus 风格）
+  --fill-color: #f0f2f5;
+  --fill-color-light: #f5f7fa;
+  --fill-color-lighter: #fafafa;
+  --fill-color-blank: #ffffff;
+
+  // 背景颜色
+  --bg-color: #ffffff;
+  --bg-color-page: #faf9f7;
+  --bg-color-hover: #f1f5f9;
+  --bg-color-card: #ffffff;
+
+  // 阴影
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-glow: 0 0 30px var(--color-glow);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --box-shadow-light: 0 2px 12px rgba(0, 0, 0, 0.1);
+
+  // 过渡
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --transition-smooth: 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  // 布局
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 68px;
+  --header-height: 56px;
+
+  // 圆角
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  // 字体大小（可通过 JS 动态修改）
+  --font-size-base: 12px;
+  --line-height-base: 1.55;
+
+  // ==================== 结构 token · 侧栏（classic 默认 = 现状值；皮肤方案 D3） ====================
+  --sidebar-bg: var(--color-sidebar-gradient);
+  --sidebar-glass: rgba(255, 255, 255, 0.05);
+  --sidebar-text: rgba(255, 255, 255, 0.8);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-text-dim: rgba(255, 255, 255, 0.55);
+  --sidebar-item-hover-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-item-active-bg: rgba(255, 255, 255, 0.15);
+  --sidebar-item-active-shadow: var(--shadow-glow);
+  --sidebar-footer-border: rgba(255, 255, 255, 0.1);
+}
+
+// ==================== 现代皮肤（data-skin="modern"，皮肤方案 D3） ====================
+// 切换机制：useSkin composable 在 documentElement 上设置 data-skin。
+// classic（:root 默认）视觉必须与改造前一致；modern 为深色侧栏 + 克制动效。
+[data-skin="modern"] {
+  --sidebar-bg: #0f1419;
+  --sidebar-glass: transparent;
+  --sidebar-text: #8a94a6;
+  --sidebar-text-strong: #ffffff;
+  --sidebar-text-dim: #5a6577;
+  --sidebar-item-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-item-active-bg: linear-gradient(90deg, rgba(44, 95, 246, 0.22), rgba(44, 95, 246, 0.08));
+  --sidebar-item-active-shadow: none;
+  --sidebar-footer-border: rgba(255, 255, 255, 0.06);
+}
+
+// ==================== 现代主题系列（淡雅 / 清新 / 鲜艳 / 暖色 / 沉稳） ====================
+
+// ========== 淡雅系（主色调浅，整体柔和） ==========
+
+// 【云水蓝】浅蓝如云 - 轻盈淡雅
+[data-theme="cloud-blue"] {
+  --color-primary: #6fa8dc;
+  --color-primary-light: #8fc0ea;
+  --color-primary-dark: #4f8ac4;
+  --color-primary-rgb: 111, 168, 220;
+  --color-secondary: #85b5e0;
+  --color-gradient: linear-gradient(135deg, #6fa8dc 0%, #a8ccf0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #3d6e9e 0%, #2a4f76 100%);
+  --color-glow: rgba(111, 168, 220, 0.35);
+  --color-accent: #f2f7fc;
+  --color-accent-light: #f7fbfe;
+  --color-accent-dark: #ddeaf7;
+  --bg-color-page: #f8fbfe;
+}
+
+// 【淡雾紫】薰衣薄雾 - 温柔恬静
+[data-theme="light-lavender"] {
+  --color-primary: #9b8ad6;
+  --color-primary-light: #b4a6e6;
+  --color-primary-dark: #7c6ab8;
+  --color-primary-rgb: 155, 138, 214;
+  --color-secondary: #a99bd8;
+  --color-gradient: linear-gradient(135deg, #9b8ad6 0%, #bfb2ea 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #5d4c8e 0%, #463a6e 100%);
+  --color-glow: rgba(155, 138, 214, 0.35);
+  --color-accent: #f4f1fb;
+  --color-accent-light: #f9f7fd;
+  --color-accent-dark: #e5def4;
+  --bg-color-page: #f9f7fc;
+}
+
+// ========== 清新系 ==========
+
+// 【海盐蓝】海风拂面 - 清透辽阔
+[data-theme="ocean-blue"] {
+  --color-primary: #4a7fbf;
+  --color-primary-light: #6fa3db;
+  --color-primary-dark: #35679e;
+  --color-primary-rgb: 74, 127, 191;
+  --color-secondary: #5f96c9;
+  --color-gradient: linear-gradient(135deg, #4a7fbf 0%, #7fb3e8 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #2c5480 0%, #1e3d5e 100%);
+  --color-glow: rgba(74, 127, 191, 0.35);
+  --color-accent: #eef4fb;
+  --color-accent-light: #f5f9fd;
+  --color-accent-dark: #d8e6f4;
+  --bg-color-page: #f6f9fc;
+}
+
+// 【薄荷青】薄荷微凉 - 自然清新
+[data-theme="mint-green"] {
+  --color-primary: #3fa88a;
+  --color-primary-light: #5fc0a3;
+  --color-primary-dark: #2f8a72;
+  --color-primary-rgb: 63, 168, 138;
+  --color-secondary: #4fb39a;
+  --color-gradient: linear-gradient(135deg, #3fa88a 0%, #6fc9b0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #25705c 0%, #1a5445 100%);
+  --color-glow: rgba(63, 168, 138, 0.35);
+  --color-accent: #eef8f4;
+  --color-accent-light: #f5fbf8;
+  --color-accent-dark: #d8ece4;
+  --bg-color-page: #f6fbf9;
+}
+
+// ========== 鲜艳系（辅色深饱和） ==========
+
+// 【活力橙】橙光跃动 - 明快热烈
+[data-theme="vivid-orange"] {
+  --color-primary: #f26b2e;
+  --color-primary-light: #f8946a;
+  --color-primary-dark: #cf4f14;
+  --color-primary-rgb: 242, 107, 46;
+  --color-secondary: #f28855;
+  --color-gradient: linear-gradient(135deg, #f26b2e 0%, #ff9d5c 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #a84310 0%, #7e300b 100%);
+  --color-glow: rgba(242, 107, 46, 0.4);
+  --color-accent: #fdeee2;
+  --color-accent-light: #fef6ef;
+  --color-accent-dark: #f6d9c2;
+  --bg-color-page: #fdf6f0;
+}
+
+// 【电光紫】电光流转 - 炫酷醒目
+[data-theme="electric-purple"] {
+  --color-primary: #7c4df0;
+  --color-primary-light: #9c7af5;
+  --color-primary-dark: #5f35c8;
+  --color-primary-rgb: 124, 77, 240;
+  --color-secondary: #9466f2;
+  --color-gradient: linear-gradient(135deg, #7c4df0 0%, #a97ff7 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #4526a0 0%, #331c78 100%);
+  --color-glow: rgba(124, 77, 240, 0.4);
+  --color-accent: #f1ecfd;
+  --color-accent-light: #f7f3fe;
+  --color-accent-dark: #dfd3f8;
+  --bg-color-page: #f8f6fd;
+}
+
+// ========== 暖色系 ==========
+
+// 【落日橘】落日余晖 - 温暖明亮
+[data-theme="sunset-orange"] {
+  --color-primary: #e2804e;
+  --color-primary-light: #f0a37c;
+  --color-primary-dark: #c2653a;
+  --color-primary-rgb: 226, 128, 78;
+  --color-secondary: #df9066;
+  --color-gradient: linear-gradient(135deg, #e2804e 0%, #f5b07e 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #9c4d28 0%, #7a3a1e 100%);
+  --color-glow: rgba(226, 128, 78, 0.35);
+  --color-accent: #fdf3ec;
+  --color-accent-light: #fef8f3;
+  --color-accent-dark: #f5e0d2;
+  --bg-color-page: #fcf8f4;
+}
+
+// 【玫瑰粉】玫瑰微醺 - 柔美浪漫
+[data-theme="rose-pink"] {
+  --color-primary: #d96a8a;
+  --color-primary-light: #e88fa8;
+  --color-primary-dark: #b84f6f;
+  --color-primary-rgb: 217, 106, 138;
+  --color-secondary: #d47a97;
+  --color-gradient: linear-gradient(135deg, #d96a8a 0%, #eda0b0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #933a56 0%, #702a42 100%);
+  --color-glow: rgba(217, 106, 138, 0.35);
+  --color-accent: #fdf2f5;
+  --color-accent-light: #fef8fa;
+  --color-accent-dark: #f5dde4;
+  --bg-color-page: #fcf7f9;
+}
+
+// ========== 沉稳系 ==========
+
+// 【深海蓝】深海静谧 - 深邃可靠
+[data-theme="deep-navy"] {
+  --color-primary: #3f5f9e;
+  --color-primary-light: #6484bd;
+  --color-primary-dark: #2e4a80;
+  --color-primary-rgb: 63, 95, 158;
+  --color-secondary: #52719f;
+  --color-gradient: linear-gradient(135deg, #3f5f9e 0%, #6f8fc8 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #23365f 0%, #1a2847 100%);
+  --color-glow: rgba(63, 95, 158, 0.35);
+  --color-accent: #eef2fb;
+  --color-accent-light: #f5f8fd;
+  --color-accent-dark: #d9e2f2;
+  --bg-color-page: #f6f8fc;
+}
+
+// 【石墨灰】石墨质感 - 简约高级
+[data-theme="slate-gray"] {
+  --color-primary: #5d6b7e;
+  --color-primary-light: #7d8da1;
+  --color-primary-dark: #45536a;
+  --color-primary-rgb: 93, 107, 126;
+  --color-secondary: #6b7a8e;
+  --color-gradient: linear-gradient(135deg, #5d6b7e 0%, #8595aa 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #38434f 0%, #2a323c 100%);
+  --color-glow: rgba(93, 107, 126, 0.3);
+  --color-accent: #f1f3f6;
+  --color-accent-light: #f6f8fa;
+  --color-accent-dark: #dce2e9;
+  --bg-color-page: #f7f8fa;
+}
+
+// ==================== 基础重置 ====================
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background-color: var(--bg-color-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// ==================== 滚动条样式 ====================
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--color-primary-light), var(--color-primary));
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: linear-gradient(180deg, var(--color-primary), var(--color-primary-dark));
+  }
+}
+
+// ==================== 通用动画类 ====================
+
+// 淡入淡出
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--transition-normal);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+// 滑入滑出
+.slide-enter-active,
+.slide-leave-active {
+  transition: all var(--transition-normal);
+}
+
+.slide-enter-from {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.slide-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+// 缩放
+.scale-enter-active,
+.scale-leave-active {
+  transition: all var(--transition-bounce);
+}
+
+.scale-enter-from,
+.scale-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+// 弹跳
+.bounce-enter-active {
+  animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.bounce-leave-active {
+  animation: bounce-in 0.3s reverse;
+}
+
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+// 发光脉冲
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px var(--color-glow);
+  }
+  50% {
+    box-shadow: 0 0 40px var(--color-glow);
+  }
+}
+
+// 渐变流动
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+// 悬浮效果
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+// 闪烁
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+// ==================== 通用工具类 ====================
+
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 发光效果
+.glow {
+  box-shadow: var(--shadow-glow);
+}
+
+// 渐变文字
+.gradient-text {
+  background: var(--color-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+// 玻璃效果
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+// 卡片悬浮效果
+.card-hover {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover);
+  }
+}
+
+// ==================== 深色模式（html.dark，跟随系统主题，useThemeMode 切换） ====================
+// Element Plus 组件变量由 element-plus/theme-chalk/dark/css-vars.css 提供（html.dark 生效）。
+// 这里只重映射应用自有变量（--bg-* / --text-* / --border-* / --fill-*），新界面全部用变量即自动适配。
+html.dark {
+  --bg-color: #1d1e1f;
+  --bg-color-page: #151617;
+  --bg-color-hover: #26282a;
+  --bg-color-card: #1d1e1f;
+
+  --text-primary: #e5eaf3;
+  --text-regular: #cfd3dc;
+  --text-secondary: #a3a6ad;
+  --text-placeholder: #8d9095;
+  --text-color-primary: var(--text-primary);
+  --text-color-regular: var(--text-regular);
+  --text-color-secondary: var(--text-secondary);
+  --text-color-placeholder: var(--text-placeholder);
+
+  --border-color: #4c4d4f;
+  --border-color-light: #414243;
+  --border-color-lighter: #363738;
+  --border-color-extra-light: #2b2c2d;
+
+  --fill-color: #303133;
+  --fill-color-light: #262728;
+  --fill-color-lighter: #1f2021;
+  --fill-color-blank: #1d1e1f;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.5);
+
+  // 玻璃效果在深色下的底色
+  .glass {
+    background: rgba(30, 31, 32, 0.8);
+  }
+}

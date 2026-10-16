@@ -1,0 +1,128 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 邮件助手",
+  "description": "要点 → 结构完整、语气合适的正式邮件（中/英，多用途）→ 人工修改确认 → 输出报告并保存",
+  "category": "office",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "purpose", "label": "邮件用途", "type": "select", "required": true, "options": [
+              { "label": "跟进", "value": "follow_up" },
+              { "label": "申请", "value": "application" },
+              { "label": "致歉", "value": "apology" },
+              { "label": "通知", "value": "notice" },
+              { "label": "推荐", "value": "recommendation" },
+              { "label": "自定义", "value": "custom" }
+            ] },
+            { "key": "keyPoints", "label": "核心要点（每行一个）", "type": "textarea", "required": true },
+            { "key": "recipient", "label": "收件人关系", "type": "select", "defaultValue": "client", "options": [
+              { "label": "客户", "value": "client" },
+              { "label": "上级", "value": "manager" },
+              { "label": "同事", "value": "colleague" },
+              { "label": "下属", "value": "subordinate" },
+              { "label": "陌生人", "value": "stranger" }
+            ] },
+            { "key": "tone", "label": "语气", "type": "select", "defaultValue": "polite", "options": [
+              { "label": "正式", "value": "formal" },
+              { "label": "礼貌", "value": "polite" },
+              { "label": "亲和", "value": "friendly" },
+              { "label": "强硬", "value": "firm" }
+            ] },
+            { "key": "language", "label": "语言", "type": "select", "defaultValue": "zh", "options": [
+              { "label": "中文", "value": "zh" },
+              { "label": "英文", "value": "en" }
+            ] },
+            { "key": "extraContext", "label": "背景补充", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "llm1",
+        "type": "llm-chat",
+        "name": "生成邮件",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是专业邮件撰写助手。按用途/收件人关系/语气/语言撰写邮件。只输出 JSON 对象：{subject: 邮件主题, body: 正文（markdown 段落，含称呼与落款）}。body 必须包含恰当的称呼（如 王经理：/Dear Mr. Wang）与落款（如 此致敬礼 / Best regards），称呼落款根据收件人关系判断，不要用占位符。",
+          "prompt": "用途：{{start.purpose}}\n收件人关系：{{start.recipient}}\n语气：{{start.tone}}\n语言：{{start.language}}\n核心要点：\n{{start.keyPoints}}\n背景补充：{{start.extraContext}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工修改确认",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "payload": "{{llm1.parsed}}",
+          "editableFields": [
+            { "key": "subject", "label": "邮件主题", "type": "string" },
+            { "key": "body", "label": "邮件正文", "type": "string" }
+          ]
+        }
+      },
+      {
+        "id": "tpl1",
+        "type": "template-transform",
+        "name": "拼装邮件",
+        "position": { "x": 800, "y": 200 },
+        "config": {
+          "template": "## 主题：{{review1.subject}}\n\n{{review1.body}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "邮件输出",
+        "position": { "x": 1040, "y": 200 },
+        "config": {
+          "title": "{{review1.subject}}",
+          "template": "{{tpl1.text}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "content": "{{tpl1.text}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "邮件",
+          "name": "{{review1.subject}}",
+          "tags": "邮件,{{start.purpose}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1520, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "llm1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "llm1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "review1", "targetNodeId": "tpl1", "kind": "approve" },
+      { "id": "e4", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e5", "sourceNodeId": "tpl1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "report1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

@@ -1,0 +1,26 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "批量翻译",
+  "description": "输入多段文本列表 → 循环逐段翻译 → 汇总结果",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [{ "key": "texts", "label": "待翻译文本列表", "type": "json", "required": true, "defaultValue": ["Hello", "World"] }, { "key": "targetLang", "label": "目标语言", "type": "string", "required": true, "defaultValue": "zh" }] } },
+      { "id": "loop_1", "type": "loop", "name": "逐段循环", "position": { "x": 300, "y": 200 }, "config": { "listExpression": "{{start.texts}}", "emptyPolicy": "skip" } },
+      { "id": "tr_1", "type": "translate", "name": "翻译", "position": { "x": 540, "y": 260 }, "config": { "text": "{{loop_1.item}}", "targetLang": "{{start.targetLang}}" } },
+      { "id": "report_1", "type": "report", "name": "汇总报告", "position": { "x": 540, "y": 120 }, "config": { "title": "翻译结果", "template": "# 翻译结果（{{start.targetLang}}）\n\n{{loop_1.results}}", "format": "markdown" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 780, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "loop_1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "loop_1", "targetNodeId": "tr_1", "kind": "loop-body" },
+      { "id": "e3", "sourceNodeId": "tr_1", "targetNodeId": "loop_1", "kind": "loop-back" },
+      { "id": "e4", "sourceNodeId": "loop_1", "targetNodeId": "report_1", "kind": "loop-done" },
+      { "id": "e5", "sourceNodeId": "report_1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

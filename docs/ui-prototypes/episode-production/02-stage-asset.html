@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>② 资产 · EpisodeWorkbench</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div class="workbench no-sidebar">
+
+    <!-- 顶部进度条 -->
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="00-project-list.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 · 第一季
+        <span class="ep-meta">/ 第 1 集 · 茶馆相遇</span>
+      </div>
+      <div class="stepper">
+        <a class="step done" href="01-stage-content.html"><span class="dot">✓</span><span>① 内容</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step active" href="02-stage-asset.html"><span class="dot">●</span><span>② 资产</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="03-stage-script.html"><span class="dot">○</span><span>③ 剧本</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="04-stage-storyboard.html"><span class="dot">○</span><span>④ 分镜</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="05-stage-production.html"><span class="dot">○</span><span>⑤ 画面+音频</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="06-stage-compose.html"><span class="dot">○</span><span>⑥ 合成</span></a>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-sm">设置</button>
+      </div>
+    </div>
+
+    <!-- ② 资产：不显示资产侧栏（user 5/6 决策；主区域 4 类卡片网格已是完整资产清单） -->
+
+    <!-- 主区域 -->
+    <div class="main">
+
+      <div class="main-header">
+        <div>
+          <div class="main-title">② 资产盘点</div>
+          <div class="main-subtitle">本剧集出场要素：3 角色 · 2 地点 · 4 物品 · 5 语音 · 已就绪 9/14</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn">跳过空缺 (3)</button>
+          <button class="btn btn-primary">✨ 一键生成所有缺失主图</button>
+        </div>
+      </div>
+
+      <!-- 整体进度 -->
+      <div style="background: white; border: 1px solid var(--color-border); border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 16px;">
+        <div style="font-weight: 600;">阶段进度</div>
+        <div style="flex: 1; height: 8px; background: var(--color-bg); border-radius: 4px; overflow: hidden;">
+          <div style="width: 64%; height: 100%; background: linear-gradient(90deg, var(--color-success), #7dd57d);"></div>
+        </div>
+        <div style="font-size: 13px; color: var(--color-text-secondary);">主图齐备 9/14 · 图谱完整度 42%</div>
+        <button class="btn btn-success">完成本阶段 →</button>
+      </div>
+
+      <!-- 角色 -->
+      <div class="asset-section">
+        <div class="asset-section-header">
+          <div class="asset-section-title">👤 角色 <span class="count" style="background: var(--color-bg); color: var(--color-text-secondary); padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500;">3</span></div>
+          <div>
+            <button class="btn btn-sm">批量派生图谱</button>
+          </div>
+        </div>
+        <div class="asset-grid">
+
+          <div class="asset-card">
+            <div class="asset-card-thumb"><span>👨</span><span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">张三 <span class="tag tag-success">主图 ✓</span></div>
+              <div class="asset-card-meta">
+                <span>图谱 8/12</span>·
+                <span>声音 ✓</span>
+              </div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">设定</button>
+                <button class="btn btn-sm">图谱</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb warn"><span>⚠</span><span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">李四 <span class="tag" style="background: var(--color-warning-light); color: var(--color-warning);">缺主图</span></div>
+              <div class="asset-card-meta">
+                <span>图谱 0/12</span>·
+                <span style="color: var(--color-warning);">声音 ⚠</span>
+              </div>
+              <div class="asset-card-actions">
+                <button class="btn btn-primary btn-sm">✨ 生成主图</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb"><span>👩</span><span class="badge">standalone</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">老板娘 <span class="tag tag-success">主图 ✓</span></div>
+              <div class="asset-card-meta">
+                <span>图谱 3/9</span>·
+                <span>声音 ✓</span>
+              </div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">设定</button>
+                <button class="btn btn-sm">图谱</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 地点 -->
+      <div class="asset-section">
+        <div class="asset-section-header">
+          <div class="asset-section-title">🏛 地点 <span class="count" style="background: var(--color-bg); color: var(--color-text-secondary); padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500;">2</span></div>
+          <div><button class="btn btn-sm">批量派生变体</button></div>
+        </div>
+        <div class="asset-grid">
+
+          <div class="asset-card">
+            <div class="asset-card-thumb location"><span>🏛</span><span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">茶馆 <span class="tag tag-success">主图 ✓</span></div>
+              <div class="asset-card-meta">
+                <span>3 时间 · 2 天气 · 4 视角</span>
+              </div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">设定</button>
+                <button class="btn btn-sm">图谱</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb location"><span>🌆</span><span class="badge">3D</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">客栈 <span class="tag tag-3d">3D 已升级</span></div>
+              <div class="asset-card-meta">
+                <span>360 全景 · 摆位场景 1</span>
+              </div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">设定</button>
+                <button class="btn btn-sm">3D 编辑</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 物品 -->
+      <div class="asset-section">
+        <div class="asset-section-header">
+          <div class="asset-section-title">⚔️ 物品 <span class="count" style="background: var(--color-bg); color: var(--color-text-secondary); padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500;">4</span></div>
+        </div>
+        <div class="asset-grid">
+
+          <div class="asset-card">
+            <div class="asset-card-thumb item"><span>🗡</span><span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">长剑 <span class="tag tag-success">主图 ✓</span></div>
+              <div class="asset-card-meta"><span>4 视角 · 2 上下文</span></div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb item"><span>🪭</span><span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">折扇 <span class="tag tag-success">主图 ✓</span></div>
+              <div class="asset-card-meta"><span>3 视角</span></div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb item"><span>📜</span><span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">书信 <span class="tag tag-success">主图 ✓</span></div>
+              <div class="asset-card-meta"><span>2 视角</span></div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb empty">📦<span class="badge">linked_lw</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">玉佩 <span class="tag" style="background: var(--color-warning-light); color: var(--color-warning);">缺主图</span></div>
+              <div class="asset-card-meta"><span>0 视角</span></div>
+              <div class="asset-card-actions">
+                <button class="btn btn-primary btn-sm">✨ 生成主图</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 语音 -->
+      <div class="asset-section">
+        <div class="asset-section-header">
+          <div class="asset-section-title">🎙 语音 <span class="count" style="background: var(--color-bg); color: var(--color-text-secondary); padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500;">5</span></div>
+          <div><button class="btn btn-sm">+ 复刻新音色</button></div>
+        </div>
+        <div class="asset-grid">
+
+          <div class="asset-card">
+            <div class="asset-card-thumb voice"><span>🎙</span><span class="badge">系统</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">沉稳男声</div>
+              <div class="asset-card-meta"><span>绑定: 张三 / 旁白</span></div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">▶ 试听</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb voice"><span>🎙</span><span class="badge">系统</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">温柔女声</div>
+              <div class="asset-card-meta"><span>绑定: 老板娘</span></div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">▶ 试听</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb voice"><span>🎙</span><span class="badge">系统</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">苍老男声</div>
+              <div class="asset-card-meta"><span>未绑定</span></div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">▶ 试听</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb voice"><span>🎤</span><span class="badge">复刻</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">我自己</div>
+              <div class="asset-card-meta"><span>样本 1 段 · 已激活</span></div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">▶ 试听</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-card-thumb voice"><span>🎤</span><span class="badge">复刻</span></div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">助理 A</div>
+              <div class="asset-card-meta"><span>绑定: 李四</span></div>
+              <div class="asset-card-actions">
+                <button class="btn btn-sm">▶ 试听</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 底部迷你时间线 -->
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">0/12 分镜未出片</span>
+      <button class="timeline-action" disabled style="opacity: 0.5;">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <!-- 浮动导航 -->
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="01-stage-content.html" class="btn btn-sm" style="background: white;">上一步</a>
+    <a href="02-stage-asset-edit.html" class="btn btn-sm" style="background: white;">看角色卡</a>
+    <a href="02-stage-location-edit.html" class="btn btn-sm" style="background: white;">看场景图</a>
+    <a href="03-stage-script.html" class="btn btn-primary btn-sm">下一步 → ③</a>
+  </div>
+</body>
+</html>

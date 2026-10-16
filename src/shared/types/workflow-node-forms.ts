@@ -1,0 +1,911 @@
+/**
+ * 节点配置表单 Schema（组件化的表单层）
+ * @module shared/types/workflow-node-forms
+ * @description 每个节点组件自带的配置表单声明——编辑器按 Schema 渲染表单，
+ *              新增组件时在此（或随组件包）加一份 Schema 即获得完整表单，
+ *              编辑器零改动（与 NODE_TYPE_CATALOG 同为组件元数据，分离关注：
+ *              catalog 服务于引擎校验/变量提示，本文件服务于编辑器呈现）。
+ *
+ *              动态选项（type='select-dynamic'）由编辑器按 source 标识拉取：
+ *              - 'knowledgeBases'：用户知识库列表（id → name）
+ */
+
+import type { WorkflowNodeType } from './workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from './workflow.types'
+import { VIDEO_TYPE_PRESETS } from './video-presets'
+import { SLIDE_THEME_OPTIONS } from './slide-themes'
+
+/** 表单字段声明 */
+export interface CatalogFormField {
+  /** config 内的键（支持一级点路径，如 'branches'） */
+  key: string
+  label: string
+  type:
+    | 'text'
+    | 'textarea'
+    | 'number'
+    | 'select'
+    | 'select-dynamic'
+    /** Provider+模型联动下拉（写 providerConfigId 与 modelId 两键） */
+    | 'model-pair'
+    | 'switch'
+    | 'slider'
+    /** 键值对列表（assignments / headers） */
+    | 'kv-list'
+    /** 条件分支专用编辑器 */
+    | 'branches'
+    /** 开始节点输入参数专用编辑器 */
+    | 'inputs-list'
+    /** 审核可编辑字段专用编辑器 */
+    | 'fields-list'
+    /** OAS 接口下拉（选项从同节点 config.oasSpec 本地解析） */
+    | 'oas-operations'
+    /** OAS 参数编辑（kv-list + 按接口声明生成参数行） */
+    | 'oas-params'
+    /** P0 工具：工具下拉（预设+自定义，选中后按 schema 预生成参数） */
+    | 'tool-select'
+    /** P0 工具：凭据下拉 */
+    | 'tool-credential-select'
+    /** P0 工具：参数编辑（按选中工具 schema 生成行） */
+    | 'tool-params'
+    /** 技能下拉（技能库，选中后按 inputs schema 带出参数区） */
+    | 'skill-select'
+    /** 技能参数编辑（按选中技能 inputs schema 生成行，值支持 {{模板}}） */
+    | 'skill-params'
+    /** agent 工具绑定编辑器（多选工具 + 逐工具批准策略/调用上限/静态入参，25 号 M2） */
+    | 'tool-bindings'
+  placeholder?: string
+  /** kv-list 的键占位提示（如 headers / assignments） */
+  keyPlaceholder?: string
+  /** kv-list 的值占位提示 */
+  valuePlaceholder?: string
+  /** select 的静态选项 */
+  options?: Array<{ label: string; value: string | number }>
+  /** select / select-dynamic 是否多选（提交值为数组） */
+  multi?: boolean
+  /** select-dynamic 的数据源标识（编辑器按 source 拉取选项） */
+  source?:
+    | 'knowledgeBases'
+    | 'infoSourceCategories'
+    | 'infoSourceTopics'
+    | 'infoSources'
+    | 'newsTopics'
+    | 'newsSources'
+    | 'assets'
+    | 'assetCategories'
+    | 'dataSources'
+    | 'searchEngineConfigs'
+    | 'skills'
+    | 'agentTools'
+    | 'credentials'
+  help?: string
+  /** 字段值支持 {{}} 模板的提示标记（表单角标） */
+  templateHint?: boolean
+  /**
+   * 显式排除模板（text/textarea 默认全部支持 {{}} 插值——引擎对 config
+   * 字符串统一深解析；此标记用于少数"纯配置"字段，如 OAS 接口 operationId）
+   */
+  noTemplate?: boolean
+  min?: number
+  max?: number
+  step?: number
+  /** 分组标题（同组字段渲染在同一分隔区块） */
+  group?: string
+  /** 折叠分组（默认收起） */
+  collapsible?: boolean
+}
+
+const T = (key: string, label: string, extra: Partial<CatalogFormField> = {}): CatalogFormField => ({
+  key,
+  label,
+  type: 'text',
+  ...extra,
+})
+
+/**
+ * 字段是否支持 {{}} 模板（编辑器据此显示变量选择器与"支持{{}}"角标）。
+ * 规则统一：text/textarea 文本类字段默认全部支持——引擎对 config 字符串
+ * 统一深解析（resolveConfigDeep），UI 不再靠手动 templateHint 打标；
+ * noTemplate 仅用于少数纯配置字段显式排除。
+ */
+export function fieldSupportsTemplate(field: CatalogFormField): boolean {
+  return (field.type === 'text' || field.type === 'textarea') && !field.noTemplate
+}
+
+/** 全部 21 个组件的表单 Schema */
+export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
+  start: [
+    { key: 'inputs', label: '输入参数', type: 'inputs-list', help: '定时触发时用默认值' },
+  ],
+  end: [],
+  condition: [
+    { key: 'branches', label: '分支条件', type: 'branches' },
+    T('noMatchPolicy', '全部未命中', {
+      type: 'select',
+      options: [
+        { label: '节点失败', value: 'fail' },
+        { label: '走兜底分支', value: 'fallback' },
+      ],
+    }),
+    T('fallbackBranchId', '兜底分支 ID', {
+      help: 'noMatchPolicy=fallback 时必填，填 branches 中声明的 branchId',
+    }),
+  ],
+  parallel: [
+    { key: '_hint', label: '', type: 'text', help: '扇出节点：出边数即并行分支数，无需配置' },
+  ],
+  'parallel-merge': [
+    T('waitPolicy', '等待策略', {
+      type: 'select',
+      options: [
+        { label: '等齐全部入边', value: 'all' },
+        { label: '任一到达即通过', value: 'any' },
+      ],
+    }),
+    T('outputMode', '输出模式', {
+      type: 'select',
+      options: [
+        { label: '合并（按来源节点展开）', value: 'merge' },
+        { label: '仅首个到达的输出', value: 'first' },
+      ],
+    }),
+  ],
+  loop: [
+    T('mode', '迭代模式', {
+      type: 'select',
+      options: [
+        { label: '遍历列表（foreach）', value: 'foreach' },
+        { label: '直到条件满足（until）', value: 'until' },
+      ],
+      help: 'until 无列表：每轮循环体收敛后在当轮作用域解析 stopExpression，等于 stopValue 即提前收尾；达 maxIterations 上限必收尾（不算失败）。',
+    }),
+    T('stopExpression', '停止条件表达式（until）', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{pack.result.verdict}}',
+      help: 'until：每轮 body 结束后解析（可引用 body 内节点输出，如评估节点归一出的 verdict）。',
+    }),
+    T('stopValue', '停止值（until）', {
+      help: '解析结果 === stopValue 即收尾（缺省 true；示例 pass）。',
+    }),
+    T('maxIterations', '最大轮数（until）', {
+      type: 'number',
+      help: '1..运行级 maxLoopIterations；达上限必收尾（不算失败）。编辑器默认 5。',
+    }),
+    T('listExpression', '遍历列表', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{start.items}}',
+      help: '解析结果必须是数组；循环体内用 {{本节点ID.item}} / {{本节点ID.index}}',
+    }),
+    T('emptyPolicy', '空列表策略', {
+      type: 'select',
+      options: [
+        { label: '跳过（直接完成）', value: 'skip' },
+        { label: '节点失败', value: 'fail' },
+      ],
+    }),
+    T('errorPolicy', '迭代错误策略', {
+      type: 'select',
+      options: [
+        { label: '节点失败（默认）', value: 'fail' },
+        { label: '跳过失败迭代继续', value: 'skip' },
+      ],
+      help: 'skip：迭代体内节点失败时跳过该次迭代（results 对应位置记 { error, skipped:true }），循环继续跑完其余迭代；适合批量采集等单条失败不应中断整体的场景。',
+    }),
+  ],
+  delay: [
+    T('durationMs', '等待时长（毫秒）', { templateHint: true, placeholder: '1000 或 {{start.waitMs}}' }),
+  ],
+  'human-review': [
+    T('payload', '送审内容', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '对象 JSON 或 {{上游节点.字段}}',
+    }),
+    { key: 'assigneeId', label: '指派审批人（可选）', type: 'text', templateHint: true, placeholder: '用户 id 或 {{start.assignee}}；留空 = 不限', help: '非空时仅被指派用户可批准/驳回（27 号 S7）' },
+    { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', placeholder: '留空 = 无限等待' },
+    T('timeoutPolicy', '超时策略', {
+      type: 'select',
+      options: [
+        { label: '节点失败', value: 'fail' },
+        { label: '视为批准', value: 'approve' },
+        { label: '视为驳回', value: 'reject' },
+      ],
+    }),
+    { key: 'editableFields', label: '可修改字段', type: 'fields-list', help: '"修改后批准"时允许审核人改的字段；留空 = 不允许修改', collapsible: true },
+  ],
+  assign: [
+    { key: 'assignments', label: '赋值', type: 'kv-list', keyPlaceholder: '变量名', valuePlaceholder: '值或 {{模板}}' },
+  ],
+
+  'llm-chat': [
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+    T('systemPrompt', '系统提示词', { type: 'textarea', group: '对话' }),
+    T('prompt', '用户消息', { type: 'textarea', templateHint: true, group: '对话', placeholder: '{{start.topic}}' }),
+    { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
+    { key: 'maxTokens', label: '最大 Token', type: 'number', group: '参数' },
+    { key: 'jsonMode', label: 'JSON 输出模式', type: 'switch', group: '参数', help: '输出自动解析为 parsed 字段，非 JSON 则节点失败' },
+    { key: 'vision', label: '视觉模式', type: 'switch', group: '视觉', help: '开启后走视觉模型（当前不可中断）' },
+    T('imageInput', '图片输入', {
+      type: 'textarea', group: '视觉', templateHint: true,
+      placeholder: '本地路径 / http(s) URL / base64，多张用逗号或换行分隔（最多4张，当前取第一张）',
+    }),
+  ],
+  'skill-call': [
+    { key: 'skillId', label: '技能', type: 'skill-select', help: '从技能库选择（内置 + 自定义）；选中后按技能参数 schema 自动带出参数区' },
+    { key: 'inputs', label: '技能参数', type: 'skill-params', help: '参数值支持 {{工作流变量}} 引用（如 {{start.material}}）', collapsible: true },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+    { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
+    { key: 'maxTokens', label: '最大 Token', type: 'number', group: '参数' },
+  ],
+  'skill-distill': [
+    T('sourceText', '待蒸馏内容', {
+      type: 'textarea', templateHint: true, group: '内容',
+      placeholder: '{{digest1.result.fullText}} / {{start.text}}——多篇用分隔符拼接；服务内部清洗、分块、逐块笔记后组装',
+    }),
+    {
+      key: 'contentType', label: '蒸馏目标', type: 'select', group: '目标',
+      options: [
+        { label: '自动判断', value: 'auto' },
+        { label: '方法论 / 知识', value: 'methodology' },
+        { label: '写作风格', value: 'style' },
+        { label: '人物人设', value: 'persona' },
+      ],
+      help: '方法论=框架·决策规则·反模式；写作风格=结构·句式·语气套路；人设=表达·决策·心智模型',
+    },
+    T('hints', '蒸馏重点', {
+      type: 'textarea', templateHint: true, group: '目标',
+      placeholder: '如：博主「XX」文章主类别【时政】，侧重其时政分析框架与文风',
+    }),
+    T('nameHint', '技能 id 建议', {
+      type: 'text', templateHint: true, group: '目标',
+      placeholder: 'kebab-case，如 luke-style；提供后强约束命名（撞库自动加 -2 后缀）',
+    }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+  ],
+  'agent-loop': [
+    T('task', '任务目标', {
+      type: 'textarea', templateHint: true, group: '任务',
+      placeholder: '例：围绕 {{start.topic}} 检索资料并写一份 300 字摘要',
+    }),
+    T('systemPrompt', '系统提示词', { type: 'textarea', group: '任务', placeholder: '角色/约束/输出格式要求（可选）' }),
+    {
+      key: 'toolWhitelist', label: '工具白名单', type: 'tool-bindings', source: 'agentTools', group: '工具',
+      help: 'Agent 可自主调用的工具；出网/写类/exec 级工具默认需人工批准，可为每个工具配置批准策略、调用上限与静态入参（LLM 不可覆盖）',
+    },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退；建议选用原生 tool-calling 模型（GPT-4/Claude/Gemini/GLM-4/Qwen 等）工具调用更可靠' },
+    { key: 'maxIterations', label: '最大迭代轮数', type: 'number', min: 1, max: WORKFLOW_DEFAULTS.agentLoopMaxIterationsCeiling, group: '护栏', help: `缺省 ${WORKFLOW_DEFAULTS.agentLoopMaxIterations}；到顶未收敛节点失败` },
+    { key: 'maxToolCalls', label: '工具调用总上限', type: 'number', min: 1, group: '护栏', help: '可选（跨挂起-恢复累计）；超过后工具调用被拒绝，Agent 需直接作答' },
+    { key: 'maxDurationMs', label: '最长时长（毫秒）', type: 'number', min: 1, max: WORKFLOW_LIMITS.maxDurationMs, group: '护栏', help: '可选（净时长，扣除挂起等待）；超过即中止并失败（运行级超时另算）' },
+  ],
+  'kb-retrieve': [
+    { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
+    T('query', '查询内容', { type: 'textarea', templateHint: true, placeholder: '{{start.question}}' }),
+    { key: 'topK', label: '返回条数', type: 'number', min: 1, max: 50, group: '参数' },
+    { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
+    { key: 'includeDialogFiles', label: '包含本对话上传的文件', type: 'switch', group: '参数', help: '把对话附件也纳入检索范围（仅从 AI 对话中触发时生效）' },
+    { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '参数', help: '知识库配置了 rerank 模型时对检索结果重排（默认开）' },
+    { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数', help: '1=纯向量语义检索（默认）；0=纯 BM25 关键词；中间值=混合加权' },
+  ],
+  'kb-query-multi': [
+    { key: 'knowledgeBaseIds', label: '知识库（多选）', type: 'select-dynamic', source: 'knowledgeBases', multi: true, help: '多选后逐库检索并按分数合并去重（结果带 knowledgeBaseId 来源）' },
+    T('query', '查询内容', { type: 'textarea', templateHint: true, placeholder: '{{start.query}}' }),
+    { key: 'topKPerKb', label: '每库返回条数', type: 'number', min: 1, max: 20, group: '参数' },
+    { key: 'maxResults', label: '合并后最多条数', type: 'number', min: 1, max: 60, group: '参数' },
+    { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
+    { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '参数' },
+    { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
+  ],
+  'kb-ingest': [
+    { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
+    T('title', '文档标题', { templateHint: true }),
+    T('content', '文档内容', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
+    T('sourceKey', '来源键（幂等覆盖）', {
+      templateHint: true,
+      help: '可选。传值时同一知识库内同键文档会被覆盖更新（重复运行不堆积）；留空=每次新建文档',
+    }),
+    { key: 'passthrough', label: '透传字段', type: 'kv-list', keyPlaceholder: '输出字段名', valuePlaceholder: '值，支持 {{模板}}', help: '合并进本节点输出（循环体内可透传正文供下游聚合引用）', collapsible: true },
+    { key: 'waitForCompletion', label: '等待入库完成', type: 'switch', help: '关闭 = 提交即成功（后台处理）' },
+  ],
+  'web-search': [
+    T('query', '搜索关键词', { type: 'textarea', templateHint: true }),
+    { key: 'searchConfigId', label: '搜索引擎（已配置）', type: 'select-dynamic', source: 'searchEngineConfigs', group: '参数', help: '选择「设置 → 搜索引擎」中已配置的引擎；留空 = 系统默认引擎' },
+    T('engineType', '搜索引擎类型', { help: '留空 = 按上面的配置/用户默认引擎自动解析', group: '参数' }),
+    { key: 'maxResults', label: '结果数量', type: 'number', min: 1, max: 20, group: '参数' },
+  ],
+  translate: [
+    T('text', '待翻译内容', { type: 'textarea', templateHint: true, placeholder: '{{start.text}}' }),
+    T('sourceLang', '源语言', { help: '留空 = 自动检测', group: '语言' }),
+    T('targetLang', '目标语言', { group: '语言', placeholder: 'en / zh / ja ...' }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+  ],
+  'shot-visual': [
+    T('concept', '语义主题', { help: '相关性判定锚点，如「进出口外贸」' }),
+    T('subject', '画面主体', { help: '可拍实体，如「龙门吊与集装箱」' }),
+    T('setting', '场所环境', { help: '如「集装箱码头堆场」' }),
+    T('searchQuery', '素材检索词（英文）', { help: '留空=按主题/主体/场所查场景词典自动解析' }),
+    T('altQueries', '备选检索词', { type: 'textarea', help: '首选无结果时依次尝试（逗号/换行分隔）' }),
+    T('visual', '画面描述', { type: 'textarea', templateHint: true, help: '光线/色调/构图/运镜' }),
+    T('styleText', '画面风格', { type: 'textarea', templateHint: true, help: '一般接 {{preset.styleText}}' }),
+    {
+      key: 'stockMode',
+      label: '真实素材',
+      type: 'select',
+      group: '真实素材层',
+      options: [
+        { label: '自动（有凭据即检索）', value: 'auto' },
+        { label: '关闭（只走 AI 生成）', value: 'off' },
+      ],
+    },
+    {
+      key: 'stockProvider',
+      label: '素材库',
+      type: 'select',
+      group: '真实素材层',
+      options: [
+        { label: 'Pexels', value: 'pexels' },
+        { label: 'Pixabay', value: 'pixabay' },
+      ],
+    },
+    {
+      key: 'stockCredentialId',
+      label: '素材库凭据',
+      type: 'select-dynamic',
+      source: 'credentials',
+      group: '真实素材层',
+      help: '设置 → 工具 → 凭据 中保存的 API Key 条目（Pexels/Pixabay）',
+    },
+    {
+      key: 'stockKind',
+      label: '素材种类偏好',
+      type: 'select',
+      group: '真实素材层',
+      options: [
+        { label: '自动（视频优先，图片次之）', value: 'auto' },
+        { label: '只用视频', value: 'video' },
+        { label: '只用图片', value: 'image' },
+      ],
+    },
+    { key: 'stockPerPage', label: '检索条数', type: 'number', group: '真实素材层' },
+    { key: 'stockMaxCandidates', label: '候选下载条数', type: 'number', group: '真实素材层', help: '相关性选优的池子大小' },
+    { key: 'stockMinWidth', label: '素材最小宽度', type: 'number', group: '真实素材层' },
+    { key: 'stockMinDurationSec', label: '视频最短时长（秒）', type: 'number', group: '真实素材层' },
+    { key: 'stockMinScore', label: '素材相关性阈值', type: 'number', group: '真实素材层', help: '0-100；低于阈值不采用' },
+    { key: 'generateFallback', label: '允许 AI 生成兜底', type: 'switch', group: '生成层' },
+    T('imageProviderConfigId', '图像 Provider', { group: '生成层' }),
+    T('imageModelId', '图像模型 ID', { group: '生成层', help: '必填（生成兜底用）' }),
+    { key: 'maxAttempts', label: '生成尝试次数', type: 'number', min: 1, max: 4, group: '生成层' },
+    T('negativePrompt', '负面提示词', { group: '生成层' }),
+    { key: 'width', label: '宽度', type: 'number', group: '生成层' },
+    { key: 'height', label: '高度', type: 'number', group: '生成层' },
+    T('qaProviderConfigId', '质检 Provider', { group: '视觉质检', help: '留空=跳过质检（会如实记录）' }),
+    T('qaModelId', '质检模型 ID', { group: '视觉质检', help: '需支持图片输入的视觉模型' }),
+    { key: 'minScore', label: '生成图相关性阈值', type: 'number', group: '视觉质检' },
+  ],
+  'image-gen': [
+    T('prompt', '提示词', { type: 'textarea', templateHint: true }),
+    T('negativePrompt', '负面提示词', { group: '参数' }),
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+    { key: 'count', label: '生成数量', type: 'number', min: 1, max: 4, group: '参数' },
+    T('modelId', '图像模型 ID', { group: '模型', help: '必填' }),
+  ],
+  'video-gen': [
+    T('providerConfigId', '视频 Provider 配置 ID', { help: '设置→AI 服务中已配置的视频 Provider（如 ComfyUI 生成网关配置 id）' }),
+    T('model', '视频模型 ID', { help: '如 ComfyUI/h3、火山 Seedance（ep-xxxx）' }),
+    T('image', '首帧/参考图', { type: 'textarea', templateHint: true, placeholder: '{{img1.images.0.localUrl}} 或本地路径', help: '图生视频时必填' }),
+    T('prompt', '提示词', { type: 'textarea', templateHint: true }),
+    T('negativePrompt', '负面提示词', { group: '参数' }),
+    { key: 'duration', label: '时长（秒）', type: 'number', min: 1, max: 15, group: '参数' },
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+  ],
+  'video-compose': [
+    T('segments', '片段列表', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{code1.result.segments}}', help: '[{ source, kind, duration, caption, motion }]；motion 仅图片段生效：none/zoom-in/zoom-out/pan-left/pan-right',
+    }),
+    T('audioPath', '配音音频（可选）', { templateHint: true, placeholder: '{{tts1.audioPath}}' }),
+    T('bgmPath', '背景音乐（可选）', { templateHint: true, placeholder: '本地 mp3 路径' }),
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+    T('outputName', '输出文件名', { group: '参数', help: '成片文件名（不含扩展名）' }),
+  ],
+  'video-preset': [
+    {
+      key: 'videoType',
+      label: '视频类型预设',
+      type: 'select',
+      options: [
+        { label: '（不选预设，仅用自由风格）', value: '' },
+        ...VIDEO_TYPE_PRESETS.map(p => ({ label: p.label, value: p.id })),
+      ],
+      help: '类型决定大纲结构与素材提示词规范；可再叠加自由风格',
+    },
+    T('freeStyle', '自由风格（叠加）', {
+      type: 'textarea',
+      placeholder: '可选：对预设的补充（色调/氛围/镜头语言/参考说明）',
+      help: '并入画面风格与提示词，可完全自定义',
+    }),
+  ],
+  'slide-render': [
+    T('slides', '幻灯片结构', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{deckGen.parsed.slides}}',
+      help: '[{ kind: cover|content|ending, title, bullets[], narration }]；bullets 是屏幕要点，narration 是口播词（不渲染）',
+    }),
+    T('deckTitle', '整期标题', { placeholder: '封面辅助行 + 页脚（可留空）' }),
+    {
+      key: 'theme',
+      label: '主题',
+      type: 'select',
+      options: SLIDE_THEME_OPTIONS,
+      help: '画面配色主题',
+    },
+    { key: 'width', label: '宽度', type: 'number', group: '画面' },
+    { key: 'height', label: '高度', type: 'number', group: '画面' },
+  ],
+  'podcast-compose': [
+    T('slideImages', '幻灯片图组', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{renderSlides.slidePaths}}',
+      help: '幻灯片 PNG 路径数组（按页序）',
+    }),
+    T('audioFiles', '逐页配音组', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{loopTts.results}}',
+      help: '与图组同序：字符串路径数组或 tts 节点输出数组（[{ audioPath }]）',
+    }),
+    { key: 'gapMs', label: '页间停顿（毫秒）', type: 'number', min: 0, max: 5000, group: '参数', help: '每页配音后的静默时长（末页也追加，成片结尾留白）' },
+    T('bgmPath', '背景音乐（可选）', { templateHint: true, group: '参数', placeholder: '本地音频路径' }),
+    { key: 'width', label: '宽度', type: 'number', group: '画面' },
+    { key: 'height', label: '高度', type: 'number', group: '画面' },
+    { key: 'fps', label: '帧率', type: 'number', group: '画面' },
+    T('outputName', '输出文件名', { group: '参数', help: '成片文件名（不含扩展名）' }),
+  ],
+  tts: [
+    T('text', '合成文本', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
+    T('voiceId', '音色 ID', { help: '语音页可查看音色列表' }),
+    { key: 'speed', label: '语速', type: 'slider', min: 0.5, max: 2, step: 0.1, group: '参数' },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+  ],
+  stt: [
+    T('audio', '音频来源', { type: 'textarea', templateHint: true, placeholder: '{{tts1.audioPath}} 或 base64' }),
+    T('language', '语言', { help: '留空 = 自动' }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+  ],
+  'voice-clone': [
+    T('samplePath', '样本音频路径', { type: 'textarea', templateHint: true, placeholder: '{{start.sample.path}}（10-20 秒人声样本）' }),
+    T('name', '音色名称', { placeholder: '例如：我的声音' }),
+    T('prefix', 'voice_id 前缀', { help: '仅小写字母数字、≤10 字符（DashScope 硬约束）；留空自动生成' }),
+    T('language', '语种', { help: '默认 zh' }),
+    { key: 'waitForCompletion', label: '等待训练完成', type: 'switch', group: '参数', help: '关闭 = 提交即成功（长任务）' },
+  ],
+  'video-extract-audio': [
+    T('videoPath', '本地视频文件路径', { type: 'textarea', templateHint: true, placeholder: '{{start.video.path}}（表单 file 字段的路径）' }),
+    T('videoUrl', '视频链接', { type: 'textarea', templateHint: true, placeholder: 'https://...（mp4 直链 / B站 BV 链接；抖音请手动下载后本地导入）', help: '本地文件与链接二选一；B站/直链可用，抖音需手动下载' }),
+    T('language', '语言', { help: '透传给下游 stt' }),
+  ],
+  'oas-tool': [
+    T('oasSpec', 'OpenAPI JSON', {
+      type: 'textarea',
+      help: '粘贴接口文档的 OpenAPI/Swagger JSON（V1 不支持 $ref 引用）',
+    }),
+    { key: 'operationId', label: '接口', type: 'oas-operations', help: '从上方 JSON 解析出的接口列表' },
+    { key: 'params', label: '参数', type: 'oas-params', help: '点「按接口定义生成」自动带出参数行' },
+    T('baseUrlOverride', 'BaseURL 覆盖', { placeholder: '留空用文档里的 servers/host', collapsible: true }),
+    { key: 'headers', label: '附加请求头', type: 'kv-list', keyPlaceholder: 'Header（如 Authorization）', valuePlaceholder: '值，支持 {{模板}}', collapsible: true },
+    { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
+  ],
+  'tool-call': [
+    { key: 'toolType', label: '工具来源', type: 'select', options: [
+      { label: '自定义工具', value: 'custom' },
+      { label: '预设工具', value: 'preset' },
+    ] },
+    { key: 'toolId', label: '工具', type: 'tool-select', help: '选择工具，参数表单按 schema 自动生成' },
+    { key: 'credentialId', label: '凭据', type: 'tool-credential-select', help: '工具为 credential 鉴权时选择（可选，未选则按工具默认）' },
+    { key: 'params', label: '参数', type: 'tool-params' },
+    T('responseType', '响应模式', {
+      type: 'select',
+      options: [
+        { label: '自动（二进制自动落盘）', value: 'auto' },
+        { label: '文本 text', value: 'text' },
+        { label: 'JSON json', value: 'json' },
+        { label: 'base64（二进制转字符串）', value: 'base64' },
+        { label: '文件落盘 file', value: 'file' },
+      ],
+      help: '二进制 API（TTS/图片）建议 file，filePath 可直接接「保存资产」节点',
+    }),
+  ],
+  'code': [
+    T('code', '代码', { type: 'textarea', help: '输入在 inputs（键=下方参数键）；return 节点输出。可 await host.http / host.table.* / host.log（桌面端）；代码只做胶水，值得测试的逻辑应注册为节点' }),
+    { key: 'inputs', label: '输入参数', type: 'kv-list', keyPlaceholder: '参数键（inputs.键 引用）', valuePlaceholder: '值，支持 {{模板}}；声明 json 时按结构注入' },
+  ],
+  'sub-workflow': [
+    T('definitionId', '子工作流 ID', { placeholder: '在子工作流详情/导出中查看（运行其发布图）', templateHint: true }),
+    { key: 'inputs', label: '入参', type: 'kv-list', keyPlaceholder: '子工作流 start 参数键', valuePlaceholder: '值，支持 {{模板}}' },
+  ],
+  'variable': [
+    { key: 'op', label: '操作', type: 'select', options: [{ label: '读取 get', value: 'get' }, { label: '写入 set', value: 'set' }] },
+    { key: 'scope', label: '作用域', type: 'select', options: [
+      { label: '运行实例（本实例独享，推荐并行实例用）', value: 'run' },
+      { label: '全局', value: 'global' },
+      { label: '当前用户', value: 'user' },
+    ], help: 'run 作用域仅本运行实例可见，随运行删除清理；global/user 为跨运行共享（并行实例会互相覆盖）' },
+    T('key', '变量键', { templateHint: true }),
+    { key: 'value', label: '写入值', type: 'textarea', templateHint: true, help: 'set 时写入（JSON 字符串或文本；模板可用）' },
+    T('defaultValue', '兜底值', { help: 'get 无值时返回此值' }),
+  ],
+  'data-table': [
+    { key: 'op', label: '操作', type: 'select', options: [
+      { label: '建表 createTable', value: 'createTable' },
+      { label: '插入行 insert', value: 'insert' }, { label: '查询 query', value: 'query' },
+      { label: '增量写入 upsert（按去重键）', value: 'upsert' },
+      { label: '行数 count', value: 'count' },
+      { label: '更新 update', value: 'update' }, { label: '删除 delete', value: 'delete' },
+      { label: '执行 SQL execute', value: 'execute' },
+    ] },
+    { key: 'scope', label: '作用域', type: 'select', options: [
+      { label: '应用数据（按应用隔离，推荐）', value: 'app' },
+      { label: '全局（历史语义，所有工作流共享）', value: 'workflow' },
+    ], help: 'app=按本工作流（应用）隔离，数据跨运行累积、发布新版本不丢；workflow=全局命名空间（历史语义）', group: '内置数据表' },
+    { key: 'dataSourceId', label: '数据源', type: 'select-dynamic', source: 'dataSources', help: '选外部数据库=读写第三方库；留空=读写本应用内置数据表', group: '数据源' },
+    { key: 'sql', label: 'SQL', type: 'textarea', noTemplate: true, help: '外部数据源模式用：SELECT/DML，参数统一用 $1,$2 占位（各库自动翻译），值取自下方 params。sql 不支持 {{}} 模板，防止上游变量被拼接进 SQL 文本', group: '外部数据库' },
+    { key: 'params', label: '参数（JSON 数组）', type: 'textarea', help: '与 $1,$2 占位符一一对应，如 [123, "2024-01-01"]；留空=无参数', group: '外部数据库' },
+    { key: 'tableId', label: '表 ID', type: 'text', group: '内置数据表', help: '按 id 定位表（与表名二选一；编辑器/应用数据页签可查）' },
+    { key: 'tableName', label: '表名', type: 'text', group: '内置数据表', help: 'createTable 建表 / insert 自动建表（仅全局作用域）/ upsert / query 用' },
+    { key: 'columns', label: '列声明（JSON 数组）', type: 'textarea', templateHint: true, group: '内置数据表', help: 'createTable 用，如 [{"key":"url","type":"string"},{"key":"price","type":"number"}]；类型 string/number/boolean/json，只增不改' },
+    { key: 'dedupKeys', label: '去重键（逗号分隔）', type: 'text', group: '内置数据表', help: 'createTable 用，如 url——upsert 按这些列的值判重（建表后锁定）' },
+    { key: 'row', label: '行 JSON', type: 'textarea', templateHint: true, group: '内置数据表', help: 'insert/upsert/update 用，如 {"name":"{{start.name}}","qty":3}' },
+    { key: 'rowId', label: '行 ID', group: '内置数据表', help: 'update/delete 用' },
+    { key: 'filterField', label: '过滤字段', type: 'text', group: '内置数据表', help: 'query 可选：按某列包含关键字过滤（留空=全行 JSON 匹配）' },
+    { key: 'filterContains', label: '过滤关键字', type: 'text', templateHint: true, group: '内置数据表', help: 'query 可选：大小写不敏感包含匹配；配了过滤/分页参数时输出 {rows,total}' },
+    { key: 'page', label: '页码', type: 'number', group: '内置数据表', help: 'query 可选：从 1 起' },
+    { key: 'pageSize', label: '每页条数', type: 'number', group: '内置数据表', help: 'query 可选：1-200，缺省 50' },
+  ],
+  'http-request': [
+    T('method', '请求方法', {
+      type: 'select',
+      options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(v => ({ label: v, value: v })),
+    }),
+    T('url', 'URL', { placeholder: 'https://...', templateHint: true }),
+    { key: 'headers', label: '请求头', type: 'kv-list', keyPlaceholder: 'Header', valuePlaceholder: '值或 {{模板}}', collapsible: true },
+    T('body', '请求体', { type: 'textarea', templateHint: true, collapsible: true }),
+    { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
+    T('responseType', '响应模式', {
+      type: 'select',
+      group: '参数',
+      options: [
+        { label: '自动（二进制自动落盘）', value: 'auto' },
+        { label: '文本 text', value: 'text' },
+        { label: 'JSON json', value: 'json' },
+        { label: 'base64（二进制转字符串）', value: 'base64' },
+        { label: '文件落盘 file', value: 'file' },
+      ],
+      help: '二进制响应建议 file，filePath 可直接接「保存资产」节点',
+    }),
+  ],
+  'template-transform': [
+    T('template', '输出模板', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{llm1.content}}\n\n—— 由 {{start.topic}} 生成',
+      help: '多个变量占位拼接为一段文本输出',
+    }),
+  ],
+  'array-merge': [
+    { key: 'sources', label: '待合并数组', type: 'fields-list', help: '多个 {{节点.数组}} 模板按顺序拼接；每个条目是一个数组来源' },
+  ],
+  'parameter-extractor': [
+    T('input', '待抽取文本', { type: 'textarea', templateHint: true, placeholder: '{{start.text}} 或 {{web1.text}}' }),
+    T('instruction', '抽取要求', { type: 'textarea', placeholder: '例如：抽出人名、地点和时间', collapsible: true }),
+    { key: 'fields', label: '抽取字段', type: 'fields-list', help: '字段将展开为本节点输出（{{本节点ID.字段}}）' },
+    { key: 'providerConfigId', label: 'Provider 配置', type: 'model-pair', group: '模型' },
+  ],
+  'web-extract': [
+    T('url', '网页地址', { templateHint: true, placeholder: 'https://...' }),
+    {
+      key: 'render', label: 'JS 渲染兜底', type: 'select', group: '参数',
+      options: [
+        { label: '自动（HTTP 拿不到正文时渲染重试）', value: 'auto' },
+        { label: '始终浏览器渲染（头条/微信等 JS 站点）', value: 'always' },
+        { label: '关闭（仅 HTTP 抓取）', value: 'off' },
+      ],
+      help: '头条/微信等站点对纯 HTTP 返回反爬挑战页；auto 检测到正文过短时用隐藏浏览器窗口渲染重试（约多花 5-30 秒）',
+    },
+    { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '超长截断（默认 100000）' },
+    { key: 'maxLinks', label: '链接提取数量上限', type: 'number', group: '参数', help: '页面内链接提取上限（默认 30，0=不提取）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
+    { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
+  ],
+
+  'browser-read': [
+    T('url', '页面地址', { templateHint: true, placeholder: 'https://www.toutiao.com/… 或 {{loop.item.url}}' }),
+    {
+      key: 'mode', label: '阅读目标', type: 'select',
+      options: [
+        { label: '文章阅读（滚动到底，提取正文 markdown）', value: 'article' },
+        { label: '链接采集（滚动加载列表，提取页面链接）', value: 'links' },
+      ],
+      help: '文章 = 提取正文 markdown；链接 = 采集页面链接（博主主页/专栏列表页，配合循环节点逐篇阅读）',
+    },
+    { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '文章模式截断（默认 150000）' },
+    T('skipIfUrlSaved', '跳过已收藏（填原文链接）', {
+      group: '参数',
+      placeholder: '{{loop.item.url}}',
+      help: '资产库已存在同链接资产时直接跳过（deduped=true，不开浏览器）——采集工作流续跑秒级快进已采文章',
+    }),
+    T('linkPattern', '链接过滤正则', {
+      group: '参数',
+      placeholder: '^https://www\\.toutiao\\.com/article/\\d+',
+      help: 'links 模式：只保留 URL 匹配该正则的链接（同时充当"加载够了"判定）；留空 = 保留全部 http(s) 链接',
+    }),
+    { key: 'maxLinks', label: '链接数量上限', type: 'number', group: '参数', help: 'links 模式最多采集的链接数；滚动中正则命中数达到该值即提前收工（默认 50）' },
+    {
+      key: 'onError', label: '失败策略', type: 'select', group: '参数',
+      options: [
+        { label: '失败（节点报错，可走 fail 边）', value: 'fail' },
+        { label: '跳过（输出空结果，适合批量采集）', value: 'skip' },
+      ],
+    },
+    { key: 'timeoutMs', label: '总超时（毫秒）', type: 'number', group: '滚动节奏', help: '覆盖 加载+滚动 全程（默认 120000，上限 300000）' },
+    { key: 'scrollMaxMs', label: '滚动预算（毫秒）', type: 'number', group: '滚动节奏', help: '持续滚动最长时间（默认 90000；到底/加载够了会提前收工）' },
+    { key: 'pauseMsMin', label: '步间停顿下限（毫秒）', type: 'number', group: '滚动节奏', help: '滚动步之间的最小等待（默认 800）' },
+    { key: 'pauseMsMax', label: '步间停顿上限（毫秒）', type: 'number', group: '滚动节奏', help: '滚动步之间的最大等待（默认 2600）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '打开页面前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '打开页面前随机等待（默认 2500）' },
+  ],
+
+  'crawl-news': [
+    { key: 'sourceIds', label: '信息来源（多选）', type: 'select-dynamic', source: 'infoSources', multi: true, help: '从「设置 → 信息来源」管理的来源库中多选（含各来源类别）；与分组/自定义 URL 合并去重' },
+    { key: 'topicId', label: '来源分组', type: 'select-dynamic', source: 'infoSourceTopics', help: '选择信息来源分组即整组采集（如内置新闻来源的「人工智能」分组）' },
+    T('customUrls', '自定义 URL 列表', {
+      type: 'textarea', group: '自定义源',
+      placeholder: '["https://...","https://..."] 或每行一个 URL',
+      help: 'JSON 数组（string[] 或 [{name,url}]）或逗号/换行分隔的 URL 列表',
+    }),
+    { key: 'maxLinks', label: '每源链接上限', type: 'number', group: '参数', min: 1, max: 50, help: '每源提取链接上限（默认 30）' },
+    { key: 'maxSources', label: '并行源数量', type: 'number', group: '参数', min: 1, max: 10, help: '并行抓取的源数量上限（默认 10）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
+    { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
+  ],
+
+  'source-catalog': [
+    { key: 'sourceIds', label: '信息来源（多选）', type: 'select-dynamic', source: 'infoSources', multi: true, help: '从「设置 → 信息来源」多选；不选 = 目录内全部启用来源作为候选' },
+  ],
+
+  'chapter-writing': [
+    T('projectId', '长文项目 ID', { type: 'text', help: '长文写作项目（lw_ 前缀），必填' }),
+    T('outlineId', '章节大纲节点 ID', { type: 'text', help: '要写的章节大纲节点 id（outline_ 前缀），必填' }),
+    { key: 'overwrite', label: '覆盖已有正文', type: 'switch', group: '参数', help: '该章已有正文时是否覆盖重写（默认否）' },
+    { key: 'targetWords', label: '目标字数', type: 'number', group: '参数', min: 500, max: 20000, help: '留空 = 大纲预估字数' },
+  ],
+  'volume-design': [
+    T('projectId', '长文项目 ID', { type: 'text', help: '长文写作项目（lw_ 前缀），必填' }),
+    T('volumeId', '卷标识', { type: 'text', help: '要设计的卷（如 v1），必填' }),
+    T('title', '卷标题', { type: 'text', help: '留空 = 卷设计 {volumeId}' }),
+    T('focus', '卷焦点', { type: 'text', help: '本卷要重点展开的主题/冲突（可选）' }),
+    { key: 'chapterFrom', label: '起始章', type: 'number', group: '参数', min: 1, help: '限定章节范围（可选）' },
+    { key: 'chapterTo', label: '结束章', type: 'number', group: '参数', min: 1, help: '限定章节范围（可选）' },
+    { key: 'gridBatchSize', label: '网格分批大小', type: 'number', group: '参数', min: 1, max: 50, help: '每批生成的章节数（默认 10）' },
+    { key: 'maxTokens', label: '单 pass 最大 token', type: 'number', group: '参数', min: 1024, help: '默认 8192' },
+  ],
+  'crawl-links': [
+    T('urls', '待抓取页面列表', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{pick1.parsed}}',
+      help: 'JSON 数组（string[] 或 [{name,url}]）或 {{上游节点.数组}} 模板；并发抓取后提取页面内链接',
+    }),
+    { key: 'maxLinks', label: '每页链接上限', type: 'number', group: '参数', min: 1, max: 100, help: '每页提取链接上限（默认 50）' },
+    { key: 'maxConcurrent', label: '并行数量', type: 'number', group: '参数', min: 1, max: 10, help: '并行抓取的页面数（默认 5）' },
+    { key: 'timeoutMs', label: '抓取超时（毫秒）', type: 'number', group: '参数', help: '留空 = 工作流默认（30s）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
+    { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
+  ],
+
+  'kb-qa': [
+    { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
+    T('question', '问题', { type: 'textarea', templateHint: true, placeholder: '{{start.question}}' }),
+    T('systemPrompt', '系统提示词', {
+      type: 'textarea', group: '生成', collapsible: true,
+      help: '留空使用默认 RAG 提示词（仅依据资料回答，不编造）',
+    }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '生成' },
+    { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '生成' },
+    { key: 'topK', label: '返回条数', type: 'number', min: 1, max: 50, group: '检索' },
+    { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '检索' },
+    { key: 'resultMaxLength', label: '资料最大长度（字符）', type: 'number', group: '检索', help: '超限整条丢弃（默认 8000）' },
+    { key: 'includeDialogFiles', label: '包含本对话上传的文件', type: 'switch', group: '检索', help: '把对话附件也纳入检索范围（仅从 AI 对话中触发时生效）' },
+    { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '检索', help: '知识库配置了 rerank 模型时对检索结果重排（默认开）' },
+    { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '检索', help: '1=纯向量语义检索（默认）；0=纯 BM25 关键词；中间值=混合加权' },
+  ],
+  'report': [
+    T('title', '报告标题', { templateHint: true }),
+    T('template', '模板（markdown）', {
+      type: 'textarea', templateHint: true,
+      placeholder: '# {{start.topic}} 报告\n\n{{llm1.content}}',
+      help: '支持 markdown；多变量占位拼接为全文',
+    }),
+    T('format', '输出格式', {
+      type: 'select',
+      options: [
+        { label: 'Markdown（双端）', value: 'markdown' },
+        { label: 'Word 文档（桌面端本地文件）', value: 'docx' },
+      ],
+      help: 'PDF 导出：运行详情页预览后打印（双端可用）',
+    }),
+  ],
+
+  'form-collect': [
+    T('formTitle', '表单标题', { templateHint: true, placeholder: '例如：请上传待翻译文件' }),
+    { key: 'fields', label: '表单字段', type: 'inputs-list', help: '字段值经 {{本节点.values.字段key}} 引用' },
+    { key: 'timeoutMs', label: '等待超时（毫秒）', type: 'number', group: '参数', help: '留空 = 一直等待用户提交' },
+  ],
+  'message': [
+    T('content', '消息内容', { type: 'textarea', templateHint: true, placeholder: '例如：已完成翻译，请查看 {{report.filePath}}' }),
+  ],
+  'report-image': [
+    T('title', '报告标题', { templateHint: true }),
+    T('template', '模板（markdown）', {
+      type: 'textarea', templateHint: true,
+      placeholder: '# 每日早间新闻\n\n{{llm1.content}}',
+      help: '支持 markdown；渲染为竖版长图',
+    }),
+    {
+      key: 'templateId', label: '排版模板', type: 'select', group: '版式',
+      options: [
+        { label: '通用文档', value: 'generic' },
+        { label: '早报·红头卡片', value: 'morningReport' },
+        { label: '早报·商务蓝', value: 'morningReportBlue' },
+        { label: '早报·极简', value: 'morningReportMinimal' },
+        { label: '周报·商务金', value: 'industryWeekly' },
+        { label: '周报·墨绿', value: 'industryWeeklyGreen' },
+        { label: '周报·深色', value: 'industryWeeklyDark' },
+        { label: '吃瓜·娱乐小报', value: 'gossipTabloid' },
+        { label: '吃瓜·事件梳理', value: 'gossipTimeline' },
+        { label: '吃瓜·公众号文', value: 'gossipArticle' },
+        { label: '吃瓜·港式小报', value: 'gossipHK' },
+        { label: '吃瓜·信息图', value: 'gossipInfographic' },
+        { label: '吃瓜·民国报纸', value: 'gossipMinguo' },
+      ],
+    },
+  ],
+
+  'app-notify': [
+    T('title', '通知标题', { templateHint: true }),
+    T('message', '通知内容', { type: 'textarea', templateHint: true }),
+    T('level', '级别', {
+      type: 'select',
+      options: [
+        { label: '信息', value: 'info' },
+        { label: '成功', value: 'success' },
+        { label: '警告', value: 'warning' },
+        { label: '错误', value: 'error' },
+      ],
+    }),
+  ],
+  'save-asset': [
+    T('content', '内容', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{imageGen1.images[0].url}} / {{tts1.audioPath}} / 文本 / JSON',
+      help: '文件路径/链接/文本/JSON；auto 自动识别',
+    }),
+    T('kind', '内容形态', {
+      type: 'select',
+      options: [
+        { label: '自动识别（推荐）', value: 'auto' },
+        { label: '文件', value: 'file' },
+        { label: '链接', value: 'url' },
+        { label: '文本', value: 'text' },
+        { label: 'JSON', value: 'json' },
+      ],
+    }),
+    T('category', '资产分类', {
+      type: 'select',
+      options: [
+        { label: '自动按文件类型', value: 'auto' },
+        { label: '图片', value: 'image' },
+        { label: '音频', value: 'audio' },
+        { label: '视频', value: 'video' },
+        { label: '文档', value: 'document' },
+        { label: '文本', value: 'text' },
+        { label: '数据', value: 'json' },
+        { label: '模板', value: 'template' },
+        { label: '其他', value: 'other' },
+      ],
+    }),
+    T('subCategory', '业务分类', {
+      type: 'select-dynamic',
+      source: 'assetCategories',
+      help: '从资产中心已定义的业务分类中选择（可在资产中心「分类管理」添加新分类，定义预览行为）；留空 = 不分组',
+    }),
+    T('name', '资产名', { help: '留空按文件名/内容自动生成', placeholder: '例如：今日早报图' }),
+    T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
+    T('groupName', '资产组名（套图）', {
+      help: '同一次流程内同名组自动归为一组（资产中心以组卡片展示）；留空不分组',
+      placeholder: '例如：电商套图-主图+场景图',
+    }),
+    T('enabled', '保存到资产', {
+      type: 'switch',
+      help: '关闭后本节点不写资产库（流程继续）；用于中间产物/清单不存资产',
+      defaultValue: true,
+    }),
+    T('description', '描述', { group: '其他' }),
+    T('sourceRef', '归组来源引用（跨运行合并集合）', {
+      group: '其他',
+      placeholder: 'toutiao-blogger:{{start.bloggerUrl}}',
+      help: '组默认按「运行」隔离（每次运行各建同名组）；填一个稳定值（如含博主主页链接）后，多次运行的同名组自动并入同一集合；留空 = 当前运行 ID',
+    }),
+    T('dedupeUrl', '幂等去重链接', {
+      group: '其他',
+      placeholder: '{{loop.item.url}}',
+      help: '填原文网页链接：资产库已存在同链接资产时跳过保存（输出 deduped=true），支撑重跑/增量采集不产生重复资产',
+    }),
+  ],
+  'collect-webpage': [
+    T('url', '网页 URL', {
+      templateHint: true,
+      placeholder: 'https://example.com/article 或 {{httpReq1.url}}',
+      help: '抓取该网页并归档：single-file HTML（CSS/图片内联）+ Markdown 正文，存入资产中心「网页收藏」',
+    }),
+    T('title', '标题', { placeholder: '留空自动从页面提取' }),
+    T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
+    T('existingPolicy', '重复 URL 策略', {
+      type: 'select',
+      options: [
+        { label: '跳过（已收藏则不重复入池，推荐）', value: 'skip' },
+        { label: '更新快照（覆盖刷新同一收藏）', value: 'replace' },
+      ],
+      help: '频繁跑流程时同一网页会被反复抓取——默认跳过避免收藏池膨胀；需最新快照用「更新快照」',
+    }),
+    T('description', '描述', { group: '其他' }),
+    T('enabled', '收藏到网页收藏', {
+      type: 'switch',
+      help: '关闭后本节点不写资产库（流程继续）；用于条件收藏',
+    }),
+  ],
+  'read-asset': [
+    T('assetId', '资产 ID', { templateHint: true, placeholder: '{{saveAsset1.assetId}} 或 {{start.assetId}}' }),
+    T('output', '输出模式', {
+      type: 'select',
+      options: [
+        { label: '可访问链接 url', value: 'url' },
+        { label: '本地文件路径 path（文件型）', value: 'path' },
+        { label: '内容 content（文本/JSON 型）', value: 'content' },
+        { label: '全部元数据 metadata', value: 'metadata' },
+      ],
+      help: 'url=前端可加载链接；path=供下游节点直接使用的本地路径',
+    }),
+  ],
+  'read-assets': [
+    T('assetIds', '资产 ID 列表（多选）', {
+      templateHint: true,
+      help: '数组/JSON 或逗号分隔均可；空=直接通过（未选择资产）',
+      placeholder: '{{start.scriptAssetIds}} / {{start.referenceAssetIds}}',
+    }),
+  ],
+  'save-diary': [
+    T('title', '日记标题', { templateHint: true, placeholder: '{{llm1.content}} 或 {{start.title}}' }),
+    T('content', '日记内容（markdown）', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
+    T('folderId', '目标日记文件夹 ID', {
+      templateHint: true,
+      help: '留空 = 自动创建/复用「AI 提炼」根文件夹；可在日记页面「新建目录」后填入目录 ID',
+      placeholder: '留空自动',
+    }),
+  ],
+  'collect-diary': [
+    T('startDate', '起始日期（YYYY-MM-DD，优先于天数）', { templateHint: true, placeholder: '{{start.startDate}} / 留空按最近 N 天' }),
+    T('endDate', '结束日期（YYYY-MM-DD，含当天）', { templateHint: true, placeholder: '{{start.endDate}}' }),
+    T('days', '最近 N 天（起始日期留空时生效）', { templateHint: true, placeholder: '7' }),
+    T('folderId', '只聚合该目录 ID', {
+      templateHint: true,
+      help: '留空 = 跨全部目录复盘',
+      placeholder: '留空=全部目录',
+    }),
+  ],
+}

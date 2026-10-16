@@ -1,0 +1,190 @@
+/**
+ * KbChapterSummaryService 单测（M2 章节摘要）
+ * @description 注入 fake LLM 验证：成功写入、失败标记可重试、已 done 跳过、空正文拒绝。
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import {
+  createTestDataSource,
+  getTestDialects,
+  type TestDataSource,
+} from '../../../helpers/create-test-data-source'
+import { KbChapterRepository, type KbChapterInput } from '@core/database/repositories/kb-chapter.repository'
+import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
+import { LOCAL_DEFAULT_USER_ID, runWithUser } from '@core/context/user-context'
+import { resetKnowledgeParams, setKnowledgeParams } from '@shared/utils/knowledge-params'
+
+const DOC_ID = 'doc-summary-test'
+const KB_ID = 'kb-summary-test'
+
+function chapter(over: Partial<KbChapterInput> & { id: string; title: string; ordering: number }): KbChapterInput {
+  return {
+    documentId: DOC_ID,
+    knowledgeBaseId: KB_ID,
+    level: 1,
+    parentId: null,
+    parentTitle: null,
+    content: '章节正文内容，用于摘要生成。',
+    ...over,
+  }
+}
+
+describe.each(getTestDialects())('KbChapterSummaryService [%s]', dialect => {
+  let tds: TestDataSource
+  let repo: KbChapterRepository
+
+  beforeAll(async () => {
+    tds = await createTestDataSource(dialect)
+    repo = new KbChapterRepository(tds.ds)
+  })
+
+  afterAll(async () => {
+    await tds.close()
+  })
+
+  beforeEach(async () => {
+    await tds.truncateAll()
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'c1', title: '第一章 绪论', ordering: 0, content: '这一章介绍背景与研究动机。' }),
+        chapter({ id: 'c2', title: '第二章 方法', ordering: 1, content: '这一章给出方法细节与实验设置。' }),
+        chapter({ id: 'c3', title: '第三章 空章', ordering: 2, content: '   ' }),
+      ]),
+    )
+  })
+
+  it('成功生成：摘要写入 + 状态 done；空正文章节标记 failed', async () => {
+    const calls: string[] = []
+    const service = new KbChapterSummaryService({
+      repo,
+      llm: async (req) => {
+        calls.push(req.user)
+        return `摘要：${req.user.slice(0, 12)}`
+      },
+    })
+
+    const result = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID, { concurrency: 2 }))
+    expect(result.done).toBe(2)
+    expect(result.failed).toBe(1)
+    expect(calls).toHaveLength(2)
+
+    const rows = await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.findByDocument(DOC_ID))
+    const c1 = rows.find(r => r.id === 'c1')!
+    const c3 = rows.find(r => r.id === 'c3')!
+    expect(c1.summaryStatus).toBe('done')
+    expect(c1.summary).toContain('摘要：')
+    expect(c3.summaryStatus).toBe('failed')
+    expect(c3.summaryError).toContain('章节正文为空')
+  })
+
+  it('失败可重试：首次抛错标记 failed，retryFailed 后成功并清除错误', async () => {
+    let attempt = 0
+    const service = new KbChapterSummaryService({
+      repo,
+      llm: async () => {
+        attempt++
+        if (attempt === 1) throw new Error('provider 429 限流')
+        return '重试后的摘要'
+      },
+    })
+
+    // 只处理第一章，便于精确控制
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.replaceByDocument(DOC_ID, [
+      chapter({ id: 'only', title: '唯一章', ordering: 0, content: '正文内容。' }),
+    ]))
+
+    const first = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))
+    expect(first.failed).toBe(1)
+    let row = (await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.findByDocument(DOC_ID)))[0]
+    expect(row.summaryStatus).toBe('failed')
+    expect(row.summaryError).toContain('429')
+
+    const second = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID, { retryFailed: true }))
+    expect(second.done).toBe(1)
+    row = (await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.findByDocument(DOC_ID)))[0]
+    expect(row.summaryStatus).toBe('done')
+    expect(row.summary).toBe('重试后的摘要')
+    expect(row.summaryError).toBeNull()
+  })
+
+  it('成本护栏：maxSummaries 只处理「层级最浅 + 内容较长」的前 N 章，其余保持 pending', async () => {
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'l2-long', title: '二级长章', ordering: 0, level: 2, content: 'x'.repeat(500) }),
+        chapter({ id: 'l1-a', title: '一级章 A', ordering: 1, level: 1, content: 'y'.repeat(100) }),
+        chapter({ id: 'l1-b', title: '一级章 B', ordering: 2, level: 1, content: 'z'.repeat(300) }),
+        chapter({ id: 'l3', title: '三级章', ordering: 3, level: 3, content: 'w'.repeat(900) }),
+      ]),
+    )
+
+    const summarized: string[] = []
+    const service = new KbChapterSummaryService({
+      repo,
+      llm: async (req) => {
+        summarized.push(req.user)
+        return '摘要'
+      },
+    })
+
+    const result = await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      service.summarizeDocument(DOC_ID, { maxSummaries: 2, concurrency: 1 }),
+    )
+
+    // 前 2 条 = 层级最浅（level 1）中内容较长者：l1-b(300) > l1-a(100)
+    expect(result.total).toBe(2)
+    expect(result.done).toBe(2)
+    expect(result.remaining).toBe(2)
+    expect(summarized).toHaveLength(2)
+
+    const rows = await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.findByDocument(DOC_ID))
+    const byId = new Map(rows.map(r => [r.id, r]))
+    expect(byId.get('l1-b')!.summaryStatus).toBe('done')
+    expect(byId.get('l1-a')!.summaryStatus).toBe('done')
+    expect(byId.get('l2-long')!.summaryStatus).toBe('pending')
+    expect(byId.get('l3')!.summaryStatus).toBe('pending')
+  })
+
+  it('已 done 的章节跳过（retryFailed=false 时只补 pending）', async () => {
+    const service = new KbChapterSummaryService({ repo, llm: async () => '摘要内容' })
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))
+
+    const again = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID, { retryFailed: false }))
+    // 无 pending（全部 done 或 failed）且不重试 failed → 待处理 0
+    expect(again.total).toBe(0)
+    expect(again.skipped).toBe(2)
+  })
+
+  /**
+   * 2026-09-13「参数设置 → 知识库 → 章节摘要」：单次处理章数/并发/单章字符上限
+   * 不再是函数里的硬编码缺省，而是读运行时持有者（保存后重注入即生效）。
+   * 这里**不传 opts**，证明缺省确实来自设置。
+   */
+  it('不传 opts 时，缺省值来自「参数设置 → 知识库 → 章节摘要」', async () => {
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'a', title: '第一章', ordering: 0, content: '正文 A。' }),
+        chapter({ id: 'b', title: '第二章', ordering: 1, content: '正文 B。' }),
+        chapter({ id: 'c', title: '第三章', ordering: 2, content: '正文 C。' }),
+      ]),
+    )
+    const summarized: string[] = []
+    const service = new KbChapterSummaryService({
+      repo,
+      llm: async (req) => {
+        summarized.push(req.user)
+        return '摘要'
+      },
+    })
+
+    // 注入 maxSummaries = 2 → 一次只处理 2 章（默认是 60，这里证明读到了配置）
+    setKnowledgeParams({ summary: { maxSummaries: 2 } })
+    const result = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))
+    expect(result.total).toBe(2)
+    expect(result.remaining).toBe(1)
+    expect(summarized).toHaveLength(2)
+
+    resetKnowledgeParams()
+    // 回到默认（60）后，剩余 1 章处理掉
+    const rest = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))
+    expect(rest.total).toBe(1)
+  })
+})

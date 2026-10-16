@@ -1,0 +1,1134 @@
+[
+  {
+    "from": "src/core/constants/search-engine-templates.ts",
+    "spec": "@core/platform/providers/search"
+  },
+  {
+    "from": "src/core/database/data-source.ts",
+    "spec": "./entities"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/daily-news-brief.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/industry-weekly.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/multi-platform-copy.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/webpage-summary.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/article-polish.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/image-card.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/webpage-transcribe.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/video-transcript-app.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/weekly-report.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/email-assistant.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/resume-optimizer.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/data-analysis.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/meeting-minutes.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/industry-research.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/knowledge-refine.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/competitor-analysis.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/ecommerce-poster.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/gossip-event-report.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/long-form-writing.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/ecommerce-detail-long-image.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/script-to-video.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/script-to-video-v2.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/script-to-video-v3.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/topic-research.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-builtin-apps.ts",
+    "spec": "./builtin-apps/diary-weekly-review.json"
+  },
+  {
+    "from": "src/core/database/migrations/create-lw-predicate-registry.ts",
+    "spec": "@shared/contracts/longwriting-design"
+  },
+  {
+    "from": "src/core/database/repositories/dialog.repository.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/database/repositories/image.repository.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/database/repositories/lw-predicate-registry.repository.ts",
+    "spec": "@shared/contracts/longwriting-design"
+  },
+  {
+    "from": "src/core/database/repositories/message.repository.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/database/repositories/role.repository.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/database/repositories/role.repository.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/modules/episode-production/canvas/data/platform-presets.ts",
+    "spec": "@shared/types/episode-production/canvas/canvas.types"
+  },
+  {
+    "from": "src/core/packs/asset-center/handlers/asset.handler.ts",
+    "spec": "@core/platform/assets"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./skills"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./diary"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./portrait"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./chat"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./voice-design"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./longwriting"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./episode-production"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./workflow"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./app"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./knowledge-base"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./asset-center"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./domain-learning"
+  },
+  {
+    "from": "src/core/packs/builtin-packs.ts",
+    "spec": "./info-collection"
+  },
+  {
+    "from": "src/core/packs/chat/handlers/dialog.handler.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/chat/handlers/message.handler.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/chat/handlers/role.handler.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/chat/services/chat.service.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/packs/chat/services/chat.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/chat/services/system-agent/system-agent.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/chat/services/system-agent/system-agent.service.ts",
+    "spec": "@core/platform/agent-runtime"
+  },
+  {
+    "from": "src/core/packs/chat/services/system-agent/system-agent.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/chat/services/system-agent/system-agent.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/packs/domain-learning/services/dl-agent-harness.service.ts",
+    "spec": "@core/platform/agent-runtime"
+  },
+  {
+    "from": "src/core/packs/episode-production/handlers/episode.handler.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/packs/episode-production/handlers/index.ts",
+    "spec": "./asset"
+  },
+  {
+    "from": "src/core/packs/episode-production/handlers/narrative/script.handler.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/packs/episode-production/handlers/render/video-segment.handler.ts",
+    "spec": "@core/platform/providers/video"
+  },
+  {
+    "from": "src/core/packs/episode-production/handlers/render/video.handler.ts",
+    "spec": "@core/platform/providers/video"
+  },
+  {
+    "from": "src/core/packs/episode-production/handlers/workflow.handler.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/packs/episode-production/index.ts",
+    "spec": "./handlers"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-ai.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/keyframe"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/keyframe"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/keyframe"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/audio"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/assets/services"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/keyframe"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/audio"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/assets/services"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/keyframe"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/story-to-video-resource.service.ts",
+    "spec": "@core/platform/episode-production/render/keyframe"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/video-synthesis.service.ts",
+    "spec": "@core/platform/episode-production/compose"
+  },
+  {
+    "from": "src/core/packs/episode-production/services/video-synthesis.service.ts",
+    "spec": "@core/platform/episode-production/compose"
+  },
+  {
+    "from": "src/core/packs/info-collection/services/ic-defaults.ts",
+    "spec": "@core/platform/providers/search"
+  },
+  {
+    "from": "src/core/packs/longwriting/index.ts",
+    "spec": "@core/platform/workflow/nodes"
+  },
+  {
+    "from": "src/core/packs/longwriting/services/longwriting.service.ts",
+    "spec": "@core/platform/assets"
+  },
+  {
+    "from": "src/core/packs/longwriting/story-room/room-session.ts",
+    "spec": "@core/platform/agent-runtime"
+  },
+  {
+    "from": "src/core/packs/podcast-video/index.ts",
+    "spec": "@core/platform/workflow/nodes"
+  },
+  {
+    "from": "src/core/platform/agent-runtime/provider/provider-adapter.ts",
+    "spec": "@core/..."
+  },
+  {
+    "from": "src/core/platform/episode-production/agent/ep-agent-harness.service.ts",
+    "spec": "@core/platform/agent-runtime"
+  },
+  {
+    "from": "src/core/platform/episode-production/agent/ep-agent.types.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/assets/services/temp-asset.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/episode-production/auto-binding/lw-entity-detection.service.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/platform/episode-production/compose/timeline-builder.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/compose/transition-translator.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/scene-polisher.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/script-generator.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/script-generator.ts",
+    "spec": "../../prompts/specs"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/story-text-generator.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/storyboard-cogen.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/storyboard-cogen.ts",
+    "spec": "../../prompts/specs"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/storyboard-generator.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ai/types.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/asset-roster-builder.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/ref-id-reassign.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/scene-binding-writer.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/services/scene-script.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/services/script-append.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/services/script-scene-rebuild.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/narrative/services/storyboard-cogen.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/audio/scene-audio-orchestrator.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/keyframe/keyframe-generation.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/keyframe/keyframe-generator.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/keyframe/keyframe-prompt-builder.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/video/adapter-factory.ts",
+    "spec": "@core/platform/providers/video"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/video/base-video-provider-bridge.ts",
+    "spec": "@core/platform/providers/video"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/video/video-generation.service.ts",
+    "spec": "@core/platform/providers/video"
+  },
+  {
+    "from": "src/core/platform/episode-production/render/video/video-generation.service.ts",
+    "spec": "@core/platform/providers/video"
+  },
+  {
+    "from": "src/core/platform/episode-production/workflow/episode-status-advance.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/workflow/episode-status.machine.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/workflow/progress-calculator.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/workflow/project-summary.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/episode-production/workflow/stage-gate.service.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/core/platform/providers/image/index.ts",
+    "spec": "./sdk"
+  },
+  {
+    "from": "src/core/platform/providers/llm/base-provider.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/index.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/index.ts",
+    "spec": "./sdk"
+  },
+  {
+    "from": "src/core/platform/providers/llm/model-capability.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/openai-compatible-provider.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/sdk/anthropic-sdk-provider.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/sdk/google-sdk-provider.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/sdk/openai-sdk-provider.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/llm/sdk/volcengine-sdk-provider.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/providers/video/index.ts",
+    "spec": "./sdk"
+  },
+  {
+    "from": "src/core/platform/services/ai-call.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/platform/services/ai-call.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/services/file.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/services/image.service.ts",
+    "spec": "@core/platform/providers/image"
+  },
+  {
+    "from": "src/core/platform/services/image.service.ts",
+    "spec": "@core/platform/providers/image"
+  },
+  {
+    "from": "src/core/platform/services/image.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/atomize.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/book-passes.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/brain-query.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/case-study.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/cleanup.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/consolidate.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/corpus-merge.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/corpus-passes.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/digest-orchestrator.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/digest-orchestrator.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/distill.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/foreshadow-scan.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/layer-relabel.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/pattern-induct.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/principle-distill.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/profile.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/kb-brain/qa-sampler.service.ts",
+    "spec": "./prompts"
+  },
+  {
+    "from": "src/core/platform/services/knowledge-base.service.ts",
+    "spec": "@core/platform/services/chunk-splitter"
+  },
+  {
+    "from": "src/core/platform/services/longwriting/design/design-document.service.ts",
+    "spec": "@shared/contracts/longwriting-design"
+  },
+  {
+    "from": "src/core/platform/services/longwriting/design/volume-design-flow.ts",
+    "spec": "@shared/contracts/longwriting-design"
+  },
+  {
+    "from": "src/core/platform/services/longwriting/library/library-ai.service.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/platform/services/longwriting/library/library-ai.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/services/longwriting-ai.service.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/platform/services/longwriting-ai.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/services/notification.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/services/provider-template.service.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/platform/services/search-engine.service.ts",
+    "spec": "@core/platform/providers/search"
+  },
+  {
+    "from": "src/core/platform/services/stock-media.service.ts",
+    "spec": "@core/platform/providers/stock"
+  },
+  {
+    "from": "src/core/platform/services/translation.service.ts",
+    "spec": "@core/platform/providers/llm"
+  },
+  {
+    "from": "src/core/platform/services/translation.service.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/core/platform/settings/module-params.service.ts",
+    "spec": "@shared/constants/module-params"
+  },
+  {
+    "from": "src/core/platform/workflow/nodes/visual-nodes.ts",
+    "spec": "@core/platform/providers/stock"
+  },
+  {
+    "from": "src/core/platform/workflow/workflow-boot.ts",
+    "spec": "./nodes"
+  },
+  {
+    "from": "src/core/platform/workflow/workflow-boot.ts",
+    "spec": "../assets"
+  },
+  {
+    "from": "src/core/platform/workflow/workflow-boot.ts",
+    "spec": "../assets"
+  },
+  {
+    "from": "src/electron/index.ts",
+    "spec": "./database"
+  },
+  {
+    "from": "src/electron/ipc/handlers/api-key.handler.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/electron/ipc/handlers/image.handler.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/electron/ipc/handlers/notification.handler.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/preload/index.ts",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/preload/index.ts",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/renderer/src/api/main-image-generator.ts",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/chat/AssistantCard.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/AssistantEditor.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/AssistantEditor.vue",
+    "spec": "../../../shared/types/assistant-library.types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatHeader.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatInput.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatInput.vue",
+    "spec": "../../../shared/types/search-engine.types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatInput.vue",
+    "spec": "../../../shared/types/dialog.types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatMain.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatSidebar.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/ChatSidebar.vue",
+    "spec": "../../../shared/types/assistant-library.types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/MessageItem.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/MessageList.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/chat/TopicCard.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/diary/DiaryEditor.vue",
+    "spec": "@shared/types/diary"
+  },
+  {
+    "from": "src/renderer/src/components/diary/FolderTreeItem.vue",
+    "spec": "@shared/types/diary"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/BatchCreateEpisodesDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/BindCharacterDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/BindItemDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/BindLocationDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/CharacterDetailDialog.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/EditEpisodeDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/EntityEditDialog.vue",
+    "spec": "../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/GenerateImagesDialog.vue",
+    "spec": "../../../../shared/types/story-to-video.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/ItemDetailDialog.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/LocationDetailDialog.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/RegenerateDialog.vue",
+    "spec": "../../../../shared/types/story-to-video.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/SettingsDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/SettingsDialog.vue",
+    "spec": "../../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/StoryboardEditDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/StoryboardEditDialog.vue",
+    "spec": "../../../../shared/types/story-to-video.types"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/dialogs/SynthesisDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/script/AppendScriptDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/script/AppendScriptDialog.vue",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/script/StageScriptView.vue",
+    "spec": "@shared/types/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/stage-asset/AssetStageView.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/stage-asset/location/AddMainImageDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/stage-asset/location/DeriveVariantDialog.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/stage-compose/TimelineEditor.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/stage-content/StageContentView.vue",
+    "spec": "../../../../../shared/types/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/episode-production/stage-content/StageContentView.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/comment/ChapterStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/comment/OutlineStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/comment/TopicStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/ProjectSettingsDialog.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/story/ChapterStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/story/CharacterStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/story/OutlineStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/story/OverviewStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/story/PlotStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/longwriting/story/SkillItemStage.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/components/portrait/CreateCharacterDialog.vue",
+    "spec": "../../../shared/types/portrait.types"
+  },
+  {
+    "from": "src/renderer/src/components/portrait/EditCharacterDialog.vue",
+    "spec": "../../../shared/types/portrait.types"
+  },
+  {
+    "from": "src/renderer/src/components/settings/AddSearchEngineDialog.vue",
+    "spec": "../../../shared/types/search-engine.types"
+  },
+  {
+    "from": "src/renderer/src/components/settings/ModuleParamsSettings.vue",
+    "spec": "@shared/constants/module-params"
+  },
+  {
+    "from": "src/renderer/src/components/voice/VoiceDesignSidebar.vue",
+    "spec": "../../../shared/types/voice.types"
+  },
+  {
+    "from": "src/renderer/src/composables/useChat.ts",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/mount.ts",
+    "spec": "./router"
+  },
+  {
+    "from": "src/renderer/src/mount.ts",
+    "spec": "./packs"
+  },
+  {
+    "from": "src/renderer/src/mount.ts",
+    "spec": "./styles/index.scss"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./knowledge-base"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./workflow"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./app"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./asset-center"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./chat"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./portrait"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./longwriting"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./episode-production"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./voice-design"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./diary"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./skills"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./domain-learning"
+  },
+  {
+    "from": "src/renderer/src/packs/index.ts",
+    "spec": "./info-collection"
+  },
+  {
+    "from": "src/renderer/src/packs/registry.ts",
+    "spec": "@/views/..."
+  },
+  {
+    "from": "src/renderer/src/stores/dialog.ts",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/stores/episode-production/episode.store.ts",
+    "spec": "../../../../shared/types/episode-production"
+  },
+  {
+    "from": "src/renderer/src/stores/image.ts",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/stores/image.ts",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/stores/role.ts",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/stores/settings.ts",
+    "spec": "../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/stores/settings.ts",
+    "spec": "../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/stores/workflow.ts",
+    "spec": "@/router"
+  },
+  {
+    "from": "src/renderer/src/views/Chat.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/views/CommentEditor.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/views/Diary.vue",
+    "spec": "@shared/types/diary"
+  },
+  {
+    "from": "src/renderer/src/views/EpisodeStudio.vue",
+    "spec": "@/stores/episode-production"
+  },
+  {
+    "from": "src/renderer/src/views/EpisodeStudio.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/views/KnowledgeBase.vue",
+    "spec": "@/composables"
+  },
+  {
+    "from": "src/renderer/src/views/LongWriting.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/views/LongWriting.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/views/StoryEditor.vue",
+    "spec": "../../../../shared/types/longwriting.types"
+  },
+  {
+    "from": "src/renderer/src/views/StoryEditor.vue",
+    "spec": "../../../shared/types"
+  },
+  {
+    "from": "src/renderer/src/views/voice/VoiceDesign.vue",
+    "spec": "../../../shared/types/voice.types"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/AgentConsoleView.vue",
+    "spec": "@shared/types"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/rag-qa.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/batch-translate.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/content-review.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/daily-digest.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/video-transcript.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/image-gen-app.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/translate-app.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/tts-app.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/stt-app.json"
+  },
+  {
+    "from": "src/renderer/src/views/workflow/WorkflowList.vue",
+    "spec": "@/assets/workflow-templates/voice-clone-app.json"
+  },
+  {
+    "from": "src/shared/types/story-to-video.types.ts",
+    "spec": "./episode-production"
+  },
+  {
+    "from": "src/shared/utils/agent-budget.ts",
+    "spec": "../constants/module-params"
+  }
+]

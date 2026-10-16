@@ -1,0 +1,648 @@
+/**
+ * 知识库状态管理
+ * @module stores/knowledge-base
+ * @description 管理知识库、文档、检索等状态
+ */
+
+import { ref, computed, toRaw, onUnmounted } from 'vue'
+import { defineStore } from 'pinia'
+import type {
+  KnowledgeBase,
+  CreateKnowledgeBaseRequest,
+  UpdateKnowledgeBaseRequest,
+  KbDocument,
+  KbChunk,
+  SearchRequest,
+  SearchResult,
+  EmbeddingModel,
+  FileInfo
+} from '../../../shared/types/knowledge-base.types'
+
+/**
+ * 使用知识库 Store
+ */
+export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
+  // ==================== 状态 ====================
+
+  /**
+   * 知识库列表
+   */
+  const knowledgeBases = ref<KnowledgeBase[]>([])
+
+  /**
+   * 当前选中的知识库
+   */
+  const currentKnowledgeBase = ref<KnowledgeBase | null>(null)
+
+  /**
+   * 当前知识库的文档列表
+   */
+  const documents = ref<KbDocument[]>([])
+
+  /**
+   * 检索结果
+   */
+  const searchResults = ref<SearchResult[]>([])
+
+  /**
+   * 可用的 Embedding 模型列表
+   */
+  const embeddingModels = ref<EmbeddingModel[]>([])
+
+  /**
+   * 是否正在加载
+   */
+  const isLoading = ref(false)
+
+  /**
+   * 是否正在检索
+   */
+  const isSearching = ref(false)
+
+  /**
+   * 错误信息
+   */
+  const error = ref<string | null>(null)
+
+  /**
+   * 文档预估剩余时间（秒）Map<documentId, seconds>
+   */
+  const documentEstimatedTimes = ref<Map<string, number>>(new Map())
+
+  /**
+   * IPC 事件取消订阅函数列表
+   */
+  const unsubscribers: Array<() => void> = []
+
+  // ==================== 计算属性 ====================
+
+  /**
+   * 知识库数量
+   */
+  const knowledgeBaseCount = computed(() => knowledgeBases.value.length)
+
+  /**
+   * 当前知识库是否已选择
+   */
+  const hasCurrentKnowledgeBase = computed(() => currentKnowledgeBase.value !== null)
+
+  /**
+   * 当前知识库的文档数量
+   */
+  const documentCount = computed(() => documents.value.length)
+
+  // ==================== IPC 事件监听 ====================
+
+  /**
+   * 设置 IPC 事件监听
+   */
+  function setupEventListeners(): void {
+    // 监听文档处理进度
+    const unsubProgress = window.electronAPI.knowledgeBase.onDocumentProgress(
+      (data: { documentId: string; progress: number; estimatedSeconds?: number }) => {
+        const doc = documents.value.find(d => d.id === data.documentId)
+        if (doc) {
+          doc.progress = data.progress
+          if (doc.status === 'pending') {
+            doc.status = 'processing'
+          }
+          // 更新预估时间
+          if (data.estimatedSeconds !== undefined) {
+            documentEstimatedTimes.value.set(data.documentId, data.estimatedSeconds)
+          }
+        }
+      }
+    )
+    unsubscribers.push(unsubProgress)
+
+    // 监听文档状态变化
+    const unsubStatus = window.electronAPI.knowledgeBase.onDocumentStatus(
+      (data: { documentId: string; status: string; chunkCount?: number; errorMessage?: string }) => {
+        const doc = documents.value.find(d => d.id === data.documentId)
+        if (doc) {
+          doc.status = data.status as any
+          if (data.chunkCount !== undefined) {
+            doc.chunkCount = data.chunkCount
+          }
+          if (data.errorMessage) {
+            doc.errorMessage = data.errorMessage
+          }
+          // 完成或失败时清除预估时间
+          if (data.status === 'completed' || data.status === 'failed') {
+            documentEstimatedTimes.value.delete(data.documentId)
+          }
+        }
+      }
+    )
+    unsubscribers.push(unsubStatus)
+
+    // 监听知识库统计更新
+    const unsubStats = window.electronAPI.knowledgeBase.onStatsUpdate(
+      (data: { id: string; documentCount: number; vectorCount: number; totalSize: number }) => {
+        // 更新列表中的知识库
+        const kb = knowledgeBases.value.find(k => k.id === data.id)
+        if (kb) {
+          kb.documentCount = data.documentCount
+          kb.vectorCount = data.vectorCount
+          kb.totalSize = data.totalSize
+        }
+        // 更新当前选中的知识库
+        if (currentKnowledgeBase.value?.id === data.id) {
+          currentKnowledgeBase.value = {
+            ...currentKnowledgeBase.value,
+            documentCount: data.documentCount,
+            vectorCount: data.vectorCount,
+            totalSize: data.totalSize
+          }
+        }
+      }
+    )
+    unsubscribers.push(unsubStats)
+  }
+
+  /**
+   * 清理 IPC 事件监听
+   */
+  function cleanupEventListeners(): void {
+    for (const unsub of unsubscribers) {
+      unsub()
+    }
+    unsubscribers.length = 0
+  }
+
+  // ==================== 知识库管理 ====================
+
+  /**
+   * 加载知识库列表
+   */
+  async function loadKnowledgeBases(): Promise<void> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.list()
+      if (response.success && response.data) {
+        knowledgeBases.value = response.data
+      } else {
+        error.value = response.error || '加载知识库列表失败'
+      }
+    } catch (err: any) {
+      error.value = err.message || '加载知识库列表失败'
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 选择知识库
+   */
+  async function selectKnowledgeBase(id: string): Promise<void> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.get(id)
+      if (response.success && response.data) {
+        currentKnowledgeBase.value = response.data
+        // 加载该知识库的文档
+        await loadDocuments(id)
+      } else {
+        error.value = response.error || '获取知识库详情失败'
+      }
+    } catch (err: any) {
+      error.value = err.message || '获取知识库详情失败'
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 创建知识库
+   */
+  async function createKnowledgeBase(request: CreateKnowledgeBaseRequest): Promise<KnowledgeBase | null> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      // 使用 toRaw 确保数据可序列化
+      const rawRequest = toRaw(request) as CreateKnowledgeBaseRequest
+      const response = await window.electronAPI.knowledgeBase.create(rawRequest)
+      if (response.success && response.data) {
+        knowledgeBases.value.push(response.data)
+        return response.data
+      } else {
+        error.value = response.error || '创建知识库失败'
+        return null
+      }
+    } catch (err: any) {
+      error.value = err.message || '创建知识库失败'
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 更新知识库
+   */
+  async function updateKnowledgeBase(id: string, request: UpdateKnowledgeBaseRequest): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.update(id, request)
+      if (response.success) {
+        // 更新列表中的知识库
+        const index = knowledgeBases.value.findIndex(kb => kb.id === id)
+        if (index !== -1) {
+          const kb = knowledgeBases.value[index]
+          knowledgeBases.value[index] = {
+            ...kb,
+            ...request,
+            updatedAt: new Date().toISOString()
+          }
+        }
+        // 更新当前选中的知识库
+        if (currentKnowledgeBase.value?.id === id) {
+          currentKnowledgeBase.value = {
+            ...currentKnowledgeBase.value,
+            ...request,
+            updatedAt: new Date().toISOString()
+          }
+        }
+        return true
+      } else {
+        error.value = response.error || '更新知识库失败'
+        return false
+      }
+    } catch (err: any) {
+      error.value = err.message || '更新知识库失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 删除知识库
+   */
+  async function deleteKnowledgeBase(id: string): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.delete(id)
+      if (response.success) {
+        // 从列表中移除
+        knowledgeBases.value = knowledgeBases.value.filter(kb => kb.id !== id)
+        // 清除当前选中的知识库
+        if (currentKnowledgeBase.value?.id === id) {
+          currentKnowledgeBase.value = null
+          documents.value = []
+        }
+        return true
+      } else {
+        error.value = response.error || '删除知识库失败'
+        return false
+      }
+    } catch (err: any) {
+      error.value = err.message || '删除知识库失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 清除当前选中的知识库
+   */
+  function clearCurrentKnowledgeBase(): void {
+    currentKnowledgeBase.value = null
+    documents.value = []
+    searchResults.value = []
+  }
+
+  // ==================== 文档管理 ====================
+
+  /**
+   * 加载文档列表
+   */
+  async function loadDocuments(knowledgeBaseId: string): Promise<void> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.getDocuments(knowledgeBaseId)
+      if (response.success && response.data) {
+        documents.value = response.data
+      } else {
+        error.value = response.error || '加载文档列表失败'
+      }
+    } catch (err: any) {
+      error.value = err.message || '加载文档列表失败'
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 上传文档
+   */
+  async function uploadDocuments(files: FileInfo[]): Promise<KbDocument[] | null> {
+    if (!currentKnowledgeBase.value) {
+      error.value = '请先选择知识库'
+      return null
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.uploadDocuments(
+        currentKnowledgeBase.value.id,
+        files
+      )
+      if (response.success && response.data) {
+        // 添加到文档列表
+        documents.value.push(...response.data)
+        // 刷新知识库信息
+        await selectKnowledgeBase(currentKnowledgeBase.value.id)
+        return response.data
+      } else {
+        error.value = response.error || '上传文档失败'
+        return null
+      }
+    } catch (err: any) {
+      error.value = err.message || '上传文档失败'
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 删除文档
+   */
+  async function deleteDocument(documentId: string): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.deleteDocument(documentId)
+      if (response.success) {
+        // 从列表中移除
+        documents.value = documents.value.filter(doc => doc.id !== documentId)
+        // 刷新知识库信息
+        if (currentKnowledgeBase.value) {
+          await selectKnowledgeBase(currentKnowledgeBase.value.id)
+        }
+        return true
+      } else {
+        error.value = response.error || '删除文档失败'
+        return false
+      }
+    } catch (err: any) {
+      error.value = err.message || '删除文档失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 重新处理文档
+   *
+   * 后端同为后台执行：只等"是否成功启动"，进度/终态走事件
+   * （此前全程挂 isLoading，大文档重处理会把文档列表锁死数分钟）。
+   */
+  async function reprocessDocument(documentId: string): Promise<boolean> {
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.reprocessDocument(documentId)
+      if (response.success) {
+        const doc = documents.value.find(d => d.id === documentId)
+        if (doc) {
+          doc.status = 'processing'
+          doc.progress = 0
+          doc.errorMessage = undefined
+        }
+        return true
+      } else {
+        error.value = response.error || '重新处理文档失败'
+        return false
+      }
+    } catch (err: any) {
+      error.value = err.message || '重新处理文档失败'
+      return false
+    }
+  }
+
+  /**
+   * 继续处理文档（断点续跑：复用已落切片与向量，只补未完成部分）
+   *
+   * 后端为后台执行：此调用只等"是否成功启动"（前置校验），不等整条管线跑完
+   * ——大文档要数分钟，全程挂 isLoading 会锁死整个文档列表。
+   * 进度与终态由 kb:document-progress / kb:document-status 事件推进。
+   */
+  async function resumeDocument(documentId: string): Promise<boolean> {
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.resumeDocument(documentId)
+      if (response.success) {
+        // 立即把该行置为处理中（事件随后会持续刷新进度）
+        const doc = documents.value.find(d => d.id === documentId)
+        if (doc) {
+          doc.status = 'processing'
+          doc.progress = 0
+          doc.errorMessage = undefined
+        }
+        return true
+      } else {
+        error.value = response.error || '继续处理文档失败'
+        return false
+      }
+    } catch (err: any) {
+      error.value = err.message || '继续处理文档失败'
+      return false
+    }
+  }
+
+  /**
+   * 获取文档分片列表
+   */
+  async function getDocumentChunks(documentId: string): Promise<KbChunk[]> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.getDocumentChunks(documentId)
+      if (response.success && response.data) {
+        return response.data
+      } else {
+        error.value = response.error || '获取文档分片失败'
+        return []
+      }
+    } catch (err: any) {
+      error.value = err.message || '获取文档分片失败'
+      return []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // ==================== 检索服务 ====================
+
+  /**
+   * 检索知识库
+   */
+  async function search(request: SearchRequest): Promise<SearchResult[]> {
+    isSearching.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.search(request)
+      if (response.success && response.data) {
+        searchResults.value = response.data
+        return response.data
+      } else {
+        error.value = response.error || '检索失败'
+        searchResults.value = []
+        return []
+      }
+    } catch (err: any) {
+      error.value = err.message || '检索失败'
+      searchResults.value = []
+      return []
+    } finally {
+      isSearching.value = false
+    }
+  }
+
+  /**
+   * 清除检索结果
+   */
+  function clearSearchResults(): void {
+    searchResults.value = []
+  }
+
+  // ==================== Embedding 模型 ====================
+
+  /**
+   * 加载可用的 Embedding 模型
+   */
+  async function loadEmbeddingModels(): Promise<void> {
+    try {
+      const response = await window.electronAPI.knowledgeBase.getEmbeddingModels()
+      if (response.success && response.data) {
+        embeddingModels.value = response.data
+      }
+    } catch (err: any) {
+      console.error('加载 Embedding 模型失败:', err)
+    }
+  }
+
+  // ==================== 文件选择 ====================
+
+  /**
+   * 选择文件
+   */
+  async function selectFiles(): Promise<FileInfo[] | null> {
+    try {
+      const response = await window.electronAPI.knowledgeBase.selectFiles()
+      if (response.success && response.data) {
+        return response.data
+      } else {
+        return null
+      }
+    } catch (err: any) {
+      error.value = err.message || '选择文件失败'
+      return null
+    }
+  }
+
+  // ==================== 工具函数 ====================
+
+  /**
+   * 清除错误
+   */
+  function clearError(): void {
+    error.value = null
+  }
+
+  /**
+   * 重置状态
+   */
+  function reset(): void {
+    knowledgeBases.value = []
+    currentKnowledgeBase.value = null
+    documents.value = []
+    searchResults.value = []
+    embeddingModels.value = []
+    isLoading.value = false
+    isSearching.value = false
+    error.value = null
+  }
+
+  /**
+   * 销毁 Store（清理事件监听）
+   */
+  function dispose(): void {
+    cleanupEventListeners()
+    reset()
+  }
+
+  // 初始化事件监听
+  setupEventListeners()
+
+  /**
+   * 获取文档的预估剩余时间
+   */
+  function getEstimatedTime(documentId: string): number | undefined {
+    return documentEstimatedTimes.value.get(documentId)
+  }
+
+  return {
+    // 状态
+    knowledgeBases,
+    currentKnowledgeBase,
+    documents,
+    searchResults,
+    embeddingModels,
+    isLoading,
+    isSearching,
+    error,
+    documentEstimatedTimes,
+    // 计算属性
+    knowledgeBaseCount,
+    hasCurrentKnowledgeBase,
+    documentCount,
+    // 知识库管理
+    loadKnowledgeBases,
+    selectKnowledgeBase,
+    createKnowledgeBase,
+    updateKnowledgeBase,
+    deleteKnowledgeBase,
+    clearCurrentKnowledgeBase,
+    // 文档管理
+    loadDocuments,
+    uploadDocuments,
+    deleteDocument,
+    reprocessDocument,
+    resumeDocument,
+    getDocumentChunks,
+    // 检索服务
+    search,
+    clearSearchResults,
+    // Embedding 模型
+    loadEmbeddingModels,
+    // 文件选择
+    selectFiles,
+    // 工具函数
+    clearError,
+    reset,
+    dispose,
+    getEstimatedTime
+  }
+})

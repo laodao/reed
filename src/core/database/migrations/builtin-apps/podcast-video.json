@@ -1,0 +1,341 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 播客视频生成（幻灯片+口播讲解）",
+  "description": "文案 → LLM 总结归纳成幻灯片结构（屏幕只放核心要点）→ PPT 风格渲染 → 逐页口播配音（详细讲解走语音）→ 按配音时长对齐时间轴合成视频（可选 BGM）。画面与讲解天然对齐，规避素材型视频的匹配难题。",
+  "category": "视频制作",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始（文案/主题+风格/音色）",
+        "position": { "x": 40, "y": 400 },
+        "config": {
+          "inputs": [
+            {
+              "key": "scriptSource",
+              "label": "文案来源",
+              "type": "select",
+              "required": true,
+              "defaultValue": "text",
+              "options": [
+                { "label": "粘贴文案（text）", "value": "text" },
+                { "label": "引用文案资产（asset）", "value": "asset" }
+              ]
+            },
+            {
+              "key": "scriptText",
+              "label": "文案全文（粘贴，scriptSource=text）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "文章/脚本/讲稿全文；幻灯片要点与逐页口播都从这里总结提炼"
+            },
+            {
+              "key": "scriptAssetIds",
+              "label": "文案资产（多选，scriptSource=asset）",
+              "type": "select-dynamic",
+              "source": "assets:text",
+              "multi": true,
+              "required": false,
+              "help": "资产中心文本类资产多选（值=资产 ID），多个资产正文会合并引用"
+            },
+            {
+              "key": "keyPoints",
+              "label": "要点/口径期望（可选）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "希望覆盖的要点、强调的结论、涉及口径等"
+            },
+            {
+              "key": "slideCount",
+              "label": "目标页数（0=自动 5~12 页）",
+              "type": "number",
+              "defaultValue": 0,
+              "validation": { "min": 0, "max": 40 }
+            },
+            {
+              "key": "detailLevel",
+              "label": "口播详略",
+              "type": "select",
+              "required": false,
+              "defaultValue": "均衡",
+              "options": [
+                { "label": "精炼（每页约 80 字）", "value": "精炼" },
+                { "label": "均衡（每页约 150 字）", "value": "均衡" },
+                { "label": "详实（每页约 240 字）", "value": "详实" }
+              ]
+            },
+            {
+              "key": "theme",
+              "label": "幻灯片主题",
+              "type": "select",
+              "required": false,
+              "defaultValue": "light",
+              "options": [
+                { "label": "简约白", "value": "light" },
+                { "label": "深色科技", "value": "dark" },
+                { "label": "暖色杂志", "value": "warm" },
+                { "label": "学术绿", "value": "green" }
+              ]
+            },
+            {
+              "key": "width",
+              "label": "视频宽度",
+              "type": "number",
+              "defaultValue": 1920
+            },
+            {
+              "key": "height",
+              "label": "视频高度",
+              "type": "number",
+              "defaultValue": 1080
+            },
+            {
+              "key": "gapMs",
+              "label": "页间停顿（毫秒）",
+              "type": "number",
+              "defaultValue": 600,
+              "validation": { "min": 0, "max": 5000 },
+              "help": "每页讲解后的静默时长（末页也追加，成片结尾留白）"
+            },
+            {
+              "key": "model",
+              "label": "总结归纳模型",
+              "type": "model",
+              "modelTypes": ["text"],
+              "required": true
+            },
+            {
+              "key": "voiceId",
+              "label": "配音音色",
+              "type": "string",
+              "required": true,
+              "defaultValue": ""
+            },
+            {
+              "key": "voiceProviderConfigId",
+              "label": "配音 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "bgmPath",
+              "label": "背景音乐（可选）",
+              "type": "string",
+              "required": false,
+              "defaultValue": ""
+            }
+          ]
+        }
+      },
+      {
+        "id": "readScript",
+        "type": "read-assets",
+        "name": "读取文案资产",
+        "position": { "x": 280, "y": 400 },
+        "config": {
+          "assetIds": "{{start.scriptAssetIds}}"
+        }
+      },
+      {
+        "id": "scriptSrc",
+        "type": "code",
+        "name": "整理文案来源",
+        "position": { "x": 520, "y": 400 },
+        "config": {
+          "code": "const mode = String(inputs.mode || 'text');\nconst assetText = String(inputs.assetText || '');\nconst text = String(inputs.scriptText || '');\nconst merged = mode === 'asset' ? assetText : text;\nif (!merged.trim()) throw new Error('文案为空：请粘贴文案全文或选择文案资产');\nreturn { text: merged };",
+          "inputs": [
+            { "key": "mode", "value": "{{start.scriptSource}}" },
+            { "key": "scriptText", "value": "{{start.scriptText}}" },
+            { "key": "assetText", "value": "{{readScript.textJoined}}" }
+          ]
+        }
+      },
+      {
+        "id": "deckGen",
+        "type": "llm-chat",
+        "name": "总结归纳成幻灯片结构",
+        "position": { "x": 760, "y": 400 },
+        "config": {
+          "systemPrompt": "你是资深播客视频策划人兼讲稿撰写人。把用户给的文案改造成「幻灯片 + 口播讲解」的播客视频结构：屏幕幻灯片只放提炼后的核心要点，详细内容全部由每页口播讲解（narration）承载。\n\n【输出 JSON 结构】\n{\"deckTitle\":\"整期标题(≤14字)\",\"slides\":[{\"kind\":\"cover|content|ending\",\"title\":\"...\",\"bullets\":[\"...\"],\"narration\":\"...\"}]}\n\n【幻灯片规则】\n1) 页数：目标页数 {{start.slideCount}}（0=由你按信息量决定 5~12 页；大于 0=严格按该页数输出，含封面与结尾页）。\n2) 第 1 页 kind=\"cover\"：title=主标题；bullets 放 1~3 行导语（每行 ≤20 字，交代本期讲什么、为什么值得听）。\n3) 中间页 kind=\"content\"：一页一个子主题。title=结论式标题（≤16 字）；bullets=2~4 条核心要点（每条 ≤22 字，写提炼后的结论，不抄文案原句，不放长数字串）。\n4) 最后一页 kind=\"ending\"：title=收束语（≤16 字）；bullets=1~3 条核心回顾/行动建议。\n5) 屏幕要点与口播分工：bullets 写「结论」，narration 写「论证、数据、例子」；同一子主题的细节必须归并到同一页，不得拆散。\n\n【口播讲解（narration）规则】\n1) 口语化、可直接朗读：短句、有过渡衔接（如「接下来看…」「这背后的原因是…」），不用 markdown、不用序号符号、不用换行。\n2) 每页 narration 详细展开本页要点背后的内容：解释因果、补充文案里的数据与例子。详略档位 {{start.detailLevel}}（精炼=每页约 80 字；均衡=每页约 150 字；详实=每页约 240 字）。\n3) 第 1 页开头有 hook，最后一页收尾并呼应主题；忠于原文事实，不编造文案中不存在的数据与结论。",
+          "prompt": "【文案全文】\n{{scriptSrc.result.text}}\n\n【要点期望】\n{{start.keyPoints}}\n\n请输出幻灯片结构 JSON（deckTitle + slides，kind=cover/content/ending）。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "deckMd",
+        "type": "code",
+        "name": "幻灯片结构转审阅文本",
+        "position": { "x": 1000, "y": 400 },
+        "config": {
+          "code": "const d = inputs.deck || {};\nconst slides = Array.isArray(d.slides) ? d.slides : [];\nif (slides.length === 0) throw new Error('幻灯片结构为空：请检查文案内容或更换模型后重试');\nconst md = slides.map(function (s, i) {\n  const kind = String(s.kind || 'content');\n  const b = (Array.isArray(s.bullets) ? s.bullets : []).map(function (x) { return '- ' + String(x) }).join('\\n');\n  return '### 第 ' + (i + 1) + ' 页 · ' + kind + ' · ' + String(s.title || '') + '\\n' + b + '\\n\\n> 口播：' + String(s.narration || '');\n}).join('\\n\\n');\nreturn { md: md, count: slides.length };",
+          "inputs": [
+            { "key": "deck", "value": "{{deckGen.parsed}}" }
+          ]
+        }
+      },
+      {
+        "id": "deckReview",
+        "type": "human-review",
+        "name": "播客结构审核",
+        "position": { "x": 1240, "y": 400 },
+        "config": {
+          "payload": {
+            "stage": "播客结构审核：批准后开始渲染幻灯片并逐页配音",
+            "deckTitle": "{{deckGen.parsed.deckTitle}}",
+            "md": "{{deckMd.result.md}}",
+            "slides": "{{deckGen.parsed.slides}}"
+          },
+          "editableFields": [
+            {
+              "key": "slides",
+              "label": "幻灯片结构 JSON（可改标题/要点/口播词）",
+              "type": "json"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "renderSlides",
+        "type": "slide-render",
+        "name": "渲染幻灯片（PPT 风格）",
+        "position": { "x": 1480, "y": 400 },
+        "config": {
+          "slides": "{{deckReview.slides}}",
+          "deckTitle": "{{deckReview.deckTitle}}",
+          "theme": "{{start.theme}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}"
+        }
+      },
+      {
+        "id": "loopTts",
+        "type": "loop",
+        "name": "逐页配音循环",
+        "position": { "x": 1720, "y": 400 },
+        "config": {
+          "listExpression": "{{deckReview.slides}}",
+          "emptyPolicy": "fail"
+        }
+      },
+      {
+        "id": "ttsSlide",
+        "type": "tts",
+        "name": "本页口播配音",
+        "position": { "x": 1940, "y": 400 },
+        "config": {
+          "text": "{{loopTts.item.narration}}",
+          "voiceId": "{{start.voiceId}}",
+          "providerConfigId": "{{start.voiceProviderConfigId}}"
+        }
+      },
+      {
+        "id": "comp",
+        "type": "podcast-compose",
+        "name": "按配音时长对齐合成",
+        "position": { "x": 2200, "y": 400 },
+        "config": {
+          "slideImages": "{{renderSlides.slidePaths}}",
+          "audioFiles": "{{loopTts.results}}",
+          "gapMs": "{{start.gapMs}}",
+          "bgmPath": "{{start.bgmPath}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "outputName": "播客视频"
+        }
+      },
+      {
+        "id": "deckText",
+        "type": "code",
+        "name": "讲稿全文（审核终版）",
+        "position": { "x": 2440, "y": 400 },
+        "config": {
+          "code": "const slides = Array.isArray(inputs.slides) ? inputs.slides : [];\nconst lines = ['# ' + String(inputs.deckTitle || '播客讲稿')];\nslides.forEach(function (s, i) {\n  lines.push('');\n  lines.push('## 第 ' + (i + 1) + ' 页：' + String(s.title || ''));\n  (Array.isArray(s.bullets) ? s.bullets : []).forEach(function (b) { lines.push('- ' + String(b)) });\n  if (String(s.narration || '').trim()) { lines.push(''); lines.push(String(s.narration)) }\n});\nreturn { md: lines.join('\\n') };",
+          "inputs": [
+            { "key": "slides", "value": "{{deckReview.slides}}" },
+            { "key": "deckTitle", "value": "{{deckReview.deckTitle}}" }
+          ]
+        }
+      },
+      {
+        "id": "saveVideo",
+        "type": "save-asset",
+        "name": "视频存档",
+        "position": { "x": 2680, "y": 320 },
+        "config": {
+          "content": "{{comp.videoPath}}",
+          "kind": "file",
+          "category": "video",
+          "subCategory": "播客视频",
+          "name": "{{deckReview.deckTitle}}播客视频-{{sys.today}}",
+          "tags": "播客,视频,幻灯片"
+        }
+      },
+      {
+        "id": "saveDeck",
+        "type": "save-asset",
+        "name": "讲稿存档",
+        "position": { "x": 2680, "y": 480 },
+        "config": {
+          "content": "{{deckText.result.md}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "播客讲稿",
+          "name": "{{deckReview.deckTitle}}播客讲稿-{{sys.today}}",
+          "tags": "播客,讲稿,口播",
+          "enabled": true
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "通知完成",
+        "position": { "x": 2920, "y": 400 },
+        "config": {
+          "title": "播客视频生成完成",
+          "message": "成片已保存到资产库：{{saveVideo.assetId}}（讲稿同步存档，共 {{comp.slideCount}} 页，时长 {{comp.duration}} 秒）",
+          "level": "success"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 3140, "y": 400 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "readScript", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "readScript", "targetNodeId": "scriptSrc", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "scriptSrc", "targetNodeId": "deckGen", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "deckGen", "targetNodeId": "deckMd", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "deckMd", "targetNodeId": "deckReview", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "deckReview", "targetNodeId": "renderSlides", "kind": "approve" },
+      { "id": "e7", "sourceNodeId": "deckReview", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e8", "sourceNodeId": "renderSlides", "targetNodeId": "loopTts", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "loopTts", "targetNodeId": "ttsSlide", "kind": "loop-body" },
+      { "id": "e10", "sourceNodeId": "ttsSlide", "targetNodeId": "loopTts", "kind": "loop-back" },
+      { "id": "e11", "sourceNodeId": "loopTts", "targetNodeId": "comp", "kind": "loop-done" },
+      { "id": "e12", "sourceNodeId": "comp", "targetNodeId": "deckText", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "deckText", "targetNodeId": "saveVideo", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "saveVideo", "targetNodeId": "saveDeck", "kind": "normal" },
+      { "id": "e15", "sourceNodeId": "saveDeck", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": {
+    "maxOutputChars": 1200000,
+    "maxDurationMs": 43200000
+  }
+}

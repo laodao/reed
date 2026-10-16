@@ -1,0 +1,77 @@
+[
+  {
+    "edge": "src/renderer/src/api/main-image-generator.ts -> src/core/database/entities/episode-production/asset-image.entity.ts",
+    "n": 1,
+    "typeOnly": true
+  },
+  {
+    "edge": "src/renderer/src/api/main-image-generator.ts -> src/core/platform/episode-production/assets/prompts/character-constraints.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/api/main-image-generator.ts -> src/core/platform/episode-production/assets/prompts/asset-identity-prompt.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/api/main-image-upload.ts -> src/core/database/entities/episode-production/asset-image.entity.ts",
+    "n": 1,
+    "typeOnly": true
+  },
+  {
+    "edge": "src/renderer/src/api/panorama-upload.ts -> src/core/database/entities/episode-production/asset-image.entity.ts",
+    "n": 1,
+    "typeOnly": true
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/asset/AssetGallery.vue -> src/core/platform/episode-production/assets/prompts/asset-identity-prompt.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/dialogs/AIQuickModeWizard.vue -> src/core/platform/episode-production/assets/constants/style-presets.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/shared/shot-labels.ts -> src/core/platform/episode-production/assets/constants/camera-movements.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/stage-asset/item/ItemCardForm.vue -> src/core/platform/episode-production/assets/constants/style-presets.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/stage-asset/location/AddMainImageDialog.vue -> src/core/platform/episode-production/assets/prompts/asset-identity-prompt.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/stage-asset/location/LocationCardForm.vue -> src/core/platform/episode-production/assets/constants/location-variants.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/stage-asset-v2/character/CharacterCardFormV2.vue -> src/core/platform/episode-production/assets/constants/style-presets.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/components/episode-production/stage-asset-v2/location/LocationCardFormV2.vue -> src/core/platform/episode-production/assets/constants/style-presets.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/mount.ts -> src/core/utils/boot-trace.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/renderer/src/utils/asset-download.ts -> src/core/platform/assets/asset-download.ts",
+    "n": 1,
+    "typeOnly": false
+  }
+]

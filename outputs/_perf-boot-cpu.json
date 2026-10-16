@@ -1,0 +1,24 @@
+{
+  "profileMs": 480,
+  "samples": 464,
+  "top": [
+    {
+      "fn": "(program) @ :0",
+      "ms": 202
+    },
+    {
+      "fn": "(idle) @ :0",
+      "ms": 126
+    },
+    {
+      "fn": "computeBox @ :2732",
+      "ms": 26
+    }
+  ],
+  "programCallers": [
+    {
+      "caller": "(root) @ :0",
+      "ms": 202
+    }
+  ]
+}

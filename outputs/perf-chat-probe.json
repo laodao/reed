@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-09-17T00:39:48.864Z",
+  "results": {
+    "/chat": {
+      "first": {
+        "route": "/chat",
+        "toListMs": 472,
+        "toSettledMs": 1007,
+        "items": 20,
+        "longTasks": [
+          {
+            "start": 19,
+            "dur": 69
+          },
+          {
+            "start": 88,
+            "dur": 203
+          },
+          {
+            "start": 297,
+            "dur": 165
+          },
+          {
+            "start": 473,
+            "dur": 421
+          }
+        ],
+        "longTaskTotal": 858,
+        "maxLongTask": 421
+      },
+      "warm": {
+        "route": "/chat",
+        "toListMs": 102,
+        "toSettledMs": 156,
+        "items": 20,
+        "longTasks": [
+          {
+            "start": 0,
+            "dur": 80
+          }
+        ],
+        "longTaskTotal": 80,
+        "maxLongTask": 80
+      }
+    }
+  }
+}

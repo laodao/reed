@@ -1,0 +1,149 @@
+# 35 · EP 剧集制作接线 harness 迁移计划 v2（M6.5，代码级现状与文件清单）
+
+> v2 重写（用户反馈 v1 太简单）：本版基于对 EP agent 全部 7 个源文件（1818 行）的精读，
+> 给出：现状架构 → 业务与 harness 的边界 → 接口满足度逐项分析 → **文件级改动清单** → 测试策略。
+> 结论先行（评审修订）：**引擎 API 层无缺口**（choice 用 approve_with_edit 携带所选值承载），但通路层
+> 有两处必须补——①共享注册的装配时序（pack activate 早于 workflow-boot，须懒注册，lw-agent-tools.ts:5-7 已留坑记录）；
+> ②审批 decide 的前后端通路整条不存在（须新增 handler+preload+web 三件套）。
+> ✅ 已过对抗评审（2026-09-08）：P0×2/P1×8 全部修订入文（流式通道名、双 choice 分流、approve_with_edit 整体替换契约、
+> 依赖检查回归、双发去重、测试链口径等）；执行拆分见 `subtasks/`（EP-1→EP-2→EP-3，EP-4 可并行）。
+
+## 1. 现状精读（ep-agent 7 文件 1818 行）
+
+### 1.1 运行架构：三段式单步决策，不是 LLM loop
+
+`ep-agent-workflow.service.ts` `sendMessage()`（:196-321）一轮的完整流程：
+
+```
+存用户消息(lw_design_messages) → 生产状态快照(computeEpProductionState)
+ → 规则型 choice 拦截（正则意图检测 detectChoiceForAssetImage / detectChoiceForDatabase）
+ → AI 决策：ai.agentDecide() 一次 JSON 调用（非循环！返回 reply + actions[] + choice?）
+ → AI choice 拦截（有 choice 则发事件后直接 return，等用户下一条消息）
+ → 顺序执行动作 executeEpActions()（一轮最多 EP_AGENT_MAX_ACTIONS_PER_TURN 个）
+ → AI 总结：ai.agentSummarize() 流式（正文走 ep-agent:generate:${summaryEventId} 独立通道）
+ → 存 assistant 消息 + reply:done 事件
+```
+
+关键事实：
+- **单步决策**：一次 LLM 调用决定全部动作，无多轮工具循环、无执行后自纠。动作失败只能等下一轮用户消息。
+- **choice 是无状态的**：没有挂起状态机。choice 发出后本轮结束；用户回应后**整体重走** sendMessage（规则型靠正则重新匹配、AI 型靠重新决策）。选择状态藏在 assistant 消息的 metadata JSON 里，仅作文案回显。
+- **AI 底层复用长文**：`LongWritingAIService.agentDecide / agentSummarize / cancelGeneration`（长文 AI 服务是双模块共用的）。
+- **对话历史复用长文表**：`lw_design_messages`，conversationId=`ep-agent:${episodeId}`。
+- **事件协议**（前端依赖面）：`ep-agent:${projectId}:${episodeId}` 通道，事件 `stage / action:start / action:done / reply:start / reply:content / reply:done / error / choice:request`；流式正文走 `ep-agent:generate:${summaryEventId}`。
+- 前端三件：`useEpAgentChat.ts`（composable：订阅事件+发送）、`EpisodeAgentStudio.vue`、`EpAgentPanel.vue`（choice 卡片渲染与点击）。
+- handler 入口：`packs/episode-production/handlers/agent.handler.ts`（ep:agent:send/history/state/cancel 四通道，:24/:34/:42/:50）。
+
+### 1.2 动作清单与成本面（ep-agent-actions.ts，9 个 executeXxx）
+
+| 动作 | 成本/危险面 | 现有防护 |
+| --- | --- | --- |
+| generate_script / split_scenes / generate_storyboards | 文本 LLM | 无审批；金额小 |
+| generate_char/location/item_asset | **图像/语音/视频生成，真金白银** | 无审批、无次数上限（仅一轮动作数上限） |
+| update_entity | 数据写 | 无 |
+| delete_entity | 数据删除 | 无（登记项：projectId 绑定缺失同长文） |
+| query_database | 外部数据源 | SQL guard 已有 + 数据源 choice |
+
+## 2. 业务与 harness 的边界（迁移的切分线）
+
+| 归属 | 内容 | 迁移后去向 |
+| --- | --- | --- |
+| **EP 业务域（保留在 EP，harness 不碰）** | 9 个动作的执行器（executeXxx：生产状态/落库/资产生成调用）、生产状态计算 computeEpProductionState、决策/总结上下文构造（ep-agent-context）、建议生成 buildEpSuggestions、事件通道定义、剧集数据模型 | 原样复用——工具闭包捕获的 ctx 正是现在 executeEpActions 的 ctx（`{projectId, episodeId, providerConfigId, modelId, db, ai, emit}`） |
+| **平台能力（harness 接管）** | LLM 多轮循环、工具 schema 校验/截断/审计、轨迹落库、会话存储、审批挂起/恢复、运行注册表、maxSteps/停滞护栏、abort | LoopRunner + AgentToolRegistry + TrajectorySink + DbAgentSessionStore + ApprovalCoordinator + RunRegistry（全部现成，零引擎改动） |
+| **桥接层（新写，EP 特有）** | emitStream → ep-agent 事件通道转换；生产状态快照进系统提示词；规则型 choice 保留为发送前拦截 | 新宿主服务 |
+
+## 3. 接口满足度逐项分析（harness 现有接口 vs EP 需要）
+
+| EP 需要 | harness 接口 | 满足度 | 说明 |
+| --- | --- | --- | --- |
+| 多轮决策与自纠 | LoopRunner 单步循环（ai@6 streamText） | ✅ 升级 | 语义变化点：单步决策→多轮循环。现"一轮批量动作"= loop 一步内并行 tool-calls（ai@6 单步内并行执行），行为兼容且多了执行后继续决策的能力 |
+| 动作执行与校验 | AgentToolRegistry 管线（zod/截断/审计/maxCalls） | ✅ | executeXxx 原样复用为工具闭包；M6 长文同款已验证 |
+| 生产状态进上下文 | loop 的 system + initState 播种 | ✅ | 快照序列化进系统提示词（长文 computeProductionState 同款） |
+| 对话历史 | initState 播种 ModelMessage[] | ✅ | 从 lw_design_messages 取最近 N 条映射（长文 :155-162 同款） |
+| 流式回复 | host.emitStream delta + 宿主 30ms 合批 | ✅ | 桥接到 `ep-agent:generate:${summaryEventId}` 通道，前端订阅不变 |
+| action 进度事件 | emitStream tool-start/tool-end | ✅ | 桥接为 `action:start/action:done`（summary 文案由工具闭包内现有 emit 继续——双通道并存期不冲突） |
+| **choice 多轮确认** | requestApproval + `ApprovalDecision` | ✅ **零引擎改动** | 合成工具 `ep_confirm_choice`（requiresApproval）；选项清单=工具入参；用户所选值经 **`approve_with_edit` 的 input 字段**回填（`agent.types.ts:90`，编辑后过 zod 重校验）；前端可用 `PendingApproval.availableDecisions` 渲染选项按钮（`agent.types.ts:99`）。语义升级：无状态重走 → **进程内挂起**（ApprovalCoordinator await；注意 state.suspended 恢复注记是工作流宿主专属，EP 直驱不适用——评审 P1-4；审批超时 approvalTimeoutMs 需调大（默认 5min=自动拒绝），超时后前端 pendingChoice 卡要清理（decide 幂等返回 false）） |
+| 资产生成成本闸门 | registry maxCalls（快照内频控） | ✅ | 资产生成类 maxCalls=测试期 1；较 v1（无上限）是收紧 |
+| 会话/轨迹落库 | TrajectorySink + DbAgentSessionStore | ✅ | sessionKey=`ep-agent:${projectId}:${episodeId}`；console 检查器可查（列表已过滤为 chat，不占位） |
+| 中断 | RunRegistry + abortByScope | ✅ | ep:agent:cancel 桥到 runRegistry.abort（现走 LongWritingAIService.cancelGeneration 只能停流式） |
+| 模型解析 | harness.resolveModel({providerConfigId, modelId}) | ✅ | 共享 harness 提供（lw-agent-harness.service.ts:255 同款） |
+| 回退 | env 开关 | ✅ | EP_AGENT_HARNESS='0' 走现有三段式（旧代码原样保留） |
+
+**结论：无接口缺口。** 唯一的语义变化（单步→多轮）是能力升级而非功能缺失；唯一的工程量在桥接层与工具化包装。
+
+## 4. 四大能力接线清单（用户提供的能力面；上下文/记忆必接，规划类由 agent 自主决定）
+
+> 用户原则：所有用到 agent 的功能都需要**上下文管理、任务规划、工作流规划、记忆管理（知识管理）**
+> 这些能力，否则 AI 调用质量会很差。但**规划不是必经步骤**——简单任务直接执行，不拆子任务、不规划工作流；
+> **用不用规划由 agent 按任务复杂度自主决定**，接线只负责"能力就位 + 判断纪律写清"，不写死必须规划。
+> 现状核实（33 号后补查）：ContextManager 已实现但**无任何生产宿主接线**（loop 的 deps.context 全部空缺）；
+> 记忆装配仅任务树执行器接入（task-service:341），chat/长文宿主均未接。
+
+| 能力 | 性质 | harness 挂点 | EP 接线动作 | 期 |
+| --- | --- | --- | --- | --- |
+| **上下文管理** | **必接**（每次调用都需要） | `loop.deps.context: LoopContextPort`（现成，ContextManager.assemble 含压缩） | EP 宿主接线 ContextManager（评审 P2-5：Deps 需 contextWindowTokens 必填、summarize 缺省=纯剪枝、compaction 事件要桥到 ep-agent 通道或改从轨迹断言；触发=估算 tokens ≥ window×0.9）——EP 对话携带剧本/分镜大文本，无窗口管理必然爆上下文 | M6.5-a |
+| **记忆管理** | **必接**（每次调用都需要） | flywheel.assemble（34 号 M-Ke1 后支持 scope） | EP 宿主装配 L1 用户偏好 + L2 剧集制作业务知识 + L3 项目知识（设定集事实）；沉淀侧：制作经验 distill 打标 ep:projectId；设定集将来按 34 号 §4.2 契约注册结构化提供方 | M6.5-a 接 L1/L2+沉淀；L3 待 34 号 M-Ke1 |
+| **任务规划** | 能力就位，**调用由 agent 决定** | create_task_plan 工具（registry 白名单）+ planner | 白名单透出工具；系统提示词写判断纪律："简单请求直接执行，跨集/多环节的复杂制作才拆任务树" | M6.5-a |
+| **工作流规划** | 能力就位，**调用由 agent 决定** | create_workflow_draft / run_workflow 工具 | 白名单透出工具；提示词纪律："固定可复用的流水线才沉淀工作流，一次性需求不做" | M6.5-a |
+| **模块域工具共享注册** | EP 9 动作注册进共享 registry（pack 命名空间 `pack:ep-agent:*`，机制现成）；**projectId/episodeId 不闭包捕获**，从 `ctx.logContext`（runtimeContext 注入）运行时读取，越权执行器内拒绝；宿主白名单经 `registry.listSpecs({ packId: 'ep-agent' })` 组装（全名 `pack:ep-agent:*` 进白名单——buildToolDefs 以全名为键）；discover_capabilities 目录新增"模块域工具"节（与 34 号 L0 同源） | M6.5-a |
+
+> 共享注册形态（已确认）：模块域动作进共享 registry 是"工具包含系统所有能力"的实现路径——
+> 聊天 agent 的跨模块操作走任务树（白名单不开业务域工具），模块宿主开自己的 pack 工具；
+> 长文 M6 的宿主本地工具随后迁到同一形态（M6.5-d），迁完 discover 目录即覆盖全系统可调用能力。
+
+验收口径随性质区分：上下文/记忆看**接线证据**（装配留痕轨迹 + 压缩断言，每轮都应生效）；
+规划类看**能力可用 + 判断纪律在提示词中**——简单任务的干跑里不应出现规划调用（出现了反而是过度规划）。
+
+## 5. 文件级改动清单（全部）
+
+### 新建（2 个文件）
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/core/platform/episode-production/agent/ep-agent-tools.ts`（新，约 300 行） | 9 动作（7 个 executeXxx 函数，executeGenerateAsset 一函数覆盖 3 动作）+ ep_confirm_choice 共 10 个 `AgentToolDef`：zod schema 从现 action params 平移；**共享注册形态——def 不捕获项目**，execute 从 `ctx.logContext` 读 projectId/episodeId（缺失即 throw），经 `executeEpActions` 同款执行器落库；dangerLevel 全部 'write'（沿长文 M6 先例）+ maxCalls 频控（资产生成类 1、文本类 3）；ep_confirm_choice requiresApproval=true；**懒注册**：不靠 EP 包 activate（评审 P0-1：initPackSubsystem 先于 initWorkflowSubsystem，pack 激活时共享 registry 尚不存在——lw-agent-tools.ts:5-7 已留过此坑记录）；由宿主首次 sendMessage 时幂等注册（`registry.has(name)` 跳过），或 workflow-boot 装配后回调。二者取懒注册 |
+| `src/core/platform/episode-production/agent/ep-agent-harness.service.ts`（新，约 400 行） | 宿主服务（对照 lw-agent-harness.service.ts 形态）：`isEpAgentHarnessEnabled()` 开关读取；`sendMessage()` 直驱 LoopRunner 并接线四大能力（ContextManager 上下文窗口/记忆装配 L1+L2/任务与工作流规划工具白名单+提示词纪律）——历史播种/生产状态进 system/registry 组装/host.emitStream→ep-agent 事件桥（delta 合批→longwriting:generate 通道；**tool-start/end 不映射 action 事件**（动作内 emit 为唯一来源，LW 同款 lw-agent-harness.service.ts:246——评审 P1-6：桥接映射会造成形状不同的双发））/轨迹 TrajectorySink/DbAgentSessionStore/RunRegistry 注册/busy 互斥/AbortController；choice 审批事件桥（pending 时发 choice:request） |
+
+### 修改（7 个文件）
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/core/platform/episode-production/agent/ep-agent-workflow.service.ts` | `sendMessage` 头部加开关分叉：`if (isEpAgentHarnessEnabled()) return epAgentHarness.sendMessage(...)`；旧三段式代码**一行不动**（回退路径）。约 +5 行 |
+| `src/core/platform/episode-production/agent/ep-agent-actions.ts` | executeXxx 函数体**全部不动**；仅 3 处加固：update_entity/delete_entity 共用的 getBindingById 按 id 直取不校验 projectId（ep-agent-actions.ts:500）——统一在执行器内校验 `logContext.projectId === 实体归属`，两洞一起堵（评审 P2-4）；抽出 `EpActionCtx` 类型导出供 tools 引用；query_database 的 emit 调用改为可选注入（工具化后 action:start 由 registry 管线发，避免双发）。约 +30/-10 行 |
+| `src/core/platform/episode-production/agent/ep-agent.types.ts` | +`EP_AGENT_HARNESS` 开关读取函数、maxSteps（12，与全局一致）、各类 maxCalls 常量、轨迹 scopeKey 约定。约 +20 行 |
+| `src/core/platform/episode-production/agent/index.ts` | 导出新宿主与开关（**不在 activate 时注册工具**——boot 时序坑，见 §4 注） |
+
+| `src/core/platform/workflow/tools/system-agent-tools.ts` | discover 模块域工具节**已实现**（catalogPacks 经 logContext 过滤，da9cf5fb）——M6.5-a 只需宿主传 `catalogPacks:['ep-agent']` |
+| `src/core/packs/episode-production/handlers/agent.handler.ts` | `ep:agent:send` 加开关分叉（长文 handler 同款，longwriting.handler.ts:3283 先例）；cancel 桥 runRegistry（保留旧 cancelGeneration 兜底）。约 +15 行 |
+| `src/renderer/src/components/episode-production/agent/EpAgentPanel.vue` + `composables/useEpAgentChat.ts` | 双 choice 卡分流（评审 P1-2）：规则型 choice（无 approvalId）保持文本消息重入；审批型 choice（事件带 approvalId）走 decide。decide 调用回传**完整 input**（PendingApproval.input + selected 覆写，评审 P1-3：approve_with_edit 是整体替换，只发 selected 会 zod 必败）。约 +60/-30 行 |
+| `src/core/packs/episode-production/handlers/agent.handler.ts`（decide 通路） | 新增 `ep:agent:decide`（approvalId + decision）与 `ep:agent:list-pending` 通道——审批协调器是宿主进程内对象，必须经 EP handler 暴露（评审 P0-2：ApprovalDecision 生产通路整条不存在） |
+| `src/preload/index.ts` + `src/web/client/channel-map.ts` | 补 ep:agent:decide/list-pending 的双端通道映射（评审 P0-2/P1-8） |
+
+### 不动（明确列出，防误伤）
+
+- 前端事件订阅协议（通道名/事件名）——桥接层保持原协议，`EpisodeAgentStudio.vue` 与 `useEpAgentChat.ts` 的事件处理零改动
+- `lw_design_messages` 历史读写（UI 聊天记录源不变）
+- `LongWritingAIService`（仍被决策降级/旧路径使用；新宿主直接 resolveModel 不经它）
+- `agent-console.handler.ts`——**评审 P2-1 修正**：listSessions 无类型过滤，EP 会话会以 kind='other' 进工作台列表；视图已过滤 kind==='chat'（用户决策），故 EP 会话不显示——这是视图层有意决策，handler 无需改
+
+## 6. 测试策略（一次性跑通，成本红线）
+
+1. **单测（零 API 成本，先行）**：10 工具 schema 校验、projectId 越权拒绝、choice 审批映射（approve_with_edit 回填→execute 断言）、开关回退（'0' 走旧路径）、emitStream→事件桥快照断言。mock 模型（MockLanguageModelV3 需 doGenerate，33 号教训）。
+2. **干跑（近零成本）**：真模型但只跑纯文本链（generate_script→split_scenes→storyboards），tokenplan 便宜文本模型；断言轨迹落库+事件序列。
+3. **全链路一次跑通**：最小 EP 项目，agent 动作链=剧本→分镜→1 角色图（**9 动作全集无台词/视频动作**——评审 P1-7，语音视频是面板手工步骤，分开断言）：
+   - 文本：tokenplan 便宜文本模型；图像：tokenplan `wan2.7-image` 低分辨率；语音：tokenplan `qwen-audio-3.0-tts-plus`（≤50 字）；视频：「阿里百炼平台」`wan3.0-video` 最短时长最低分辨率，**仅 1 次**（测试前确认该提供商已配置此模型，未配先加）
+   - 通过标准：状态机走完+产物落库+轨迹完整；**不评判质量不重跑**；失败只登记证据，修复后单点重跑失败段
+   - 成本红线：视频 1 次、图像 ≤2、语音 ≤1；测试脚本与断言清单先写好后一次执行
+
+## 7. 分期与风险
+
+| 期 | 内容 | 退出条件 |
+| --- | --- | --- |
+| M6.5-a | 工具化 + 宿主 + 事件桥 + 开关 + **四大能力接线**（§4） | 单测全绿；干跑通过且装配留痕/上下文压缩断言可见 |
+| M6.5-b | choice→审批映射 + 前端点击改造 | 单测全绿；带 choice 干跑通过 |
+| M6.5-c | 资产生成全链路一次实测 | §6.3 通过并留证 |
+| M6.5-d | 长文 M6 宿主本地工具迁移到共享注册形态（pack:lw-agent）+ discover 目录覆盖核对 | 长文干跑通过；目录含 lw/ep 全部模块域工具 |
+
+风险：
+- choice 审批卡与 EP 面板现有交互冲突 → 回退开关保通路，UI 适配单独处理
+- wan3.0-video 参数档位以实际 API 为准，干跑前先查模板参数定义，避免试错调用
+- 双通道并存期（action:start 来自 registry 管线 + 工具内 emit）→ §4 已列去重处理（emit 可选注入）
+- 语义变化（单步→多轮）可能暴露既有 prompt 在多轮下的行为差异 → 干跑阶段对比新旧决策质量，仅记录不调优

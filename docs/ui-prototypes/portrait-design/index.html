@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人像设计（新版）· 原型总览</title>
+  <link rel="stylesheet" href="portrait.css?v=20260724">
+  <style>
+    .hero {
+      padding: 48px 0 36px;
+      max-width: 720px;
+    }
+    .hero .eyebrow {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+      color: var(--c-primary); background: var(--c-primary-soft);
+      padding: 5px 12px; border-radius: var(--r-pill); margin-bottom: 18px;
+    }
+    .hero .eyebrow .dot { width:6px;height:6px;border-radius:50%;background:var(--c-primary); }
+    .hero h1 {
+      font-size: 34px; font-weight: 700; margin: 0 0 14px;
+      letter-spacing: -0.025em; line-height: 1.15;
+    }
+    .hero h1 .accent {
+      background: linear-gradient(120deg, var(--c-primary), var(--c-accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      color: var(--c-text-2); font-size: 15px; margin: 0;
+      line-height: 1.75;
+    }
+
+    .flow-wrap {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--r-lg); padding: 22px; margin: 30px 0;
+      box-shadow: var(--shadow-xs);
+    }
+    .flow-wrap .flow-title {
+      font-size: 12px; font-weight: 600; color: var(--c-text-3);
+      letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 16px;
+    }
+    .flow { display:flex; align-items:stretch; gap: 8px; }
+    .flow-step {
+      flex: 1; background: var(--c-bg-2); border-radius: var(--r-md);
+      padding: 14px 12px; text-align:center; transition: all .18s; cursor:pointer;
+      border: 1px solid transparent;
+    }
+    .flow-step:hover { background: var(--c-primary-soft); border-color: var(--c-primary-tint); transform: translateY(-2px); }
+    .flow-step .n {
+      width:28px;height:28px;border-radius:50%;background:var(--c-primary);color:#fff;
+      font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;margin:0 auto 9px;
+    }
+    .flow-step.accent .n { background: var(--c-accent); }
+    .flow-step .t { font-size: 13px; font-weight: 600; color: var(--c-text); }
+    .flow-step .d { font-size: 11px; color: var(--c-text-3); margin-top:3px; }
+    .flow-arrow { display:flex; align-items:center; color: var(--c-text-placeholder); font-size: 14px; }
+
+    .section-title {
+      margin: 40px 0 16px; display:flex; align-items:center; gap:12px;
+    }
+    .section-title h2 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing:-0.01em; }
+    .section-title .line { height:1px; background: var(--c-border); flex:1; }
+
+    .cards { display:grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .nav-card {
+      background: var(--c-surface); border:1px solid var(--c-border);
+      border-radius: var(--r-lg); padding: 20px; box-shadow: var(--shadow-xs);
+      transition: all .2s cubic-bezier(0.2,0.8,0.2,1); cursor:pointer; display:block;
+    }
+    .nav-card:hover { border-color: var(--c-primary-tint); box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+    .nav-card .nh { display:flex; align-items:center; gap:12px; margin-bottom: 11px; }
+    .nav-card .ni {
+      width: 40px; height: 40px; border-radius: var(--r-md);
+      display:flex; align-items:center; justify-content:center; font-size:20px;
+      background: var(--c-primary-soft); color: var(--c-primary);
+    }
+    .nav-card.accent .ni { background: var(--c-accent-soft); color: var(--c-accent); }
+    .nav-card .nt { font-weight: 650; font-size: 14.5px; letter-spacing:-0.01em; }
+    .nav-card .nf { font-size: 11px; color: var(--c-text-3); margin-top: 1px; }
+    .nav-card .nd { font-size: 12.5px; color: var(--c-text-2); line-height: 1.65; }
+    .nav-card .go { margin-top: 12px; font-size: 12px; color: var(--c-primary); font-weight: 600; display:flex; align-items:center; gap:4px; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr 1fr; } .flow { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="app-sidebar">
+    <div class="app-logo"><div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span>The Bot</span></div>
+    <nav class="app-nav">
+      <div class="nav-group-label">工作台</div>
+      <div class="nav-item"><span class="ico">💬</span><span>对话</span></div>
+      <div class="nav-item"><span class="ico">📝</span><span>长文写作</span></div>
+      <div class="nav-item"><span class="ico">🎬</span><span>剧集制作</span></div>
+      <div class="nav-group-label">创作</div>
+      <div class="nav-item active"><span class="ico">👤</span><span>人像设计</span></div>
+      <div class="nav-item"><span class="ico">🖼️</span><span>图像生成</span></div>
+      <div class="nav-item"><span class="ico">🎙️</span><span>语音</span></div>
+      <div class="nav-group-label">工具</div>
+      <div class="nav-item"><span class="ico">🌐</span><span>翻译</span></div>
+      <div class="nav-item"><span class="ico">📚</span><span>知识库</span></div>
+      <div class="nav-item"><span class="ico">📖</span><span>日记</span></div>
+    </nav>
+    <div class="app-sidebar-footer"><div class="avatar">羽</div><div><div class="u-name">羽毛</div><div class="u-plan">个人版</div></div></div>
+  </aside>
+
+  <main class="app-content">
+    <div class="page-body" style="max-width: 1080px;">
+
+      <div class="hero">
+        <span class="eyebrow"><span class="dot"></span> 全新版本 · 高保真原型</span>
+        <h1>人像设计 <span class="accent">工作台</span></h1>
+        <p>从角色信息到完整套图的一站式人像创作流程 —— 丰富的生成参数、多参考图、专业提示词模板，以及全新的「只修改面部」能力。</p>
+      </div>
+
+      <!-- 完整流程闭环 -->
+      <div class="flow-wrap">
+        <div class="flow-title">完整流程闭环</div>
+        <div class="flow">
+          <a class="flow-step" href="projects.html"><div class="n">1</div><div class="t">项目列表</div><div class="d">管理人像项目</div></a>
+          <div class="flow-arrow">→</div>
+          <a class="flow-step" href="characters.html"><div class="n">2</div><div class="t">角色列表</div><div class="d">项目内人物</div></a>
+          <div class="flow-arrow">→</div>
+          <a class="flow-step" href="workbench-new.html"><div class="n">3</div><div class="t">生成形象</div><div class="d">首次创建</div></a>
+          <div class="flow-arrow">→</div>
+          <a class="flow-step" href="workbench.html"><div class="n">4</div><div class="t">工作台</div><div class="d">编辑 / 套图</div></a>
+          <div class="flow-arrow">→</div>
+          <a class="flow-step accent" href="edit-face.html"><div class="n">5</div><div class="t">修改面部</div><div class="d">新能力</div></a>
+        </div>
+      </div>
+
+      <div class="section-title">
+        <h2>页面入口</h2>
+        <span class="line"></span>
+      </div>
+
+      <div class="cards">
+        <a class="nav-card" href="projects.html">
+          <div class="nh"><div class="ni">📁</div><div><div class="nt">项目列表</div><div class="nf">projects.html</div></div></div>
+          <div class="nd">流程起点。管理多个人像项目，卡片网格 + 缩略图，支持新建、重命名、删除。</div>
+          <div class="go">进入 →</div>
+        </a>
+        <a class="nav-card" href="characters.html">
+          <div class="nh"><div class="ni">👥</div><div><div class="nt">角色列表</div><div class="nf">characters.html</div></div></div>
+          <div class="nd">项目内的人物角色卡片，展示头像、基本信息、图片数与形象状态。</div>
+          <div class="go">进入 →</div>
+        </a>
+        <a class="nav-card" href="workbench-new.html">
+          <div class="nh"><div class="ni">✨</div><div><div class="nt">生成形象</div><div class="nf">workbench-new.html</div></div></div>
+          <div class="nd">角色首次生成：模型、尺寸、提示词模板、多参考图、高级参数。</div>
+          <div class="go">进入 →</div>
+        </a>
+        <a class="nav-card" href="workbench.html">
+          <div class="nh"><div class="ni">🛠️</div><div><div class="nt">工作台</div><div class="nf">workbench.html</div></div></div>
+          <div class="nd">核心枢纽：修改面部、重新生成、换衣、换背景、多角度，套图画廊。</div>
+          <div class="go">进入 →</div>
+        </a>
+        <a class="nav-card accent" href="edit-face.html">
+          <div class="nh"><div class="ni">🎯</div><div><div class="nt">修改面部</div><div class="nf">edit-face.html · 新</div></div></div>
+          <div class="nd">只改脸不动身体：前后对比、面部专业模板、参考图、重绘强度。</div>
+          <div class="go" style="color:var(--c-accent);">进入 →</div>
+        </a>
+        <a class="nav-card" href="templates.html">
+          <div class="nh"><div class="ni">📚</div><div><div class="nt">模板库</div><div class="nf">templates.html</div></div></div>
+          <div class="nd">提示词模板管理：内置（面部/全身/发型服装/背景）+ 自定义。</div>
+          <div class="go">进入 →</div>
+        </a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-nav">
+  <a href="index.html" class="active">总览</a>
+  <a href="projects.html">项目</a>
+  <a href="characters.html">角色</a>
+  <a href="workbench-new.html">生成</a>
+  <a href="workbench.html">工作台</a>
+  <a href="edit-face.html">修改面部</a>
+  <a href="templates.html">模板库</a>
+</div>
+</body>
+</html>

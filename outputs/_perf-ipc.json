@@ -1,0 +1,15 @@
+{
+  "processMs": {
+    "launchToWindow": 2625,
+    "windowToDom": 103,
+    "domToAppReady": 6399,
+    "total": 9127
+  },
+  "nav": {
+    "marks": {
+      "list": 388,
+      "firstMessage": 820
+    },
+    "resources": []
+  }
+}

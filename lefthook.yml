@@ -1,0 +1,7 @@
+# 提交钩子（评审 #97：lefthook 此前从未配置，prepare-commit-msg shim 空转）
+# 启用：npx lefthook install
+pre-commit:
+  commands:
+    lint-staged-files:
+      glob: "*.{js,jsx,ts,tsx,vue}"
+      run: npx eslint {staged_files}

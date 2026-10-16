@@ -1,0 +1,12 @@
+{
+  "active": 1,
+  "next_id": 2,
+  "windows": [
+    {
+      "id": 1,
+      "label": "the-bot",
+      "root": "\\\\?\\C:\\Users\\daoge\\code\\project\\the-bot",
+      "plugin_state": {}
+    }
+  ]
+}

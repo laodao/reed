@@ -1,0 +1,111 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 数据分析洞察",
+  "description": "粘贴数据（CSV/表格/JSON）→ 数据理解与清洗建议 → 趋势/异常/相关性洞察 + 图表建议 → 洞察报告",
+  "category": "office",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "data", "label": "数据（CSV/TSV/JSON/表格文本）", "type": "textarea", "required": true, "validation": { "maxLength": 100000 } },
+            { "key": "dataFormat", "label": "数据格式", "type": "select", "required": true, "options": [
+              { "label": "CSV", "value": "csv" },
+              { "label": "TSV", "value": "tsv" },
+              { "label": "JSON", "value": "json" },
+              { "label": "表格文本", "value": "table" }
+            ] },
+            { "key": "context", "label": "业务背景", "type": "textarea" },
+            { "key": "focus", "label": "分析重点", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "understand1",
+        "type": "llm-chat",
+        "name": "数据理解与清洗",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是数据分析师。先理解数据：识别列名、行数、字段类型，检测缺失值/异常值/重复行，给出清洗建议。只输出 JSON：{columns: [{name, type, sample}], rowCount, issues: [{severity: critical|warning|suggestion, problem, suggestion}]}。",
+          "prompt": "数据格式：{{start.dataFormat}}\n业务背景：{{start.context}}\n\n数据：\n{{start.data}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "insight1",
+        "type": "llm-chat",
+        "name": "深度洞察",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "systemPrompt": "你是资深数据分析师。基于数据与业务背景做深度洞察。只输出 JSON：{trends: [{name, finding, evidence}], anomalies: [{name, finding, evidence}], correlations: [{name, finding, evidence}], recommendations: [建议列表], charts: [{type: line|bar|pie|scatter, columns: [参与列], reason}]}。所有结论必须能对应到数据，不编造。",
+          "prompt": "业务背景：{{start.context}}\n分析重点：{{start.focus}}\n\n数据概览：\n{{understand1.parsed}}\n\n原始数据：\n{{start.data}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "洞察报告",
+        "position": { "x": 800, "y": 200 },
+        "config": {
+          "title": "数据分析洞察报告",
+          "template": "# 数据分析洞察报告\n\n## 一、数据概览\n\n{{understand1.parsed}}\n\n## 二、数据质量与清洗建议\n\n{{understand1.parsed.issues}}\n\n## 三、趋势\n\n{{insight1.parsed.trends}}\n\n## 四、异常\n\n{{insight1.parsed.anomalies}}\n\n## 五、相关性\n\n{{insight1.parsed.correlations}}\n\n## 六、行动建议\n\n{{insight1.parsed.recommendations}}\n\n## 七、图表建议\n\n{{insight1.parsed.charts}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 1040, "y": 200 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "output_result", "label": "报告全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "content": "{{report1.markdown}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "数据分析",
+          "name": "数据分析洞察",
+          "tags": "数据分析"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1520, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "understand1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "understand1", "targetNodeId": "insight1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "insight1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e6", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e7", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

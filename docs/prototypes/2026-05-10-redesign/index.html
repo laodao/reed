@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Episode Production · 重设计原型 v3</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink: '#1f2937',
+          muted: '#6b7280',
+          accent: '#2563eb',
+          warn: '#f59e0b',
+          ok: '#10b981',
+          danger: '#ef4444',
+          panel: '#f9fafb',
+          line: '#e5e7eb',
+        },
+      },
+    },
+  }
+</script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; }
+  .stage-btn.active { background: #2563eb; color: white; }
+  .panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; background: white; }
+  .panel-title { font-weight: 600; font-size: 14px; color: #1f2937; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .field-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+  .input { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 100%; }
+  .input:focus { outline: none; border-color: #2563eb; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .pill-ok { background: #d1fae5; color: #065f46; }
+  .pill-warn { background: #fef3c7; color: #92400e; }
+  .pill-info { background: #dbeafe; color: #1e40af; }
+  .pill-muted { background: #f3f4f6; color: #6b7280; }
+  .btn { padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-secondary { background: white; color: #1f2937; border-color: #d1d5db; }
+  .btn-secondary:hover { background: #f9fafb; }
+  .btn-ghost { background: transparent; color: #6b7280; }
+  .btn-ghost:hover { color: #1f2937; background: #f3f4f6; }
+  .thumb { width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #e0e7ff, #fef3c7); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #6b7280; font-size: 11px; }
+  .thumb-square { aspect-ratio: 1; }
+  .biz-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; background: #ede9fe; color: #5b21b6; border-radius: 4px; font-size: 10px; font-weight: 500; }
+  .danger-tag { background: #fee2e2; color: #991b1b; }
+  .ok-tag { background: #d1fae5; color: #065f46; }
+  details summary { cursor: pointer; user-select: none; }
+  details[open] summary { margin-bottom: 8px; }
+  .small-thumb { width: 56px; height: 56px; border-radius: 4px; background: linear-gradient(135deg, #fde68a, #fbcfe8); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+</style>
+</head>
+
+<body class="bg-gray-50 text-ink">
+
+<!-- ========== 顶部导航 ========== -->
+<header class="bg-white border-b border-line px-6 py-3 sticky top-0 z-10">
+  <div class="flex items-center gap-4">
+    <h1 class="text-lg font-semibold">Episode Production · 重设计原型 v3</h1>
+    <span class="text-xs text-muted">基于业务流程 8 环节重构 · 仅 mock 数据 · 不连数据库</span>
+    <div class="flex-1"></div>
+    <button class="btn btn-secondary" onclick="document.getElementById('reading-guide').showModal()">阅读指南</button>
+  </div>
+
+  <!-- Stage 切换条 -->
+  <nav class="mt-3 flex gap-1 overflow-x-auto">
+    <button class="stage-btn active btn btn-secondary" data-stage="1">① 立项</button>
+    <button class="stage-btn btn btn-secondary" data-stage="2">② 剧本</button>
+    <button class="stage-btn btn btn-secondary" data-stage="3">③ 资产</button>
+    <button class="stage-btn btn btn-secondary" data-stage="4">④ 分镜</button>
+    <button class="stage-btn btn btn-secondary" data-stage="5">⑤ 画面生成</button>
+    <button class="stage-btn btn btn-secondary" data-stage="6">⑥ 视频生成</button>
+    <button class="stage-btn btn btn-secondary" data-stage="7">⑦ 合成</button>
+  </nav>
+</header>
+
+<!-- ========== 阅读指南弹窗 ========== -->
+<dialog id="reading-guide" class="rounded-lg p-6 max-w-2xl">
+  <h2 class="text-lg font-semibold mb-3">这个原型怎么看</h2>
+  <div class="space-y-3 text-sm leading-relaxed">
+    <div>
+      <strong>1. 整体架构</strong>：
+      把当前 6 stage 重整为 <strong>7 stage</strong>，对应业务流程 8 环节。<br />
+      关键变化：把 ⑤ 制作 拆成 <strong>⑤ 画面生成</strong> + <strong>⑥ 视频生成</strong>（业务上是两个独立环节）；
+      转场和音频统一搬到 <strong>⑦ 合成</strong>。
+    </div>
+    <div>
+      <strong>2. 字段标注</strong>：
+      每个字段后会有标签：
+      <span class="biz-tag ok-tag">影响生成</span>
+      <span class="biz-tag">叙事调度</span>
+      <span class="biz-tag danger-tag">不影响生成（仅展示/装饰）</span>
+    </div>
+    <div>
+      <strong>3. 环节对照</strong>：
+      每个 stage 顶部有"业务环节 N"标识，对应业务流程文档 §1-§8。
+    </div>
+    <div>
+      <strong>4. 用户分层</strong>：
+      每 stage 默认显示自媒体大众必填字段；专业字段折叠在「▼ 高级」。
+    </div>
+    <div>
+      <strong>5. 数据来源</strong>：
+      mock 用的是 e2e 测试项目「杜十娘 · 茶馆相遇」，李墨 / 苏白 / 茶馆 / 玉佩。
+    </div>
+  </div>
+  <div class="mt-4 text-right">
+    <button class="btn btn-primary" onclick="document.getElementById('reading-guide').close()">明白了</button>
+  </div>
+</dialog>
+
+<!-- ========== 主内容区 ========== -->
+<main class="max-w-[1400px] mx-auto p-6">
+
+  <!-- ========================================================== -->
+  <!-- ① 立项                                                      -->
+  <!-- ========================================================== -->
+  <section class="stage-content" data-stage="1">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">① 立项</h2>
+      <span class="biz-tag">业务环节 1 · 创意立项</span>
+      <span class="text-sm text-muted">· 决定整个项目的方向和基调</span>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4">
+      <!-- 左：项目元信息 -->
+      <div class="col-span-2 space-y-4">
+        <div class="panel">
+          <div class="panel-title">📌 项目基础</div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <div class="field-label">项目名称 <span class="biz-tag">叙事调度</span></div>
+              <input class="input" value="杜十娘 · 茶馆相遇" />
+            </div>
+            <div>
+              <div class="field-label">题材类型 <span class="biz-tag ok-tag">影响生成</span></div>
+              <select class="input">
+                <option>古装短剧（默认）</option>
+                <option>现代都市</option>
+                <option>奇幻</option>
+                <option>纪录</option>
+                <option>解说</option>
+                <option>广告</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">目标平台 <span class="biz-tag">叙事调度</span></div>
+              <select class="input">
+                <option>抖音 / 视频号（9:16）</option>
+                <option>B站 / YouTube（16:9）</option>
+                <option>朋友圈（1:1）</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">整体时长 <span class="biz-tag">叙事调度</span></div>
+              <select class="input">
+                <option>60s（默认）</option>
+                <option>30s</option>
+                <option>90s</option>
+                <option>3min</option>
+                <option>自定义</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">画幅 <span class="biz-tag ok-tag">影响生成</span></div>
+              <select class="input">
+                <option>9:16 竖屏</option>
+                <option>16:9 横屏</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">分辨率 / 帧率 <span class="biz-tag">合成参数</span></div>
+              <input class="input" value="1080p · 30fps" />
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">🎨 美术风格 <span class="biz-tag ok-tag">影响生成 · 项目级锚定</span></div>
+          <div class="text-xs text-muted mb-3">每张关键帧生成时自动套用此风格 — 修改这里，全剧画风跟着变。</div>
+          <div class="grid grid-cols-4 gap-2">
+            <div class="thumb thumb-square ring-2 ring-accent">国风工笔（已选）</div>
+            <div class="thumb thumb-square">写实电影感</div>
+            <div class="thumb thumb-square">动漫</div>
+            <div class="thumb thumb-square">+ 自定义</div>
+          </div>
+          <div class="mt-3 flex items-center gap-2">
+            <span class="field-label">调色板：</span>
+            <span class="w-6 h-6 rounded-full" style="background:#7c2d12"></span>
+            <span class="w-6 h-6 rounded-full" style="background:#facc15"></span>
+            <span class="w-6 h-6 rounded-full" style="background:#1e3a8a"></span>
+            <span class="w-6 h-6 rounded-full" style="background:#0c0a09"></span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">🌍 故事世界 <span class="biz-tag ok-tag">影响生成 · 全剧统一</span></div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <div class="field-label">年代</div>
+              <input class="input" value="明代万历年间" />
+            </div>
+            <div>
+              <div class="field-label">地域</div>
+              <input class="input" value="京城" />
+            </div>
+            <div>
+              <div class="field-label">调性</div>
+              <select class="input">
+                <option>江湖风云</option>
+                <option>都市悬疑</option>
+                <option>温馨日常</option>
+              </select>
+            </div>
+            <div class="col-span-3">
+              <div class="field-label">补充背景（可选）</div>
+              <textarea class="input" rows="2">朝局动荡，民间侠义之风盛行；茶馆为各路消息汇集之所。</textarea>
+            </div>
+          </div>
+        </div>
+
+        <details class="panel">
+          <summary class="panel-title">▼ 高级（目标受众 / 参考素材 / AI 模型）</summary>
+          <div class="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <div class="field-label">目标受众</div>
+              <input class="input" value="18-35 岁古风爱好者" />
+            </div>
+            <div>
+              <div class="field-label">参考视频（可选）</div>
+              <button class="btn btn-secondary w-full">📹 上传参考</button>
+            </div>
+            <div>
+              <div class="field-label">画风参考图（可选）</div>
+              <button class="btn btn-secondary w-full">🖼 上传参考</button>
+            </div>
+            <div class="col-span-3 text-xs text-muted mt-2">AI 模型配置（剧本/分镜/图像/视频/音频）此处统一管理</div>
+          </div>
+        </details>
+      </div>
+
+      <!-- 右：3 种创建模式 -->
+      <div class="space-y-4">
+        <div class="panel bg-gradient-to-br from-amber-50 to-pink-50 border-amber-200">
+          <div class="panel-title">🪄 创建方式</div>
+          <div class="space-y-2">
+            <button class="btn btn-primary w-full">🪄 AI 一键生成</button>
+            <button class="btn btn-secondary w-full">📝 按步骤逐环节创建</button>
+            <button class="btn btn-secondary w-full">📹 从参考视频起步</button>
+            <button class="btn btn-secondary w-full">📚 从我的库引用</button>
+          </div>
+          <div class="mt-3 text-xs text-muted">
+            🪄 一键模式跑全自动；后续可在任一 stage 介入修改。
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">📊 进度</div>
+          <ul class="text-xs space-y-1.5 text-muted">
+            <li><span class="pill pill-ok">✓</span> 立项完成</li>
+            <li><span class="pill pill-warn">…</span> 剧本拆分中</li>
+            <li><span class="pill pill-muted">○</span> 资产建立</li>
+            <li><span class="pill pill-muted">○</span> 分镜设计</li>
+            <li><span class="pill pill-muted">○</span> 画面生成</li>
+            <li><span class="pill pill-muted">○</span> 视频生成</li>
+            <li><span class="pill pill-muted">○</span> 合成</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- ② 剧本                                                      -->
+  <!-- ========================================================== -->
+  <section class="stage-content hidden" data-stage="2">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">② 剧本</h2>
+      <span class="biz-tag">业务环节 2 · 故事剧本</span>
+      <span class="text-sm text-muted">· 把创意展开为结构化叙事</span>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4">
+      <!-- 左：场景树 -->
+      <div class="col-span-1 panel">
+        <div class="panel-title">🎬 场景</div>
+        <ul class="space-y-1 text-sm">
+          <li class="px-2 py-1.5 rounded bg-blue-50 text-blue-700 font-medium">📍 场景 1 · 京城茶馆</li>
+          <li class="px-2 py-1.5 rounded hover:bg-gray-100 text-muted cursor-pointer">📍 场景 2 · 雪夜街巷</li>
+          <li class="px-2 py-1.5 rounded hover:bg-gray-100 text-muted cursor-pointer">📍 场景 3 · 大宅密室</li>
+          <li class="px-2 py-1.5 text-xs text-muted text-center">+ AI 拆更多场景</li>
+        </ul>
+
+        <div class="mt-4 pt-3 border-t border-line">
+          <div class="panel-title text-xs">📖 整体大纲</div>
+          <p class="text-xs text-muted leading-relaxed">书生李墨追寻丢失的家传玉佩，在茶馆偶遇神秘女子苏白，被卷入江湖恩怨...</p>
+        </div>
+      </div>
+
+      <!-- 右：场景内容 -->
+      <div class="col-span-3 space-y-4">
+        <div class="panel">
+          <div class="panel-title">场景 1 · 京城茶馆</div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <div class="field-label">地点 <span class="biz-tag ok-tag">影响生成</span></div>
+              <select class="input">
+                <option>京城茶馆 ✓</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">时间 <span class="biz-tag ok-tag">影响生成</span></div>
+              <select class="input"><option>夜晚</option></select>
+            </div>
+            <div>
+              <div class="field-label">天气 <span class="biz-tag ok-tag">影响生成</span></div>
+              <select class="input"><option>雪夜</option></select>
+            </div>
+          </div>
+          <div class="mt-3">
+            <div class="field-label">场景描述 <span class="biz-tag ok-tag">影响生成</span></div>
+            <textarea class="input" rows="2">传统中式装潢，雕花木窗结霜，昏黄灯笼光晕笼罩。堂内炭火微红，水汽升腾。</textarea>
+          </div>
+          <div class="mt-3">
+            <div class="field-label">氛围 <span class="biz-tag ok-tag">影响生成</span></div>
+            <input class="input" value="紧张压抑" />
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">👥 出场角色 <span class="biz-tag">叙事调度</span></div>
+          <div class="flex flex-wrap gap-2">
+            <span class="pill pill-info">李墨 · 焦虑不安</span>
+            <span class="pill pill-info">苏白 · 平静深邃</span>
+            <span class="pill pill-muted">+ 添加</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">🎙 旁白 / 对白 / 动作 <span class="biz-tag ok-tag">影响声音生成</span></div>
+          <div class="space-y-2 text-sm">
+            <div class="flex gap-2 items-start"><span class="pill pill-muted text-xs shrink-0">旁白</span><div class="flex-1">寒风拍窗，炭火微红。一场因玉佩引发的江湖杀局，于无声处悄然收紧。</div></div>
+            <div class="flex gap-2 items-start"><span class="pill pill-info text-xs shrink-0">李墨</span><div class="flex-1">掌柜的，可曾有人落下一块青玉？<span class="text-xs text-muted ml-2">[焦虑]</span></div></div>
+            <div class="flex gap-2 items-start"><span class="pill pill-muted text-xs shrink-0">茶博士</span><div class="flex-1">客官，这馆子里过手的东西，比窗外的雪还多。</div></div>
+            <div class="flex gap-2 items-start"><span class="pill pill-info text-xs shrink-0">苏白</span><div class="flex-1">寻玉？<span class="text-xs text-muted ml-2">[冷峻]</span></div></div>
+            <button class="btn btn-ghost text-xs">+ 添加对白 / 旁白</button>
+          </div>
+        </div>
+
+        <details class="panel">
+          <summary class="panel-title">▼ 关键动作 / 道具</summary>
+          <div class="text-xs text-muted">动作：李墨摩挲腰间空绦 / 苏白推门入内 / 苏白推开沾血铜钱<br />道具：家传玉佩 · 沾血铜钱</div>
+        </details>
+
+        <div class="flex gap-2 justify-end">
+          <button class="btn btn-secondary">📋 9 帧故事板预览</button>
+          <button class="btn btn-secondary">🔄 重新拆分场景</button>
+          <button class="btn btn-primary">下一步 · ③ 资产</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- ③ 资产                                                      -->
+  <!-- ========================================================== -->
+  <section class="stage-content hidden" data-stage="3">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">③ 资产</h2>
+      <span class="biz-tag">业务环节 3 · 资产建立</span>
+      <span class="text-sm text-muted">· 角色 / 地点 / 物品的视觉锚定</span>
+    </div>
+
+    <!-- 项目级风格已在 ① 立项 配置，这里只显示资产 -->
+    <div class="grid grid-cols-3 gap-4">
+      <!-- 角色 -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">👤 角色 (2)</div>
+          <div class="flex gap-1">
+            <button class="btn btn-ghost text-xs">📚 我的库</button>
+            <button class="btn btn-ghost text-xs">🎭 内置形象</button>
+            <button class="btn btn-secondary text-xs">+ 新建</button>
+          </div>
+        </div>
+
+        <div class="panel ring-2 ring-accent cursor-pointer">
+          <div class="flex gap-3">
+            <div class="small-thumb">📷</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-sm">李墨</div>
+              <div class="text-xs text-muted">书生 · 焦虑不安</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 ✓</span>
+                <span class="pill pill-info text-xs">形象组 5 张</span>
+                <span class="pill pill-warn text-xs">音色 ⚠</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel cursor-pointer">
+          <div class="flex gap-3">
+            <div class="small-thumb">🎭</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-sm">苏白</div>
+              <div class="text-xs text-muted">神秘女子 · 平静深邃</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 ✓</span>
+                <span class="pill pill-info text-xs">形象组 4 张</span>
+                <span class="pill pill-warn text-xs">音色 ⚠</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel bg-blue-50 text-xs text-blue-700">
+          💡 <strong>形象组</strong>：每个角色勾选的多张参考图（默认 = 主图 + 三视图）会在每次生成画面时自动喂给 AI，保证全剧角色长相一致。
+        </div>
+      </div>
+
+      <!-- 地点 -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">🏛 地点 (2)</div>
+          <button class="btn btn-secondary text-xs">+ 新建</button>
+        </div>
+        <div class="panel cursor-pointer">
+          <div class="flex gap-3">
+            <div class="small-thumb">🏯</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-sm">京城茶馆</div>
+              <div class="text-xs text-muted">夜晚 · 雪夜</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 ✓</span>
+                <span class="pill pill-info text-xs">变体 3 张</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel cursor-pointer opacity-60">
+          <div class="flex gap-3">
+            <div class="small-thumb">🌃</div>
+            <div class="flex-1">
+              <div class="font-semibold text-sm">京城（外景）</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 ✓</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 物品 + 风格 -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">⚔️ 物品 (1)</div>
+          <button class="btn btn-secondary text-xs">+ 新建</button>
+        </div>
+        <div class="panel cursor-pointer">
+          <div class="flex gap-3">
+            <div class="small-thumb">💎</div>
+            <div class="flex-1">
+              <div class="font-semibold text-sm">家传玉佩</div>
+              <div class="text-xs text-muted">书生世代相传</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 ✓</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between mt-4">
+          <div class="text-sm font-semibold">🎨 项目级风格</div>
+          <button class="btn btn-ghost text-xs">→ 在 ① 立项 修改</button>
+        </div>
+        <div class="panel">
+          <div class="thumb mb-2">国风工笔</div>
+          <div class="text-xs text-muted">每个画面生成都自动应用此风格。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- ④ 分镜                                                      -->
+  <!-- ========================================================== -->
+  <section class="stage-content hidden" data-stage="4">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">④ 分镜</h2>
+      <span class="biz-tag">业务环节 4 · 分镜设计</span>
+      <span class="text-sm text-muted">· 决定每个镜头要拍什么</span>
+      <span class="biz-tag danger-tag ml-auto">⚠ 转场已移到 ⑦ 合成</span>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4">
+      <!-- 左：场景 + 分镜列表 -->
+      <div class="col-span-1">
+        <div class="panel">
+          <div class="panel-title text-xs">🎬 场景 1 · 京城茶馆 · 13 镜</div>
+          <ul class="space-y-0.5 text-xs">
+            <li class="px-2 py-1 rounded hover:bg-gray-100"><span class="text-muted">1.1</span> 远景 6s</li>
+            <li class="px-2 py-1 rounded bg-blue-50 text-blue-700 font-medium"><span>1.2</span> 近景 4s ●</li>
+            <li class="px-2 py-1 rounded hover:bg-gray-100"><span class="text-muted">1.3</span> 中景 5s</li>
+            <li class="px-2 py-1 rounded hover:bg-gray-100"><span class="text-muted">1.4</span> 特写 4s</li>
+            <li class="px-2 py-1 text-xs text-muted text-center">... 9 more</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 右：分镜编辑 -->
+      <div class="col-span-3 space-y-4">
+        <div class="panel">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="font-semibold">EP01_S01_SH02</span>
+            <span class="text-muted text-xs">·</span>
+            <span class="text-sm">近景 · 平视 · 静止</span>
+            <span class="biz-tag pill-ok">已生成</span>
+            <div class="flex-1"></div>
+            <span class="biz-tag">生成模式：首尾帧</span>
+          </div>
+
+          <!-- 生成模式选择（影响下面字段是否显示） -->
+          <div class="grid grid-cols-2 gap-3 mb-4">
+            <label class="flex items-center gap-2 px-3 py-2 border-2 border-accent rounded cursor-pointer">
+              <input type="radio" name="gen-mode" checked />
+              <div>
+                <div class="font-medium text-sm">首尾帧（推荐）</div>
+                <div class="text-xs text-muted">先生成关键帧 → 视频，可控性最强</div>
+              </div>
+            </label>
+            <label class="flex items-center gap-2 px-3 py-2 border border-line rounded cursor-pointer">
+              <input type="radio" name="gen-mode" />
+              <div>
+                <div class="font-medium text-sm">文生图</div>
+                <div class="text-xs text-muted">直接文生视频，简单但不稳定</div>
+              </div>
+            </label>
+          </div>
+
+          <!-- 决定生成的字段 -->
+          <div class="space-y-3">
+            <div>
+              <div class="field-label flex items-center gap-2">
+                画面描述 <span class="biz-tag ok-tag">影响关键帧 + 视频</span>
+                <span class="ml-auto flex gap-1">
+                  <button class="btn btn-ghost text-xs px-2">短剧模板</button>
+                  <button class="btn btn-ghost text-xs px-2">影视模板</button>
+                  <button class="btn btn-secondary text-xs px-2">自由文本</button>
+                </span>
+              </div>
+              <textarea class="input" rows="3">昏黄灯笼光晕笼罩下，李墨独坐于角落木桌旁，腰部以上。眉头紧锁，眼神焦灼地扫过桌面那杯凉透的残茶。窗外冷蓝雪光透过结霜雕花窗棂斜射进来，与室内暖黄光形成强烈冷暖对比。</textarea>
+            </div>
+
+            <div>
+              <div class="field-label flex items-center gap-2">
+                运动描述 <span class="biz-tag ok-tag">影响视频生成</span>
+                <span class="text-xs text-muted">— 描述这段视频里发生的运动（不是画面长什么样）</span>
+              </div>
+              <textarea class="input" rows="2">李墨缓慢抬眼，目光从茶杯移向窗外，手指无意识地继续摩挲腰间空绦。镜头保持静止。</textarea>
+              <div class="text-xs text-muted mt-1">💡 这是新增字段 — 与「画面描述」分离。当前实现中视频 prompt 仅用画面描述，效果不佳。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 仅"首尾帧"模式显示：镜头语言 -->
+        <div class="panel">
+          <div class="panel-title">🎥 镜头语言 <span class="biz-tag ok-tag">影响关键帧</span></div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <div class="field-label">景别</div>
+              <select class="input"><option>近景</option></select>
+            </div>
+            <div>
+              <div class="field-label">角度</div>
+              <select class="input"><option>平视</option></select>
+            </div>
+            <div>
+              <div class="field-label">运镜</div>
+              <select class="input"><option>静止</option></select>
+            </div>
+            <div>
+              <div class="field-label">焦距</div>
+              <select class="input"><option>50mm 标准</option></select>
+            </div>
+            <div>
+              <div class="field-label">光圈</div>
+              <select class="input"><option>f/4 浅景深</option></select>
+            </div>
+            <div>
+              <div class="field-label">打光</div>
+              <select class="input"><option>三点照明</option></select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 镜头内角色配置 -->
+        <div class="panel">
+          <div class="panel-title">👥 出场角色 <span class="biz-tag ok-tag">影响关键帧</span></div>
+          <div class="border border-line rounded p-3 mb-2">
+            <div class="flex items-center gap-3">
+              <div class="small-thumb">👤</div>
+              <div class="flex-1">
+                <div class="font-medium text-sm">李墨</div>
+                <div class="grid grid-cols-3 gap-2 mt-1.5">
+                  <input class="input text-xs" value="焦虑不安，眉头紧锁" placeholder="表情" />
+                  <input class="input text-xs" value="摩挲腰间空绦" placeholder="动作" />
+                  <select class="input text-xs"><option>左侧 · 正常</option></select>
+                </div>
+              </div>
+              <button class="btn btn-ghost text-xs">×</button>
+            </div>
+          </div>
+          <button class="btn btn-ghost text-xs">+ 添加本镜出场角色</button>
+        </div>
+
+        <!-- 时长 + 引用 -->
+        <div class="grid grid-cols-3 gap-4">
+          <div class="panel">
+            <div class="panel-title">⏱ 时长 <span class="biz-tag">合成时长</span></div>
+            <input class="input" value="4.0s" />
+            <div class="text-xs text-muted mt-2">💡 实际时长以「⑦ 合成」对白音频时长为准（音画对齐）</div>
+          </div>
+          <div class="panel col-span-2">
+            <div class="panel-title">🔗 引用 <span class="biz-tag">叙事调度</span></div>
+            <div class="text-xs space-y-1">
+              <div>📢 旁白：寒风拍窗，炭火微红...</div>
+              <div>💬 对白：李墨「掌柜的，可曾有人落下一块青玉？」</div>
+              <button class="btn btn-ghost text-xs mt-1">编辑引用</button>
+            </div>
+          </div>
+        </div>
+
+        <details class="panel">
+          <summary class="panel-title">▼ 高级（构图 / 主体 / 3D 摆位 / 背景参考图）</summary>
+          <div class="text-xs text-muted">高级用户可调；自媒体用户可忽略</div>
+        </details>
+
+        <div class="flex justify-between items-center pt-2">
+          <div class="text-xs text-muted">已配置 ✓ 进入下一步生成画面</div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary">↺ 重新生成本分镜</button>
+            <button class="btn btn-primary">下一步 · ⑤ 画面生成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- ⑤ 画面生成                                                  -->
+  <!-- ========================================================== -->
+  <section class="stage-content hidden" data-stage="5">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">⑤ 画面生成</h2>
+      <span class="biz-tag">业务环节 5 · 画面生成</span>
+      <span class="text-sm text-muted">· 把分镜定义渲染成静态画面（关键帧 / 单帧）</span>
+      <div class="ml-auto flex gap-2">
+        <label class="flex items-center gap-1 text-xs">
+          <input type="checkbox" /> 显示生成链路
+        </label>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4">
+      <!-- 左：分镜列表 -->
+      <div class="col-span-1">
+        <div class="panel">
+          <div class="panel-title text-xs">🎬 分镜（13）</div>
+          <ul class="space-y-0.5 text-xs">
+            <li class="px-2 py-1 rounded hover:bg-gray-100">1.1 ✓ 已生成</li>
+            <li class="px-2 py-1 rounded bg-blue-50 text-blue-700 font-medium">1.2 ● 当前</li>
+            <li class="px-2 py-1 rounded hover:bg-gray-100">1.3 ○ 未生成</li>
+            <li class="px-2 py-1 rounded hover:bg-gray-100">1.4 ○ 未生成</li>
+          </ul>
+          <div class="mt-3 pt-3 border-t border-line">
+            <button class="btn btn-secondary w-full text-xs">⚡ 批量生成全部</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：分镜画面生成 -->
+      <div class="col-span-3 space-y-4">
+        <!-- 顶部 readonly 信息 -->
+        <div class="panel bg-gray-50">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="font-semibold">EP01_S01_SH02</span>
+            <span class="text-muted">·</span>
+            <span>近景 · 平视 · 静止 · 4s · 首尾帧 · 2 帧</span>
+            <button class="btn btn-ghost text-xs ml-auto">→ 回 ④ 改设置</button>
+          </div>
+        </div>
+
+        <!-- 关键帧序列 -->
+        <div class="panel">
+          <div class="flex items-center justify-between mb-3">
+            <div class="panel-title">🎞 关键帧序列</div>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary text-xs">↻ 全部重生成</button>
+              <button class="btn btn-secondary text-xs">+ 插帧</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="border border-line rounded-lg overflow-hidden">
+              <div class="thumb">关键帧 #0 · START</div>
+              <div class="p-3">
+                <div class="flex justify-between items-center text-xs mb-1">
+                  <span class="font-medium">#0 · 开始 · 0%</span>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost text-xs px-1">ⓘ 详情</button>
+                    <button class="btn btn-ghost text-xs px-1">↻ 重生</button>
+                  </div>
+                </div>
+                <div class="text-xs text-muted">李墨 · 焦虑不安</div>
+              </div>
+            </div>
+            <div class="border border-line rounded-lg overflow-hidden">
+              <div class="thumb">关键帧 #1 · END</div>
+              <div class="p-3">
+                <div class="flex justify-between items-center text-xs mb-1">
+                  <span class="font-medium">#1 · 结束 · 100%</span>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost text-xs px-1">ⓘ 详情</button>
+                    <button class="btn btn-ghost text-xs px-1">↻ 重生</button>
+                  </div>
+                </div>
+                <div class="text-xs text-muted">李墨 · 焦虑不安（视线移动）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 本分镜引用资产（统一挑图入口） -->
+        <div class="panel">
+          <div class="panel-title">🖼 本分镜资产引用 <span class="biz-tag ok-tag">影响关键帧</span></div>
+          <div class="text-xs text-muted mb-3">点缩略图为该资产挑选参考图（不挑则用形象组默认）</div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="border border-line rounded p-2">
+              <div class="thumb thumb-square mb-2">🏯</div>
+              <div class="text-xs"><span class="pill pill-ok text-xs">📍 京城茶馆</span></div>
+              <div class="text-xs text-muted mt-1">已挑图 ✓ · 雪夜变体</div>
+              <button class="btn btn-ghost text-xs w-full mt-1">↺ 改图</button>
+            </div>
+            <div class="border border-line rounded p-2">
+              <div class="thumb thumb-square mb-2">👤</div>
+              <div class="text-xs"><span class="pill pill-info text-xs">👤 李墨</span></div>
+              <div class="text-xs text-muted mt-1">自动 + 形象组 5 张</div>
+              <button class="btn btn-ghost text-xs w-full mt-1">↺ 挑主图</button>
+            </div>
+            <div class="border border-line rounded p-2">
+              <div class="thumb thumb-square mb-2">💎</div>
+              <div class="text-xs"><span class="pill pill-warn text-xs">⚔ 玉佩</span></div>
+              <div class="text-xs text-muted mt-1">自动评分挑图</div>
+              <button class="btn btn-ghost text-xs w-full mt-1">↺ 改图</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 调整方向（仅影响关键帧） -->
+        <div class="panel bg-amber-50 border-amber-200">
+          <div class="panel-title">✏ 调整方向 <span class="biz-tag ok-tag">影响关键帧重生成</span></div>
+          <textarea class="input" rows="2" placeholder="例：让光线更暖一些 / 角色表情再焦虑些 / 镜头视角再低一点..."></textarea>
+          <div class="text-xs text-muted mt-2">💡 此提示词仅影响下次关键帧重生成；不影响视频生成。</div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button class="btn btn-secondary">↺ 重新生成所有关键帧</button>
+          <button class="btn btn-primary">下一步 · ⑥ 视频生成</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- ⑥ 视频生成                                                  -->
+  <!-- ========================================================== -->
+  <section class="stage-content hidden" data-stage="6">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">⑥ 视频生成</h2>
+      <span class="biz-tag">业务环节 6 · 运动生成</span>
+      <span class="text-sm text-muted">· 把关键帧之间补完为运动视频片段</span>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4">
+      <!-- 左：分镜列表 -->
+      <div class="col-span-1">
+        <div class="panel">
+          <div class="panel-title text-xs">🎬 分镜（13）</div>
+          <ul class="space-y-0.5 text-xs">
+            <li class="px-2 py-1 rounded hover:bg-gray-100">1.1 ✓ 4s</li>
+            <li class="px-2 py-1 rounded bg-blue-50 text-blue-700 font-medium">1.2 ● 4s</li>
+            <li class="px-2 py-1 rounded hover:bg-gray-100">1.3 ○ 5s</li>
+          </ul>
+          <div class="mt-3 pt-3 border-t border-line">
+            <button class="btn btn-secondary w-full text-xs">⚡ 批量生成全部</button>
+            <button class="btn btn-ghost w-full text-xs">⏱ 总耗时 ~6 分钟</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：视频生成 -->
+      <div class="col-span-3 space-y-4">
+        <div class="panel bg-gray-50">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="font-semibold">EP01_S01_SH02</span>
+            <span class="text-muted">·</span>
+            <span>4s · 首尾帧模式 · keyframes2video</span>
+          </div>
+        </div>
+
+        <!-- 关键帧预览（只读） -->
+        <div class="panel">
+          <div class="panel-title">📌 关键帧（只读 · 在 ⑤ 修改）</div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="thumb">START · 关键帧 #0</div>
+            <div class="thumb">END · 关键帧 #1</div>
+          </div>
+        </div>
+
+        <!-- 视频提示词（与 ④ 分镜的运动描述同一字段，readonly 引用 + 可临时调整） -->
+        <div class="panel">
+          <div class="panel-title">🎬 视频提示词 <span class="biz-tag ok-tag">直接发给视频模型</span></div>
+          <div class="text-xs text-muted mb-2">来自 ④ 分镜 的「运动描述」字段</div>
+          <textarea class="input" rows="3">李墨缓慢抬眼，目光从茶杯移向窗外，手指无意识地继续摩挲腰间空绦。镜头保持静止。</textarea>
+          <div class="grid grid-cols-3 gap-2 mt-3">
+            <div>
+              <div class="field-label">运动强度</div>
+              <select class="input">
+                <option>普通</option>
+                <option>微动</option>
+                <option>剧烈</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">时长</div>
+              <select class="input"><option>4s（来自 ④）</option></select>
+            </div>
+            <div>
+              <div class="field-label">生成模式</div>
+              <select class="input">
+                <option>自动选择</option>
+                <option>关键帧视频</option>
+                <option>图生视频</option>
+                <option>文生视频</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视频预览 -->
+        <div class="panel">
+          <div class="panel-title">🎥 视频预览</div>
+          <div class="thumb" style="aspect-ratio: 16/9">视频片段预览（4s · 已生成）</div>
+          <div class="text-xs text-muted mt-2">seg_1778400860169_c4nkmp.mp4 · 1920×1080 · 30fps</div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button class="btn btn-secondary">↻ 重新生成视频</button>
+          <button class="btn btn-primary">下一步 · ⑦ 合成</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- ⑦ 合成                                                      -->
+  <!-- ========================================================== -->
+  <section class="stage-content hidden" data-stage="7">
+    <div class="mb-4 flex items-center gap-3">
+      <h2 class="text-xl font-semibold">⑦ 合成</h2>
+      <span class="biz-tag">业务环节 7+8 · 声音 + 合成剪辑</span>
+      <span class="text-sm text-muted">· 声音 + 转场 + 字幕 + 导出</span>
+    </div>
+
+    <div class="space-y-4">
+      <!-- 时间线（多轨道） -->
+      <div class="panel">
+        <div class="panel-title">⏱ 时间线</div>
+        <div class="overflow-x-auto">
+          <!-- 轨道：视频 -->
+          <div class="grid grid-cols-[80px_1fr] items-stretch gap-2 mb-2">
+            <div class="text-xs text-muted self-center text-right pr-2">视频轨</div>
+            <div class="flex gap-0.5 h-12">
+              <div class="bg-blue-200 rounded flex-1 flex items-center justify-center text-xs">SH01 · 6s</div>
+              <div class="bg-amber-300 w-2"></div>
+              <div class="bg-blue-200 rounded flex-[0.7] flex items-center justify-center text-xs">SH02 · 4s</div>
+              <div class="bg-amber-300 w-2"></div>
+              <div class="bg-blue-200 rounded flex-[0.85] flex items-center justify-center text-xs">SH03 · 5s</div>
+              <div class="bg-blue-200 rounded flex-[0.7] flex items-center justify-center text-xs ml-0.5">SH04 · 4s</div>
+            </div>
+          </div>
+          <!-- 轨道：旁白 -->
+          <div class="grid grid-cols-[80px_1fr] items-stretch gap-2 mb-2">
+            <div class="text-xs text-muted self-center text-right pr-2">📢 旁白</div>
+            <div class="flex gap-0.5 h-9">
+              <div class="bg-purple-200 rounded flex-[2.2] flex items-center justify-center text-xs px-2 truncate">寒风拍窗，炭火微红...</div>
+              <div class="flex-[1.4]"></div>
+            </div>
+          </div>
+          <!-- 轨道：对白 -->
+          <div class="grid grid-cols-[80px_1fr] items-stretch gap-2 mb-2">
+            <div class="text-xs text-muted self-center text-right pr-2">💬 对白</div>
+            <div class="flex gap-0.5 h-9">
+              <div class="flex-[1.5]"></div>
+              <div class="bg-pink-200 rounded flex-1 flex items-center justify-center text-xs px-2 truncate">李墨 · 掌柜的...</div>
+              <div class="flex-[1.1]"></div>
+            </div>
+          </div>
+          <!-- 轨道：BGM -->
+          <div class="grid grid-cols-[80px_1fr] items-stretch gap-2 mb-2">
+            <div class="text-xs text-muted self-center text-right pr-2">🎵 BGM</div>
+            <div class="flex h-7">
+              <div class="bg-emerald-200 rounded flex-1 flex items-center justify-center text-xs">古风背景乐 · 全长 19s</div>
+            </div>
+          </div>
+          <!-- 轨道：字幕 -->
+          <div class="grid grid-cols-[80px_1fr] items-stretch gap-2">
+            <div class="text-xs text-muted self-center text-right pr-2">📝 字幕</div>
+            <div class="flex gap-0.5 h-7">
+              <div class="bg-gray-200 rounded flex-[2.2] flex items-center justify-center text-xs px-2 truncate">寒风拍窗...</div>
+              <div class="flex-[0.3]"></div>
+              <div class="bg-gray-200 rounded flex-1 flex items-center justify-center text-xs">李墨：掌柜的...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-xs text-muted mt-3 flex gap-3">
+          <span>🟦 视频片段</span>
+          <span>🟧 转场（点击编辑）</span>
+          <span>🟪 旁白</span>
+          <span>🟪 对白</span>
+          <span>🟢 BGM</span>
+          <span>⬜ 字幕</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4">
+        <!-- 声音 -->
+        <div class="panel">
+          <div class="panel-title">🎙 声音</div>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between text-xs">
+              <span>📢 旁白（共 1 段）</span>
+              <button class="btn btn-ghost text-xs px-1">配置音色</button>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>💬 对白（共 6 段）</span>
+              <button class="btn btn-ghost text-xs px-1">配置各角色音色</button>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>🎵 BGM</span>
+              <button class="btn btn-ghost text-xs px-1">选 BGM</button>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>🔊 音效（0 个）</span>
+              <button class="btn btn-ghost text-xs px-1">+ 添加音效</button>
+            </div>
+            <button class="btn btn-secondary w-full text-xs mt-2">⚡ 批量生成所有音频</button>
+          </div>
+          <div class="text-xs text-muted mt-3 bg-blue-50 p-2 rounded">
+            💡 声音生成完成后，分镜时长将<strong>自动同步</strong>对白音频实长，避免画面过长黑屏。
+          </div>
+        </div>
+
+        <!-- 转场 -->
+        <div class="panel">
+          <div class="panel-title">🔀 转场 <span class="biz-tag">每两镜之间</span></div>
+          <div class="text-xs text-muted mb-2">从 ④ 分镜搬过来。点时间线上橙色块编辑单个转场。</div>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between"><span>SH01 → SH02</span><span class="pill pill-info">淡入淡出 · 0.5s</span></div>
+            <div class="flex justify-between"><span>SH02 → SH03</span><span class="pill pill-info">硬切</span></div>
+            <div class="flex justify-between"><span>SH03 → SH04</span><span class="pill pill-info">叠化 · 0.3s</span></div>
+            <button class="btn btn-ghost w-full text-xs">→ 一键应用到全部</button>
+          </div>
+        </div>
+
+        <!-- 字幕 + 调色 -->
+        <div class="panel">
+          <div class="panel-title">📝 字幕 / 🎨 调色</div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <div class="field-label">字幕样式</div>
+              <select class="input"><option>默认（白底黑字）</option></select>
+            </div>
+            <div>
+              <div class="field-label">字号</div>
+              <select class="input"><option>32pt</option></select>
+            </div>
+            <div>
+              <div class="field-label">调色</div>
+              <select class="input"><option>电影感冷调</option></select>
+            </div>
+            <div>
+              <div class="field-label">LUT</div>
+              <select class="input"><option>无</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 导出 -->
+      <div class="panel bg-gradient-to-r from-emerald-50 to-blue-50 border-emerald-200">
+        <div class="panel-title">📤 导出</div>
+        <div class="grid grid-cols-4 gap-2">
+          <button class="btn btn-secondary text-sm">抖音预设（9:16 · 1080p · h264）</button>
+          <button class="btn btn-secondary text-sm">B站预设（16:9 · 1080p · h264）</button>
+          <button class="btn btn-secondary text-sm">YouTube（4K · h265）</button>
+          <button class="btn btn-secondary text-sm">自定义...</button>
+        </div>
+        <div class="mt-3 flex items-center gap-3">
+          <button class="btn btn-primary">▶ 渲染并导出</button>
+          <span class="text-xs text-muted">预计耗时 3-5 分钟 · 输出 ~120MB</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ========== 切换脚本 ========== -->
+<script>
+  document.querySelectorAll('.stage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const stage = btn.dataset.stage
+      document.querySelectorAll('.stage-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      document.querySelectorAll('.stage-content').forEach(c => {
+        c.classList.toggle('hidden', c.dataset.stage !== stage)
+      })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  })
+</script>
+
+</body>
+</html>

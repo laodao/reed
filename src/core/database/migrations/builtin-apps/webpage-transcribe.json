@@ -1,0 +1,88 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 网页正文转写",
+  "description": "输入文章链接 → 提取正文 → AI 结构化转写（保留标题层级/列表/引用 + 元数据）→ 存资产",
+  "category": "knowledge",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "url", "label": "文章链接", "type": "string", "required": true },
+            { "key": "keepStructure", "label": "保留标题层级/列表/引用", "type": "boolean", "defaultValue": true },
+            { "key": "extractMeta", "label": "提取元数据（作者/日期/来源）", "type": "boolean", "defaultValue": true },
+            { "key": "request", "label": "效果描述", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"] }
+          ]
+        }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "提取正文",
+        "position": { "x": 320, "y": 200 },
+        "config": { "url": "{{start.url}}", "maxLength": 80000, "maxLinks": 0 }
+      },
+      {
+        "id": "fmt1",
+        "type": "llm-chat",
+        "name": "结构化转写",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "systemPrompt": "你是内容转写助手。把网页正文转为干净 markdown，保留标题层级（#/##/###）、列表、引用；去掉广告/导航/无关内容。保留结构：{{start.keepStructure}}，提取元数据：{{start.extractMeta}}。输出 JSON：{title, author, publishDate, source, markdown}。",
+          "prompt": "网页标题：{{extract1.title}}\n原文 URL：{{start.url}}\n用户效果要求：{{start.request}}\n\n正文：\n{{extract1.text}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "check1",
+        "type": "code",
+        "name": "完整性校验",
+        "position": { "x": 800, "y": 200 },
+        "config": {
+          "code": "const md = String(inputs.markdown || '');\nif (!md.trim()) return { ok: false, error: '转写为空' };\nconst hasHeading = /^#{1,6}\\s/m.test(md);\nreturn { ok: true, chars: md.length, hasHeading };",
+          "inputs": [{ "key": "markdown", "value": "{{fmt1.parsed.markdown}}" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1040, "y": 200 },
+        "config": { "content": "# {{fmt1.parsed.title}}\n\n> 来源：{{fmt1.parsed.source}} ｜ 作者：{{fmt1.parsed.author}} ｜ 日期：{{fmt1.parsed.publishDate}}\n\n{{fmt1.parsed.markdown}}", "kind": "text", "category": "text", "subCategory": "网页转写", "name": "{{fmt1.parsed.title}}", "tags": "网页转写" }
+      },
+      {
+        "id": "msg1",
+        "type": "message",
+        "name": "完成提示",
+        "position": { "x": 1280, "y": 200 },
+        "config": { "content": "转写完成：{{fmt1.parsed.title}}（{{check1.result.chars}} 字），资产 ID {{save1.assetId}}" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1520, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "extract1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "extract1", "targetNodeId": "fmt1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "fmt1", "targetNodeId": "check1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "check1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

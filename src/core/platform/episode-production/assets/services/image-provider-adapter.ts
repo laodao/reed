@@ -1,0 +1,346 @@
+/**
+ * 图像生成 Provider 适配器
+ * @module platform/episode-production/assets/services/image-provider-adapter
+ *
+ * 把项目通用的 ImageService.generateImage（按用户配置的 enabled provider 路由 ——
+ * DashScope / Bailian / OpenAI / Volcengine / 等）适配到 episode-production 资产
+ * 域内部需要的两个窄接口：
+ *
+ *   - ImageGenerator（gallery-derivation 用：视角 / 表情 / 服装 / 姿势 / 时间 / 天气 / 角度）
+ *   - PanoramaImageGenerator（panorama-generator 用：360 全景 2:1 等距投影图）
+ *
+ * 双端共用（src/core）：背后只依赖 ImageService 静态方法，ImageService 自己负责
+ * provider 选择、API 调用、文件落盘（saveImagesWithoutHistory）。两端共用同一份。
+ *
+ * **质量说明**：360 全景目前用通用图像 API + panorama prompt suffix 拼接，
+ * 输出 2:1 比例的图，但**左右边缘不保证无缝**（接缝在 photo-sphere-viewer 旋转时
+ * 可见）。要做到真无缝需要换专门的 panorama provider（如 Blockade Labs Skybox AI
+ * 或 SDXL panorama LoRA），那是另一个 follow-up，本 adapter 仅打通"能跑"基线。
+ */
+
+import * as fs from 'fs'
+import * as path from 'path'
+import { ImageService } from '@core/platform/services/image.service'
+import { getModelCapabilities, findReferenceCapableModelInProvider } from '@core/platform/providers/image/model-capabilities'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
+import type { ImageGenerator } from './gallery-derivation.service'
+import type { PanoramaImageGenerator } from './panorama-generator.service'
+
+/** 允许作为参考图的本地文件扩展名 */
+const ALLOWED_REF_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
+
+/**
+ * 把参考图路径解析为 dataPath 内的绝对路径（安全校验版）。
+ *
+ * referenceImagePaths 来自 IPC 入参（客户端可控），不能信任其指向任意文件——
+ * 否则恶意调用可把 /etc/passwd、data-web/secure-key 等内容 base64 后外发到
+ * 第三方图像 provider。规则：
+ *   - http(s)/data:/local-image:// 等协议 URL 不是本地文件，返回 null（走纯 prompt）；
+ *   - 绝对路径与 ../ 逃逸一律拒绝，解析后必须落在 dataPath 内；
+ *   - 扩展名白名单（jpg/jpeg/png/webp/gif/bmp）。
+ */
+function resolveSafeReferencePath(relativeOrAbsPath: string): string | null {
+  const raw = (relativeOrAbsPath ?? '').trim()
+  if (!raw) return null
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return null
+  try {
+    const dataPath = getPathProvider().getDataPath()
+    const abs = path.isAbsolute(raw) ? raw : path.join(dataPath, raw)
+    const normalized = path.normalize(abs)
+    const prefix = dataPath.endsWith(path.sep) ? dataPath : dataPath + path.sep
+    if (normalized !== dataPath && !normalized.startsWith(prefix)) {
+      console.warn('[image-provider-adapter] 拒绝越界参考图路径:', raw)
+      return null
+    }
+    const ext = path.extname(normalized).toLowerCase()
+    if (!ALLOWED_REF_EXT.has(ext)) {
+      console.warn('[image-provider-adapter] 拒绝非图片扩展名参考图:', raw)
+      return null
+    }
+    return normalized
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把磁盘上的图像文件读成 data URL（用于把"主图"作为参考图传给 provider）。
+ * 失败返回 undefined（让生成走纯 prompt 模式而非整个失败）。
+ */
+function readImageAsDataUrl(relativeOrAbsPath: string): string | undefined {
+  try {
+    const abs = resolveSafeReferencePath(relativeOrAbsPath)
+    if (!abs || !fs.existsSync(abs)) return undefined
+    const buf = fs.readFileSync(abs)
+    const ext = path.extname(abs).toLowerCase().replace(/^\./, '') || 'png'
+    const mime =
+      ext === 'jpg' || ext === 'jpeg'
+        ? 'image/jpeg'
+        : ext === 'webp'
+          ? 'image/webp'
+          : 'image/png'
+    return `data:${mime};base64,${buf.toString('base64')}`
+  } catch (e) {
+    console.warn('[image-provider-adapter] 读取参考图失败:', relativeOrAbsPath, e)
+    return undefined
+  }
+}
+
+/** 派生图默认尺寸（视角 / 表情 / 服装 / 姿势 / 时间 / 天气 / 角度通用） */
+const DEFAULT_DERIVE_WIDTH = 1024
+const DEFAULT_DERIVE_HEIGHT = 1024
+
+/** 360 全景默认尺寸（equirectangular 2:1） */
+const DEFAULT_PANORAMA_WIDTH = 2048
+const DEFAULT_PANORAMA_HEIGHT = 1024
+
+/**
+ * F1b（2026-09-21）：视图/派生必须吃主图参考，若钉住的项目画面模型不支持参考图
+ * （maxReferenceImages=0，如 comfyui/krea2 纯 T2I），回退到同 provider 下首个支持
+ * 参考图的模型（如 flux-kontext）；主图（纯 T2I）调用方不走此回退。
+ *
+ * 解析失败 / provider 配置找不到 / 模型未登记能力 → 保持原样（既有行为不截断）；
+ * 同 provider 无替代 → 保持原样并 warn（参考图会在 generate 边界按能力表丢弃，同样有 warn）。
+ */
+export async function fallbackToReferenceCapableModel(
+  resolved: { providerConfigId: string; modelId: string } | null,
+): Promise<{ providerConfigId: string; modelId: string } | null> {
+  if (!resolved) return null
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.providerConfigs) return resolved
+    const enabled = await db.providerConfigs.getEnabled()
+    const cfg = enabled.find(c => c.id === resolved.providerConfigId)
+    if (!cfg) return resolved
+    const providerType = String(cfg.templateId ?? '').replace('image-', '')
+    const models = (cfg.models ?? []) as Array<{ id?: string; type?: string; name?: string }>
+    const cur = models.find(m => m.id === resolved.modelId)
+    let maxRefs: number | null = null
+    try {
+      maxRefs = getModelCapabilities(providerType, resolved.modelId, cur?.name).maxReferenceImages
+    } catch {
+      maxRefs = null // 未登记 → 不截断（既有行为）
+    }
+    if (maxRefs === null || maxRefs > 0) return resolved
+    const alt = findReferenceCapableModelInProvider(providerType, models, resolved.modelId)
+    if (alt) {
+      console.warn(
+        `[image-provider-adapter] F1b: ${providerType}/${resolved.modelId} 不支持参考图（maxReferenceImages=0），` +
+        `视图/派生回退到同 provider 的 ${alt}（保持吃主图参考）`,
+      )
+      return { providerConfigId: resolved.providerConfigId, modelId: alt }
+    }
+    console.warn(
+      `[image-provider-adapter] F1b: ${providerType}/${resolved.modelId} 不支持参考图，` +
+      `且同 provider 无支持参考图的替代模型，参考图将被能力截断丢弃`,
+    )
+    return resolved
+  } catch (e) {
+    console.warn('[image-provider-adapter] F1b 回退解析失败，保持钉住模型:', e)
+    return resolved
+  }
+}
+
+/**
+ * 从用户已启用的 provider configs 里挑一个 image 类型 model 的 ID。
+ * 优先 default provider 的第一个 image model；否则任意 enabled provider 的第一个。
+ *
+ * 不写死任何 model 名 —— 由用户在 settings 里启用什么模型，就用什么。
+ *
+ * P-B 透传：override.providerConfigId 指定时直接用该 provider（校验其处于启用状态）；
+ * override.modelId 指定时直接用该模型，否则仍在该 provider 内自动挑第一个 image 模型。
+ *
+ * @throws 找不到任何已启用的 image model 时抛错（用户需要先去 settings 配 image 类型模型）
+ */
+async function pickImageModel(override?: {
+  providerConfigId?: string | null
+  modelId?: string | null
+}): Promise<{ providerConfigId: string; model: string; providerType: string; modelName?: string }> {
+  const db = getCoreDatabaseManager()
+  if (!db.providerConfigs) {
+    throw new Error('数据库未初始化（providerConfigs 仓库不可用）')
+  }
+  const enabled = await db.providerConfigs.getEnabled()
+  if (!enabled.length) {
+    throw new Error('未配置任何 enabled image provider，请到「设置 → 模型服务」启用一个图像 provider')
+  }
+  // 把 default 排前面
+  enabled.sort((a, b) => Number(b.isDefault ?? 0) - Number(a.isDefault ?? 0))
+
+  const pickFrom = (cfg: (typeof enabled)[number]): { providerConfigId: string; model: string; providerType: string; modelName?: string } | null => {
+    const providerType = String(cfg.templateId ?? '').replace('image-', '')
+    const models = (cfg.models ?? []) as Array<{ id?: string; type?: string; name?: string }>
+    if (override?.modelId) {
+      // 显式模型：直接使用（前端下拉只列 image/multimodal 类型，这里信任调用方）
+      const hit = models.find((m) => m.id === override.modelId)
+      return { providerConfigId: cfg.id, model: override.modelId, providerType, modelName: hit?.name }
+    }
+    const imgModel = models.find(
+      (m) => m.id && (m.type === 'image' || m.type === 'multimodal'),
+    )
+    return imgModel?.id ? { providerConfigId: cfg.id, model: imgModel.id, providerType, modelName: imgModel.name } : null
+  }
+
+  // 指定 provider：只在该 provider 内挑（未启用则明确报错，不静默降级到别的 provider）
+  if (override?.providerConfigId) {
+    const cfg = enabled.find((c) => c.id === override.providerConfigId)
+    if (!cfg) {
+      throw new Error('指定的图像 provider 未启用或不存在，请到「设置 → 模型服务」检查')
+    }
+    const picked = pickFrom(cfg)
+    if (picked) return picked
+    throw new Error(
+      '指定的 provider 中没有 image 类型模型，请到「设置 → 模型服务」为其添加 type=image 的模型',
+    )
+  }
+
+  for (const cfg of enabled) {
+    const picked = pickFrom(cfg)
+    if (picked) return picked
+  }
+  throw new Error(
+    '已启用的 provider 中没有 image 类型模型，请到「设置 → 模型服务」' +
+      '为某个 provider 添加 type=image 的模型（如阿里百炼的 wan2.7-image / qwen-image-2.0）',
+  )
+}
+
+/**
+ * 创建 gallery 派生用的 ImageGenerator。
+ * 调 ImageService.generateImage（skipHistory=true，避免污染主图像库历史）。
+ *
+ * 派生图必须以"主图"作 reference image —— 否则 AI 完全按 prompt 自由发挥，
+ * 跨变体的人物形象 / 风格 / 长相会漂移（实测会出现完全不同的人）。
+ * 这里把主图文件读成 data URL 透传到 ImageService.generateImage 的 referenceImage
+ * 字段，后续 provider 适配层负责按各家协议（DashScope reference_images /
+ * OpenAI image-to-image / Volcengine prompt_image_url 等）转译。
+ */
+export function createGalleryImageGenerator(): ImageGenerator {
+  return {
+    async generate(opts) {
+      // label 拼到 prompt 末尾让 provider 知道当前生成的是哪个 variant
+      const fullPrompt = opts.label
+        ? `${opts.prompt}, variant: ${opts.label}`
+        : opts.prompt
+
+      const { providerConfigId, model, providerType, modelName } = await pickImageModel({
+        providerConfigId: opts.providerConfigId,
+        modelId: opts.modelId,
+      })
+
+      /*
+       * 参考图按模型能力截断（2026-09-19 场次2根因修复）：
+       * 此前全部 ref 无脑发给 provider，单图模型（bailian wan2.7-image / flux-kontext 等）
+       * 静默只吃第一张，多角色场景的其余角色视觉锚丢失且无人知晓。
+       * 现在按 model-capabilities 的 maxReferenceImages 截断（调用方传入顺序即优先级：
+       * 角色 → 物品 → 地点），并把实际生效路径返回给调用方落库展示。
+       * 未登记模型（getModelCapabilities 抛错）不截断，保持原行为。
+       */
+      let effectiveRefPaths = opts.referenceImagePaths ?? []
+      try {
+        const caps = getModelCapabilities(providerType, model, modelName)
+        const max = caps.maxReferenceImages
+        if (max <= 0) {
+          if (effectiveRefPaths.length > 0) {
+            console.warn(
+              `[image-provider-adapter] ${providerType}/${model} 不支持参考图，` +
+              `已丢弃 ${effectiveRefPaths.length} 张（退化为纯文生图）`,
+            )
+          }
+          effectiveRefPaths = []
+        } else if (effectiveRefPaths.length > max) {
+          console.warn(
+            `[image-provider-adapter] ${providerType}/${model} 最多消费 ${max} 张参考图，` +
+            `截断 ${effectiveRefPaths.length} → ${max}（被丢弃：${effectiveRefPaths.slice(max).join(', ')}）`,
+          )
+          effectiveRefPaths = effectiveRefPaths.slice(0, max)
+        }
+      } catch {
+        // 未登记能力：不截断，交由 provider 自行处理
+      }
+
+      // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference
+      // 把全部（截断后）referenceImagePaths 转为 data URLs，喂给 ImageGenerationRequest.referenceImages
+      // 各 provider adapter 的 collectReferences helper 会按各家形态适配（万相 1-4 / Seedream 多张 / 可灵 element_list）
+      const referenceImages = effectiveRefPaths
+        .map((p) => readImageAsDataUrl(p))
+        .filter((url): url is string => !!url)
+      // 兼容 referenceImage 单值（旧 provider 可能仅认此字段）
+      const referenceImage = referenceImages[0]
+
+      const resp = await ImageService.generateImage({
+        providerConfigId,
+        model,
+        prompt: fullPrompt,
+        negativePrompt: opts.negativePrompt,
+        width: opts.width ?? DEFAULT_DERIVE_WIDTH,
+        height: opts.height ?? DEFAULT_DERIVE_HEIGHT,
+        referenceImage,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        skipHistory: true,
+      })
+
+      if (!resp.success || !resp.images?.[0]) {
+        throw new Error(resp.error || '图像生成失败：provider 未返回图像')
+      }
+
+      const img = resp.images[0] as { filePath?: string; url?: string }
+      const imagePath = img.filePath || img.url
+      if (!imagePath) {
+        throw new Error('图像生成成功但 provider 未返回可用路径 / URL')
+      }
+      return {
+        imagePath,
+        thumbnailPath: null,
+        resolvedModel: { providerConfigId, modelId: model },
+        effectiveReferencePaths: effectiveRefPaths,
+        // K6（2026-09-24 一致性修复）：variant 尾仍拼进 prompt（provider 需要区分变体），
+        // 但把拼尾后的最终串回传，调用方落库 actualPrompt 可还原实际发送内容
+        sentPrompt: fullPrompt,
+      }
+    },
+  }
+}
+
+/**
+ * 创建 panorama 用的 PanoramaImageGenerator。
+ * 与 derivation 共用同一个 ImageService 路由，仅 width/height 强制 2:1。
+ *
+ * 注意：panorama-generator.service.generateFor 自己已经在 prompt 末尾拼了
+ * PANORAMA_PROMPT_SUFFIX（"... 360 panorama equirectangular ..."），
+ * adapter 不再重复添加，避免 prompt 双重。
+ *
+ * referenceImagePaths：service 传入主图路径时，把主图读为 data URL 作 reference，
+ * 让 panorama 在风格 / 色调 / 陈设元素上跟主图对齐。
+ */
+export function createPanoramaImageGenerator(): PanoramaImageGenerator {
+  return {
+    async generate(opts) {
+      const refPath = opts.referenceImagePaths?.[0]
+      const referenceImage = refPath ? readImageAsDataUrl(refPath) : undefined
+
+      const { providerConfigId, model } = await pickImageModel()
+      const resp = await ImageService.generateImage({
+        providerConfigId,
+        model,
+        prompt: opts.prompt,
+        negativePrompt: opts.negativePrompt,
+        width: DEFAULT_PANORAMA_WIDTH,
+        height: DEFAULT_PANORAMA_HEIGHT,
+        referenceImage,
+        skipHistory: true,
+      })
+
+      if (!resp.success || !resp.images?.[0]) {
+        throw new Error(resp.error || '360 全景生成失败：provider 未返回图像')
+      }
+
+      const img = resp.images[0] as { filePath?: string; url?: string }
+      const imagePath = img.filePath || img.url
+      if (!imagePath) {
+        throw new Error('360 全景生成成功但 provider 未返回可用路径 / URL')
+      }
+      return { imagePath, thumbnailPath: null }
+    },
+  }
+}

@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>① 内容 · 识别要素</title>
+  <link rel="stylesheet" href="shell.css">
+  <style>
+    .source-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .source-tab {
+      padding: 8px 14px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      cursor: pointer;
+      background: white;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .source-tab.active {
+      background: var(--color-primary-light);
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+      font-weight: 600;
+    }
+
+    .original-text {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.8;
+      max-height: 280px;
+      overflow-y: auto;
+      color: var(--color-text-secondary);
+    }
+    .original-text strong { color: var(--color-text); background: var(--color-warning-light); padding: 0 2px; border-radius: 2px; }
+
+    .entity-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .entity-col {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .entity-col-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .entity-card-mini {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      background: var(--color-bg);
+      cursor: pointer;
+    }
+    .entity-card-mini:hover { background: #ebedf0; }
+    .entity-card-mini.checked { background: var(--color-success-light); }
+    .entity-card-mini input { margin-top: 3px; }
+    .entity-card-mini .name { font-size: 13px; font-weight: 600; }
+    .entity-card-mini .desc { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; line-height: 1.4; }
+    .entity-card-mini .source-pick { font-size: 10px; color: var(--color-primary); margin-top: 4px; cursor: pointer; }
+
+    .source-area {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .source-area-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .upload-zone {
+      border: 2px dashed var(--color-border);
+      border-radius: 6px;
+      padding: 24px;
+      text-align: center;
+      color: var(--color-text-tertiary);
+      background: var(--color-bg);
+    }
+  </style>
+</head>
+<body>
+  <div class="workbench no-sidebar">
+
+    <!-- 顶部进度条 -->
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="00-project-list.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 · 第一季
+        <span class="ep-meta">/ 第 1 集 · 茶馆相遇</span>
+      </div>
+      <div class="stepper">
+        <a class="step active" href="01-stage-content.html"><span class="dot">●</span><span>① 内容</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="02-stage-asset.html"><span class="dot">○</span><span>② 资产</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="03-stage-script.html"><span class="dot">○</span><span>③ 剧本</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="04-stage-storyboard.html"><span class="dot">○</span><span>④ 分镜</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="05-stage-production.html"><span class="dot">○</span><span>⑤ 画面+音频</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="06-stage-compose.html"><span class="dot">○</span><span>⑥ 合成</span></a>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-sm">设置</button>
+      </div>
+    </div>
+
+    <!-- ① 内容：不显示资产侧栏（user 5/6 决策；资产识别成果由主区域三栏直接展示） -->
+
+    <!-- 主区域 -->
+    <div class="main">
+
+      <div class="main-header">
+        <div>
+          <div class="main-title">① 内容识别</div>
+          <div class="main-subtitle">从长文项目或上传文本中识别出本剧集的角色 / 地点 / 物品</div>
+        </div>
+        <a href="02-stage-asset.html" class="btn btn-success">确认要素 → ② 资产</a>
+      </div>
+
+      <!-- 来源选择 -->
+      <div class="source-area">
+        <div class="source-area-title">
+          <span>来源</span>
+          <span style="font-size: 11px; color: var(--color-text-tertiary); font-weight: normal;">
+            sourceType = <code style="background: var(--color-bg); padding: 1px 5px; border-radius: 2px;">'outline'</code>（来自长文项目）
+          </span>
+        </div>
+        <div class="source-tabs">
+          <div class="source-tab active">📚 长文项目</div>
+          <div class="source-tab">📝 上传文本</div>
+        </div>
+
+        <!-- 长文项目选择 -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <div style="font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 4px;">长文项目</div>
+            <select style="width: 100%; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 13px;">
+              <option>《江湖传》原著</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 4px;">章节</div>
+            <select style="width: 100%; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 13px;">
+              <option>第一章 · 茶馆相遇</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 原文 + AI 分析按钮 -->
+      <div class="source-area">
+        <div class="source-area-title">
+          <span>原文片段</span>
+          <button class="btn btn-primary btn-sm">✨ 重新 AI 分析</button>
+        </div>
+        <div class="original-text">
+          <p>夕阳下，<strong>张三</strong>缓缓走入<strong>茶馆</strong>。眼神与坐在窗边的<strong>李四</strong>对上，一刹那时间仿佛凝固。<strong>老板娘</strong>看似无意地走过两人桌边。</p>
+          <p>"你来了。"张三平静地说，手中的<strong>折扇</strong>缓缓收起。</p>
+          <p>"等你很久了。"李四压低声音回应。</p>
+          <p>夜深时，李四从袖中取出一封<strong>书信</strong>，递给张三。张三接过未读，腰间的<strong>长剑</strong>微微一颤……</p>
+        </div>
+        <div style="font-size: 11px; color: var(--color-text-tertiary); margin-top: 6px;">
+          字数：约 120 字 · AI 已扫描，识别出 3 角色 / 1 地点 / 3 物品 — 见下方
+        </div>
+      </div>
+
+      <!-- 识别结果三列 -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin: 16px 0 10px;">
+        <h3 style="margin: 0; font-size: 16px;">识别要素清单</h3>
+        <div style="font-size: 12px; color: var(--color-text-secondary);">
+          勾选要进入剧集的要素，可以为每个选 <span class="tag tag-linked-lw" style="font-size: 10px;">linked_lw</span>（来自长文）或 <span class="tag tag-standalone" style="font-size: 10px;">standalone</span>（本剧集独立）
+        </div>
+      </div>
+
+      <div class="entity-row">
+
+        <!-- 角色 -->
+        <div class="entity-col">
+          <div class="entity-col-title">
+            <span>👤 角色 <span class="tag" style="font-size: 10px;">3 识别</span></span>
+            <button class="btn btn-sm">+ 手动加</button>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">张三</div>
+              <div class="desc">主角 · 江湖剑客 · 来自长文 lw_character_id=lwc_001</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">李四</div>
+              <div class="desc">女配 · 红颜知己 · 来自长文 lw_character_id=lwc_002</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">老板娘</div>
+              <div class="desc">配角 · 茶馆老板娘 · 长文中无明确档案</div>
+              <span class="tag tag-standalone" style="font-size: 10px; margin-top: 4px; display: inline-block;">standalone</span>
+              <span class="source-pick">改为 linked_lw</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 地点 -->
+        <div class="entity-col">
+          <div class="entity-col-title">
+            <span>🏛 地点 <span class="tag" style="font-size: 10px;">1 识别 + 1 手动</span></span>
+            <button class="btn btn-sm">+ 手动加</button>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">茶馆</div>
+              <div class="desc">内景 · 江南古镇老字号 · 来自长文</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">客栈</div>
+              <div class="desc">外景 · 用户手动添加（剧本里第 3 场会用）</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+              <span class="tag tag-3d" style="font-size: 10px; margin-top: 4px; margin-left: 4px; display: inline-block;">3D</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 物品 -->
+        <div class="entity-col">
+          <div class="entity-col-title">
+            <span>⚔️ 物品 <span class="tag" style="font-size: 10px;">3 识别 + 1 手动</span></span>
+            <button class="btn btn-sm">+ 手动加</button>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">折扇</div>
+              <div class="desc">道具 · 张三手持 · 来自长文</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">书信</div>
+              <div class="desc">道具 · 李四交给张三 · 来自长文</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">长剑</div>
+              <div class="desc">道具 · 张三腰间佩剑 · 来自长文</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+
+          <div class="entity-card-mini checked">
+            <input type="checkbox" checked>
+            <div style="flex: 1;">
+              <div class="name">玉佩</div>
+              <div class="desc">道具 · 用户手动添加（第 2 章伏笔）</div>
+              <span class="tag tag-linked-lw" style="font-size: 10px; margin-top: 4px; display: inline-block;">linked_lw</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 完成提示 -->
+      <div style="background: var(--color-success-light); border-left: 3px solid var(--color-success); padding: 12px 14px; border-radius: 0 4px 4px 0; font-size: 13px; margin-top: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">✓</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: var(--color-success);">已确认 9 个要素 — 可以进入资产准备</div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 2px;">
+              3 角色 + 2 地点 + 4 物品。其中 8 个 linked_lw（来自《江湖传》原著），1 个 standalone（老板娘 · 本剧集独立）
+            </div>
+          </div>
+          <a href="02-stage-asset.html" class="btn btn-success">确认要素 → ② 资产</a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 底部时间线 -->
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">尚未识别要素</span>
+      <button class="timeline-action" disabled style="opacity: 0.5;">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="00-project-list.html" class="btn btn-sm" style="background: white;">上一步</a>
+    <a href="02-stage-asset.html" class="btn btn-primary btn-sm">下一步 → ②</a>
+  </div>
+</body>
+</html>

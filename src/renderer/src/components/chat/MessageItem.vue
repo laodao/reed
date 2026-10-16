@@ -1,0 +1,2452 @@
+<template>
+  <div
+    ref="messageItemRef"
+    class="message-item"
+    :class="message.role"
+    @mouseenter="showActions = true"
+    @mouseleave="showActions = false"
+  >
+    <div class="message-avatar">
+      {{ message.role === 'user' ? '👤' : '🤖' }}
+    </div>
+    <div class="message-body">
+      <!-- 顶部：发送者名称和时间 -->
+      <div class="message-header">
+        <div class="header-left">
+          <span class="sender-name">
+            {{ message.role === 'user' ? '用户' : modelName }}
+          </span>
+          <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+        </div>
+        <!-- AI回答：右侧操作按钮（首开性能：tooltip 用原生 title，避免每条消息多挂 3 个浮层组件） -->
+        <div v-if="message.role === 'assistant'" class="header-right">
+          <el-button
+            size="small"
+            text
+            class="nav-btn"
+            title="上一个回答"
+            :disabled="!hasPrevAnswer"
+            @click="$emit('navigateAnswer', 'prev')"
+          >
+            <el-icon><ArrowUp /></el-icon>
+          </el-button>
+          <el-button
+            size="small"
+            text
+            class="nav-btn"
+            title="下一个回答"
+            :disabled="!hasNextAnswer"
+            @click="$emit('navigateAnswer', 'next')"
+          >
+            <el-icon><ArrowDown /></el-icon>
+          </el-button>
+          <el-button
+            size="small"
+            text
+            class="view-mode-toggle"
+            :title="isRenderMode ? '切换到源码模式' : '切换到阅读模式'"
+            @click="isRenderMode = !isRenderMode"
+          >
+            <el-icon><component :is="isRenderMode ? 'Tickets' : 'View'" /></el-icon>
+          </el-button>
+        </div>
+      </div>
+
+      <div class="message-content">
+        <!-- 思维链显示 - 放在答案内容之前 -->
+        <div v-if="message.metadata?.thinkingChain" class="thinking-chain">
+          <el-collapse>
+            <el-collapse-item title="思维链" name="thinking">
+              <div class="thinking-content">{{ message.metadata.thinkingChain }}</div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 编辑模式 -->
+        <div v-if="isEditing" class="edit-mode">
+          <el-input
+            v-model="editContent"
+            type="textarea"
+            :rows="4"
+            placeholder="编辑消息内容..."
+          />
+          <div class="edit-actions">
+            <el-button size="small" @click="cancelEdit">取消</el-button>
+            <el-button size="small" type="primary" @click="saveEdit">保存</el-button>
+          </div>
+        </div>
+
+        <!-- 正常显示模式 -->
+        <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick">
+          <!-- AI 回答：根据模式切换显示 -->
+          <template v-if="message.role === 'assistant'">
+            <!-- 阅读模式：渲染 markdown -->
+            <div v-if="isRenderMode" v-html="formatContent(message.content)"></div>
+            <!-- 源码模式：保留 markdown 格式字符，但美化代码块和行内代码 -->
+            <div v-else v-html="formatSourceContent(message.content)"></div>
+          </template>
+          <!-- 用户消息：始终渲染显示 -->
+          <template v-else>
+            <div v-html="formatSourceContent(message.content)"></div>
+          </template>
+        </div>
+
+        <!-- Agent 工具调用 chips（28 号 M5；回答底部左侧） -->
+        <div v-if="message.metadata?.agent?.toolCalls?.length" class="agent-tool-calls">
+          <el-tag
+            v-for="call in collapsedToolCalls"
+            :key="call.key"
+            size="small"
+            effect="plain"
+            :type="call.ok === false ? 'danger' : call.ok === true ? 'success' : 'info'"
+            class="tool-chip"
+            :title="call.argsDigest || call.name"
+          >
+            <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
+            <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
+            <el-icon v-else class="is-loading"><Loading /></el-icon>
+            <span class="tool-chip-name">{{ agentToolLabel(call.name) }}<template v-if="call.count > 1"> ×{{ call.count }}</template></span>
+          </el-tag>
+        </div>
+
+        <!-- Agent 引用卡片（工作流运行/任务树/技能，可跳转；28 号 M5） -->
+        <div v-if="message.metadata?.agent?.refs?.length || message.metadata?.agent?.toolCalls?.length" class="agent-refs">
+          <div
+            v-for="(ref, index) in message.metadata.agent.refs"
+            :key="index"
+            class="agent-ref-item"
+            :class="{ clickable: !!refTarget(ref) }"
+            @click="refTarget(ref) && gotoRef(ref)"
+          >
+            <el-icon><Link /></el-icon>
+            <span class="agent-ref-kind">{{ refKindLabel(ref.kind) }}</span>
+            <span class="agent-ref-label">{{ ref.label }}</span>
+            <el-icon v-if="refTarget(ref)" class="agent-ref-arrow"><ArrowRight /></el-icon>
+          </div>
+          <!-- 过程时间线深链（29 号 M5.5 工作台） -->
+          <div class="agent-ref-item clickable" @click="gotoConsole">
+            <el-icon><View /></el-icon>
+            <span class="agent-ref-kind">执行过程</span>
+            <span class="agent-ref-label">在工作台查看完整时间线</span>
+            <el-icon class="agent-ref-arrow"><ArrowRight /></el-icon>
+          </div>
+        </div>
+
+        <!-- 知识库来源标识（在内容下方，引用详情上方） -->
+        <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-source-badge">
+          <el-icon><Collection /></el-icon>
+          <span>基于知识库回答</span>
+          <el-tag size="small">{{ message.metadata.knowledgeBase.length }} 条引用</el-tag>
+        </div>
+
+        <!-- 附件显示 -->
+        <div v-if="message.attachments && message.attachments.length > 0" class="attachments">
+          <template v-for="attachment in message.attachments" :key="attachment.id">
+            <!-- 图片附件 -->
+            <div
+              v-if="attachment.type === 'image'"
+              class="attachment-image"
+              @click="previewImage(attachment)"
+            >
+              <img :src="getImageUrl(attachment)" :alt="attachment.fileName" />
+            </div>
+            <!-- 文档附件 -->
+            <div v-else class="attachment-item">
+              <span v-if="attachment.assetId" class="attachment-asset-icon">{{ assetIcon(attachment.assetCategory) }}</span>
+              <el-icon v-else><Document /></el-icon>
+              <span class="attachment-name">{{ attachment.fileName }}</span>
+              <span v-if="attachment.assetId" class="attachment-size">{{ assetCategoryLabel(attachment.assetCategory) }} 资产</span>
+              <span v-else class="attachment-size">{{ formatFileSize(attachment.fileSize) }}</span>
+            </div>
+          </template>
+        </div>
+
+        <!-- 联网搜索结果显示 -->
+        <div v-if="message.metadata?.webSearch && message.metadata.webSearch.length > 0" class="web-search-results">
+          <el-collapse>
+            <el-collapse-item title="联网搜索结果" name="webSearch">
+              <div class="search-results-list">
+                <a
+                  v-for="(result, index) in message.metadata.webSearch"
+                  :key="index"
+                  :href="result.url"
+                  target="_blank"
+                  class="search-result-item"
+                >
+                  <div class="result-title">{{ index + 1 }}. {{ result.title }}</div>
+                  <div class="result-snippet">{{ result.snippet }}</div>
+                  <div class="result-url">{{ result.url }}</div>
+                </a>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 知识库引用显示 -->
+        <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-base-refs">
+          <el-collapse>
+            <el-collapse-item title="知识库引用" name="knowledgeBase">
+              <div class="kb-refs-list">
+                <div
+                  v-for="(ref, index) in message.metadata.knowledgeBase"
+                  :key="index"
+                  class="kb-ref-item"
+                  @click="showKnowledgeBaseSnippet(ref)"
+                >
+                  <div class="ref-title">
+                    <el-icon><Document /></el-icon>
+                    <span>{{ index + 1 }}. {{ ref.documentName }}</span>
+                  </div>
+                  <div class="ref-score">
+                    相关度: {{ (ref.score * 100).toFixed(1) }}%
+                  </div>
+                </div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 底部：操作按钮 -->
+        <div class="message-footer">
+          <!-- Token 数量（暂时隐藏，待后续完善） -->
+          <!-- <span v-if="message.tokensUsed" class="token-info">
+            <el-icon><Coin /></el-icon>
+            <span>{{ message.tokensUsed }} tokens</span>
+          </span> -->
+          <span class="token-placeholder"></span>
+
+          <!-- AI回答：回到顶部按钮 -->
+          <el-button v-if="message.role === 'assistant'" size="small" text class="back-to-top-btn" :class="{ visible: showActions }" title="回到顶部" @click="scrollToTop">
+            <el-icon><Top /></el-icon>
+          </el-button>
+
+          <!--
+            消息操作工具栏。两个约束：
+            ① tooltip 用原生 title（本来就不需要浮层组件，每条消息少挂 5~8 个实例）；
+            ② 只在真正 hover（showActions）后才渲染——里面的 el-dropdown 会各建一个
+               popper 实例，首开一次性挂载整屏消息时是主要开销之一。
+          -->
+          <div v-if="!isEditing && showActions" class="message-actions visible">
+            <!-- 用户消息操作 -->
+            <template v-if="message.role === 'user'">
+              <el-button size="small" text title="编辑" @click="startEdit">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+              <el-button size="small" text title="复制" @click="copyMessage">
+                <el-icon><CopyDocument /></el-icon>
+              </el-button>
+              <el-button size="small" text title="删除" @click="deleteMessage">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
+
+            <!-- AI 回答操作 -->
+            <template v-else>
+              <el-button size="small" text title="重新回答" @click="regenerate">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+              <el-button size="small" text title="换模型重答" @click="openModelSelectDialog">
+                <el-icon><Switch /></el-icon>
+              </el-button>
+              <!-- 复制菜单 -->
+              <el-dropdown trigger="click" placement="top">
+                <el-button size="small" text title="复制">
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="copyRenderedContent">
+                      <span>复制内容</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="copyMessage">
+                      <span>复制源码</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button size="small" text title="删除" @click="deleteMessage">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+
+              <!-- 更多操作菜单 -->
+              <el-dropdown trigger="click" placement="top-end">
+                <el-button size="small" text title="更多操作">
+                  <el-icon><More /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="saveAsLocalFile">
+                      <el-icon><Document /></el-icon>
+                      <span>保存为本地文件</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="openKnowledgeBaseDialog">
+                      <el-icon><Collection /></el-icon>
+                      <span>保存到知识库</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item divided @click="exportAsImage">
+                      <el-icon><Picture /></el-icon>
+                      <span>导出为图片</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="exportAsWord">
+                      <el-icon><Document /></el-icon>
+                      <span>导出为 Word</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="exportToObsidian">
+                      <el-icon><Notebook /></el-icon>
+                      <span>导出到 Obsidian</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="openExportToDiaryDialog">
+                      <el-icon><Notebook /></el-icon>
+                      <span>导出到日记</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模型选择对话框 -->
+    <ModelSelectDialog
+      v-model="showModelDialog"
+      :models="availableModels"
+      @select="handleModelSelect"
+    />
+
+    <!-- 图片预览 -->
+    <el-image-viewer
+      v-if="showImageViewer"
+      :url-list="[currentImageUrl]"
+      @close="showImageViewer = false"
+    />
+
+    <!-- 知识库选择对话框 -->
+    <el-dialog
+      v-model="showKnowledgeBaseDialog"
+      title="选择知识库"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <div class="knowledge-base-list">
+        <div
+          v-for="kb in knowledgeBases"
+          :key="kb.id"
+          class="kb-item"
+          @click="saveToKnowledgeBase(kb.id)"
+        >
+          <el-icon><Collection /></el-icon>
+          <span class="kb-name">{{ kb.name }}</span>
+          <el-icon class="arrow"><ArrowRight /></el-icon>
+        </div>
+        <div v-if="knowledgeBases.length === 0" class="empty-tip">
+          暂无可用的知识库，请先创建知识库
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showKnowledgeBaseDialog = false">取消</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导出到 Obsidian 对话框 -->
+    <ExportToObsidianDialog
+      v-model="showExportObsidianDialog"
+      :content="message.content"
+      :thinking-chain="message.metadata?.thinkingChain"
+    />
+
+    <!-- 导出到日记对话框 -->
+    <el-dialog
+      v-model="showExportToDiaryDialog"
+      title="导出到日记"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="日记标题">
+          <el-input v-model="exportToDiaryTitle" placeholder="请输入日记标题" />
+        </el-form-item>
+        <el-form-item label="选择目录">
+          <el-select
+            v-model="selectedDiaryFolderId"
+            filterable
+            placeholder="请选择或搜索目录"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="folder in allDiaryFolders"
+              :key="folder.id"
+              :label="folder.fullName || folder.name"
+              :value="folder.id"
+            >
+              <div :style="{ paddingLeft: `${folder.level * 16}px` }">
+                <el-icon style="vertical-align: middle; margin-right: 4px;"><Folder /></el-icon>
+                <span>{{ folder.name }}</span>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showExportToDiaryDialog = false">取消</el-button>
+        <el-button type="primary" :loading="exportToDiaryLoading" @click="handleExportToDiary">导出</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 知识库片段预览对话框 -->
+    <el-dialog
+      v-model="showKbSnippetDialog"
+      :title="currentKbRef?.documentName || '文档片段'"
+      width="600px"
+      class="kb-snippet-dialog"
+    >
+      <div v-if="currentKbRef" class="kb-snippet-content">
+        <div class="snippet-meta">
+          <el-tag size="small">
+            相关度: {{ ((currentKbRef.score || 0) * 100).toFixed(1) }}%
+          </el-tag>
+        </div>
+        <div class="snippet-text">
+          {{ currentKbRef.snippet || '暂无片段内容' }}
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showKbSnippetDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 图片导出用的隐藏容器 -->
+    <div
+      ref="imageExportContainer"
+      class="image-export-container"
+      :style="{ position: 'fixed', left: '-9999px', top: '0', width: '600px', background: '#fff', padding: '24px', zIndex: -1 }"
+      v-html="imageExportContent"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, nextTick, watch, onMounted, defineAsyncComponent } from 'vue'
+import { useRouter } from 'vue-router'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Collection, More, Picture, Notebook, ArrowRight, Folder, ArrowUp, ArrowDown, Top, CircleCheckFilled, CircleCloseFilled, Loading, Link, View } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
+import { marked } from 'marked'
+import type { Message, Attachment } from '../../../shared/types'
+import { saveBlobAs } from '@/utils/file-saver'
+import { agentToolLabel } from '@/utils/agent-tool-labels'
+import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
+// 重型库按需加载：避免阻塞聊天页首次打开（模块求值耗时大）
+import { loadHtml2Canvas, loadMermaid, scheduleIdleLoad } from '@/utils/lazy-libs'
+// 渲染缓存 + mermaid 门控（首开性能）：同一份内容只解析一次；
+// 只有真含 mermaid 代码块的消息才去尝试渲染图表
+import { createRenderCache, containsMermaidBlock, hashText } from '@/utils/chat-render-cache'
+// 重型渲染的可见性门控（mermaid 图表只在消息进入视口后才渲染）
+import { useVisibleOnce } from '@/composables/useVisibleOnce'
+
+// 模型选择 / 导出到 Obsidian 只在助手消息的操作菜单里用到：
+// 异步组件让它们（及其依赖）不进入聊天页首开的 chunk 求值路径
+const ModelSelectDialog = defineAsyncComponent(() => import('./ModelSelectDialog.vue'))
+const ExportToObsidianDialog = defineAsyncComponent(() => import('./ExportToObsidianDialog.vue'))
+
+// ==================== Agent 工具 chips / 引用卡片（28 号 M5） ====================
+
+const router = useRouter()
+
+/** 连续同名工具调用折叠为一条 ×N（review 真机：模型连环查目录曾刷出 39 枚同款 chips） */
+const collapsedToolCalls = computed(() => {
+  const calls = props.message.metadata?.agent?.toolCalls ?? []
+  const out: Array<{ key: string; name: string; ok?: boolean; argsDigest?: string; count: number }> = []
+  for (const call of calls) {
+    const last = out[out.length - 1]
+    if (last && last.name === call.name && last.ok === call.ok) {
+      last.count++
+      continue
+    }
+    out.push({ key: `tc-${out.length}`, name: call.name, ok: call.ok, argsDigest: call.argsDigest, count: 1 })
+  }
+  return out
+})
+
+
+
+function refKindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    workflow_run: '工作流运行',
+    workflow_draft: '工作流草稿',
+    task_tree: '任务树',
+    skill: '技能'
+  }
+  return labels[kind] ?? kind
+}
+
+/** 引用跳转目标（不可跳转返回 null → 渲染为纯徽标） */
+function refTarget(ref: { kind: string; id: string }): string | null {
+  if (ref.kind === 'workflow_run') return `/workflow/run/${ref.id}`
+  if (ref.kind === 'workflow_draft') return `/workflow/editor/${ref.id}`
+  if (ref.kind === 'task_tree') return `/agent-tasks?focus=${ref.id}`
+  return null
+}
+
+function gotoRef(ref: { kind: string; id: string }): void {
+  const target = refTarget(ref)
+  if (target) void router.push(target)
+}
+
+/** 过程时间线深链（29 号 M5.5 工作台）：聊天会话 scopeKey = dialog:<dialogId> */
+function gotoConsole(): void {
+  void router.push({ path: '/agent-console', query: { session: `dialog:${props.message.dialogId}` } })
+}
+
+interface ModelOption {
+  id: string
+  name: string
+  providerName: string
+  providerId: string
+  modelId: string
+}
+
+const props = defineProps<{
+  message: Message
+  availableModels?: ModelOption[]
+  dialogTitle?: string
+  answerIndex?: number
+  hasPrevAnswer?: boolean
+  hasNextAnswer?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'edit', messageId: string, newContent: string): void
+  (e: 'copy', content: string): void
+  (e: 'navigateAnswer', direction: 'prev' | 'next'): void
+  (e: 'delete', messageId: string): void
+  (e: 'regenerate', messageId: string, modelId?: string): void
+}>()
+
+const showActions = ref(false)
+const isEditing = ref(false)
+const editContent = ref('')
+const showModelDialog = ref(false)
+
+// 消息元素引用
+const messageItemRef = ref<HTMLElement | null>(null)
+
+// 阅读模式（true = 渲染模式，false = 源码模式）
+const isRenderMode = ref(true)
+
+// 回到顶部
+function scrollToTop(): void {
+  if (messageItemRef.value) {
+    messageItemRef.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+// 知识库选择对话框
+const showKnowledgeBaseDialog = ref(false)
+const knowledgeBases = ref<Array<{ id: string; name: string }>>([])
+const savingToKnowledgeBase = ref(false)
+
+// 导出到 Obsidian 对话框
+const showExportObsidianDialog = ref(false)
+
+// 导出到日记相关
+const showExportToDiaryDialog = ref(false)
+const exportToDiaryLoading = ref(false)
+const exportToDiaryTitle = ref('')
+const selectedDiaryFolderId = ref('')
+const allDiaryFolders = ref<Array<{ id: string; name: string; parentId?: string; level: number; fullName: string }>>([])
+
+// 打开导出到日记对话框
+async function openExportToDiaryDialog() {
+  // 设置默认标题：对话标题-回答序号
+  if (props.dialogTitle && props.answerIndex) {
+    exportToDiaryTitle.value = `${props.dialogTitle}-${props.answerIndex}`
+  } else if (props.dialogTitle) {
+    exportToDiaryTitle.value = props.dialogTitle
+  } else {
+    exportToDiaryTitle.value = `AI回答 - ${new Date().toLocaleDateString()}`
+  }
+  selectedDiaryFolderId.value = ''
+
+  // 加载目录列表
+  try {
+    const result = await window.electronAPI.diary.getAllFolders()
+    if (result.success && result.data) {
+      // 构建树形结构并计算层级和完整路径
+      const folders = result.data
+      const folderMap = new Map(folders.map(f => [f.id, { ...f, level: 0, fullName: f.name }]))
+
+      // 递归计算层级和完整路径
+      const getLevelAndPath = (folderId: string): { level: number; fullName: string } => {
+        const folder = folderMap.get(folderId)
+        if (!folder) return { level: 0, fullName: '' }
+        if (folder.level > 0) return { level: folder.level, fullName: folder.fullName }
+        if (!folder.parentId) {
+          folder.level = 0
+          folder.fullName = folder.name
+        } else {
+          const parent = getLevelAndPath(folder.parentId)
+          folder.level = parent.level + 1
+          folder.fullName = `${parent.fullName} / ${folder.name}`
+        }
+        return { level: folder.level, fullName: folder.fullName }
+      }
+
+      // 计算每个目录的层级和完整路径
+      folders.forEach(f => getLevelAndPath(f.id))
+
+      // 按完整路径排序
+      allDiaryFolders.value = Array.from(folderMap.values()).sort((a, b) => {
+        return a.fullName.localeCompare(b.fullName)
+      })
+
+      // 默认选择第一个目录
+      if (allDiaryFolders.value.length > 0) {
+        selectedDiaryFolderId.value = allDiaryFolders.value[0].id
+      }
+    }
+  } catch (error) {
+    console.error('加载日记目录失败:', error)
+  }
+
+  showExportToDiaryDialog.value = true
+}
+
+// 导出到日记
+async function handleExportToDiary() {
+  if (!selectedDiaryFolderId.value) {
+    ElMessage.warning('请选择日记目录')
+    return
+  }
+
+  if (!exportToDiaryTitle.value.trim()) {
+    ElMessage.warning('请输入日记标题')
+    return
+  }
+
+  exportToDiaryLoading.value = true
+  try {
+    // 构建内容
+    const content = `# ${exportToDiaryTitle.value}\n\n> 导出自 AI 对话，时间：${new Date().toLocaleString()}\n\n${props.message.content}`
+
+    const result = await window.electronAPI.diary.createEntry({
+      folderId: selectedDiaryFolderId.value,
+      title: exportToDiaryTitle.value.trim(),
+      content
+    })
+
+    if (result.success) {
+      ElMessage.success('导出到日记成功')
+      showExportToDiaryDialog.value = false
+    } else {
+      ElMessage.error(result.error || '导出失败')
+    }
+  } catch (error) {
+    console.error('导出到日记失败:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    exportToDiaryLoading.value = false
+  }
+}
+
+// 图片预览缓存
+const imagePreviewUrls = ref<Map<string, string>>(new Map())
+/** 加载失败的附件 id：避免模板里 getImageUrl 每次重渲染都再发起一次读取（曾造成渲染循环） */
+const imagePreviewFailed = new Set<string>()
+
+// 图片导出相关
+const imageExportContainer = ref<HTMLElement | null>(null)
+const imageExportContent = ref('')
+
+// 知识库片段预览
+const showKbSnippetDialog = ref(false)
+const currentKbRef = ref<{ documentId: string; documentName: string; score: number; snippet?: string } | null>(null)
+
+// 消息内容容器引用
+const messageContentRef = ref<HTMLElement | null>(null)
+
+// 重型渲染（mermaid）的可见性门控：进入视口后才开始图表渲染
+const heavyRenderVisible = useVisibleOnce(messageItemRef)
+
+// 渲染 Mermaid 图表（按需加载 mermaid：仅当消息确实包含 mermaid 代码块时）
+async function renderMermaidCharts(): Promise<void> {
+  if (!messageContentRef.value) return
+
+  // 源码模式下不渲染 mermaid 图表，保持代码形式
+  if (!isRenderMode.value) return
+
+  const mermaidWrappers = messageContentRef.value.querySelectorAll('.mermaid-wrapper')
+  // 先查 DOM 再加载库：不含图表的消息永远不会触发 mermaid 求值（首开性能关键）
+  if (mermaidWrappers.length === 0) return
+
+  // 惰性加载 mermaid（首次使用才 import + initialize，之后复用单例）
+  const mermaid = await loadMermaid()
+
+  // 为每个 mermaid wrapper 处理渲染
+  for (let i = 0; i < mermaidWrappers.length; i++) {
+    const wrapper = mermaidWrappers[i] as HTMLElement
+    const status = wrapper.getAttribute('data-render-status')
+
+    // 已处理过的跳过
+    if (status === 'success' || status === 'error') continue
+
+    const mermaidElement = wrapper.querySelector('.mermaid') as HTMLElement
+    if (!mermaidElement) continue
+
+    const code = mermaidElement.textContent || ''
+    // 如果代码为空，标记为 pending，等待下次重试
+    if (!code.trim()) {
+      wrapper.setAttribute('data-render-status', 'pending')
+      continue
+    }
+
+    const id = `mermaid-${Date.now()}-${i}`
+
+    try {
+      const { svg } = await mermaid.render(id, code)
+      mermaidElement.innerHTML = svg
+      wrapper.setAttribute('data-render-status', 'success')
+    } catch (error) {
+      // 渲染失败：标记错误状态，显示错误提示
+      console.warn('Mermaid 图表语法错误，已保持代码形式显示:', (error as Error).message?.split('\n')[0])
+      wrapper.setAttribute('data-render-status', 'error')
+
+      // 显示错误图标
+      const errorIndicator = wrapper.querySelector('.error-indicator') as HTMLElement
+      if (errorIndicator) {
+        errorIndicator.style.display = 'inline-flex'
+      }
+
+      // 保持代码显示，添加错误样式
+      mermaidElement.classList.add('mermaid-error-code')
+    }
+  }
+}
+
+/**
+ * 内容指纹：只有内容里出现过 mermaid 围栏的消息才值得调度图表渲染。
+ * 直接对全文做正则代价随长度线性增长（流式大回答每条消息、每次增量都跑一遍），
+ * 因此先比较 FNV 指纹——未变化直接复用上次判定结果。
+ */
+let mermaidProbeHash = -1
+let mermaidProbeResult = false
+function mayContainMermaid(content: string): boolean {
+  const h = hashText(content)
+  if (h !== mermaidProbeHash) {
+    mermaidProbeHash = h
+    mermaidProbeResult = containsMermaidBlock(content)
+  }
+  return mermaidProbeResult
+}
+
+/**
+ * 调度图表渲染：三段门控——① 内容里出现过 mermaid 围栏；② 该消息已进入过视口；
+ * ③ 推进到首帧绘制之后的空闲时段。mermaid 的模块求值 + HTML 标签量算
+ * （getBoundingClientRect）在首开会造成 ~600ms 主线程长任务，必须等消息列表
+ * 先画出来再做。
+ */
+function scheduleMermaidRender(): void {
+  if (!mayContainMermaid(props.message.content)) return
+  if (!heavyRenderVisible.value) return
+  requestAnimationFrame(() => {
+    scheduleIdleLoad(() => { void renderMermaidCharts() }, 400)
+  })
+}
+
+// 监听内容变化，渲染 mermaid 图表（renderMode 变化也需要重渲染，见下方 watch）
+watch(
+  () => props.message.content,
+  () => {
+    scheduleMermaidRender()
+  },
+  { immediate: true }
+)
+
+// 监听渲染模式变化，重新渲染 mermaid
+watch(isRenderMode, () => {
+  scheduleMermaidRender()
+})
+
+// 元素进入视口后才开始图表渲染（首开只渲染用户真正看得到的图）
+watch(heavyRenderVisible, (v) => {
+  if (v) scheduleMermaidRender()
+})
+
+// 组件挂载后渲染 Mermaid 图表。
+// 旧实现额外排了 50ms/200ms/500ms 三个定时器 + 一次 forceRerender，
+// 每条消息 4 次重跑整段管线，是首开与流式期间的固定浪费；
+// 现在统一依赖上面的 scheduleIdleLoad 重试队列。
+onMounted(() => {
+  scheduleMermaidRender()
+})
+
+// 处理复制按钮点击（事件委托）
+function handleContentClick(event: MouseEvent): void {
+  const target = event.target as HTMLElement
+  const copyBtn = target.closest('.copy-btn') as HTMLElement | null
+
+  if (copyBtn) {
+    const encodedCode = copyBtn.dataset.codeB64
+    if (encodedCode) {
+      // 解码 base64（支持 UTF-8）
+      const code = decodeURIComponent(escape(atob(encodedCode)))
+      copyCode(code, copyBtn)
+    }
+  }
+}
+
+// 复制代码到剪贴板
+async function copyCode(code: string, button: HTMLElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(code)
+    // 更新按钮显示
+    const span = button.querySelector('span')
+    if (span) {
+      const originalText = span.textContent
+      span.textContent = '已复制'
+      button.style.color = '#10b981'
+      setTimeout(() => {
+        span.textContent = originalText
+        button.style.color = ''
+      }, 2000)
+    }
+  } catch (err) {
+    console.error('复制失败:', err)
+    ElMessage.error('复制失败')
+  }
+}
+
+// 获取图片 URL（用于显示）
+function getImageUrl(attachment: Attachment): string {
+  // 如果已经有缓存，直接返回
+  const cached = imagePreviewUrls.value.get(attachment.id)
+  if (cached) return cached
+
+  // 加载失败的不再重试（否则每次重渲染都会重新发起读取）
+  if (!imagePreviewFailed.has(attachment.id)) loadImagePreview(attachment)
+  return ''
+}
+
+// 异步加载图片预览
+async function loadImagePreview(attachment: Attachment): Promise<void> {
+  if (attachment.type !== 'image') return
+  if (imagePreviewFailed.has(attachment.id) || imagePreviewUrls.value.has(attachment.id)) return
+
+  try {
+    const response = await window.electronAPI.file.readAsBase64(attachment.filePath)
+    if (response.success && response.base64) {
+      imagePreviewUrls.value.set(attachment.id, response.base64)
+      // 触发重新渲染
+      imagePreviewUrls.value = new Map(imagePreviewUrls.value)
+    } else {
+      imagePreviewFailed.add(attachment.id)
+    }
+  } catch (error) {
+    imagePreviewFailed.add(attachment.id)
+    console.error('加载图片预览失败:', error)
+  }
+}
+
+// 预览图片 - 使用 Element Plus 的图片预览组件
+const showImageViewer = ref(false)
+const currentImageUrl = ref('')
+
+function previewImage(attachment: Attachment): void {
+  const url = imagePreviewUrls.value.get(attachment.id)
+  if (url) {
+    currentImageUrl.value = url
+    showImageViewer.value = true
+  }
+}
+
+// 格式化文件大小
+function formatFileSize(bytes: number): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+// 资产大类图标（@ 资产附件展示）
+function assetIcon(category?: string): string {
+  switch (category) {
+    case 'image': return '🖼️'
+    case 'audio': return '🎵'
+    case 'video': return '🎬'
+    case 'json': return '📊'
+    case 'template': return '📋'
+    case 'document': return '📄'
+    case 'text': return '📝'
+    default: return '📦'
+  }
+}
+
+// 资产大类中文名（@ 资产附件展示）
+function assetCategoryLabel(category?: string): string {
+  const labels: Record<string, string> = { image: '图片', audio: '音频', video: '视频', document: '文档', text: '文本', json: '数据', template: '模板', other: '其他' }
+  return labels[category ?? ''] ?? '资产'
+}
+
+// 获取模型名称
+const modelName = computed(() => {
+  if (props.message.role !== 'assistant') return ''
+
+  // 如果消息有 modelId，从可用模型列表中查找名称
+  if (props.message.modelId && props.availableModels) {
+    const model = props.availableModels.find(m => m.modelId === props.message.modelId)
+    if (model) {
+      return model.name
+    }
+  }
+
+  // 否则返回 modelId 或默认值
+  return props.message.modelId || 'AI'
+})
+
+// ==================== 渲染缓存（首开性能） ====================
+// 模板里同步调用 formatContent / formatSourceContent；组件每次重渲染都会重跑整条
+// markdown 管线（marked 解析 + DOMParser 消毒 + 逐行转义）。这里按 (消息 id, 内容)
+// 缓存结果，同一份内容只解析一次——流式期间每秒几十次重渲染不再重复付这份成本。
+// 缓存只存纯计算结果，不依赖 DOM，可安全跨组件生命周期复用。
+
+const renderModeCache = createRenderCache((text: string) => renderMarkdownToHtml(text))
+const sourceModeCache = createRenderCache((text: string) => renderSourceToHtml(text))
+
+/** 阅读模式：markdown → HTML（含代码块占位符与 mermaid 包装） */
+function renderMarkdownToHtml(content: string): string {
+  if (!content) return ''
+
+  try {
+    // 先把所有代码块（含流式输出中的未闭合块）提取为占位符：
+    // 1. 避免代码内容被 marked 二次解析（代码里的 markdown 语法应原样显示）
+    // 2. 未闭合代码块也能统一交给占位符机制渲染，无需特判分支
+    const { blocks, contentWithPlaceholders } = extractCodeBlocks(content)
+
+    const renderer = new marked.Renderer()
+
+    // 自定义代码块渲染（理论上不会再触发——代码块已被占位符替换，保留作兜底）
+    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+      const language = lang || ''
+      return renderCodeBlock(language, text)
+    }
+
+    // 自定义行内代码渲染
+    renderer.codespan = ({ text }: { text: string }) => {
+      return `<code class="inline-code">${text}</code>`
+    }
+
+    const parsed = marked.parse(contentWithPlaceholders, {
+      breaks: true,
+      gfm: true,
+      renderer
+    }) as string
+
+    // 还原代码块（未闭合的显示"输出中"状态）
+    return restoreCodeBlocks(parsed, blocks, block =>
+      renderCodeBlock(block.language, block.code, !block.closed)
+    )
+  } catch (error) {
+    console.error('Markdown 解析错误:', error)
+    return escapeHtml(content).replace(/\n/g, '<br>')
+  }
+}
+
+/** 阅读模式入口（带缓存） */
+function formatContent(content: string): string {
+  return renderModeCache.get(props.message.id, content)
+}
+
+/** 源码模式：保留 markdown 源码但做基本格式化 */
+function renderSourceToHtml(content: string): string {
+  if (!content) return ''
+
+  // 提取代码块为占位符（兼容 CRLF / c++ 等语言名 / 未闭合流式代码块）
+  const { blocks, contentWithPlaceholders } = extractCodeBlocks(content)
+
+  // 转义 HTML（占位符由字母数字组成，转义不受影响）
+  let processedContent = escapeHtmlKeepPlaceholders(contentWithPlaceholders)
+
+  // 处理行内代码
+  processedContent = processedContent.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+
+  // 处理换行
+  processedContent = processedContent.replace(/\n/g, '<br>')
+
+  // 还原代码块 - 源码模式下所有代码块都用普通样式显示
+  return restoreCodeBlocks(processedContent, blocks, block =>
+    renderSourceCodeBlock(block.language, block.code, !block.closed)
+  )
+}
+
+/** 源码模式入口（带缓存） */
+function formatSourceContent(content: string): string {
+  return sourceModeCache.get(props.message.id, content)
+}
+
+/** 渲染模式切换时清掉缓存：两种模式的产物不可混用 */
+watch(isRenderMode, () => {
+  renderModeCache.reset()
+  sourceModeCache.reset()
+})
+
+// 渲染源码模式的代码块（mermaid不渲染，显示为普通代码）
+function renderSourceCodeBlock(language: string, code: string, isOpen: boolean = false): string {
+  const lines = code.split('\n')
+  const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
+  const codeLines = lines.map(line => escapeHtml(line)).join('\n')
+  const encodedCode = btoa(unescape(encodeURIComponent(code)))
+  const openClass = isOpen ? 'code-block-open' : ''
+
+  return `
+    <div class="code-block-wrapper ${openClass}">
+      <div class="code-header">
+        <span class="language">${escapeHtml(language) || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <button class="copy-btn" data-code-b64="${encodedCode}" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          <span>复制</span>
+        </button>
+      </div>
+      <div class="code-content">
+        <div class="line-numbers">${lineNumbers}</div>
+        <pre><code>${codeLines}</code></pre>
+      </div>
+    </div>
+  `
+}
+
+// 渲染代码块 HTML（使用纯 HTML 模拟 CodeBlock 组件）
+function renderCodeBlock(language: string, code: string, isOpen: boolean = false): string {
+  const openClass = isOpen ? 'code-block-open' : ''
+
+  // Mermaid 图表特殊处理（但未闭合时不渲染图表）
+  if (language === 'mermaid' && !isOpen) {
+    // 使用 base64 编码代码内容
+    const encodedCode = btoa(unescape(encodeURIComponent(code)))
+    return `
+      <div class="mermaid-wrapper" data-render-status="pending">
+        <div class="mermaid-header">
+          <span class="language">mermaid</span>
+          <div class="header-actions">
+            <span class="error-indicator" style="display:none" title="语法有误无法解析">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="#ef4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            </span>
+            <button class="copy-btn" data-code-b64="${encodedCode}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+              <span>复制</span>
+            </button>
+          </div>
+        </div>
+        <div class="mermaid-content" data-mermaid-code="${encodedCode}">
+          <pre class="mermaid">${escapeHtml(code)}</pre>
+        </div>
+      </div>
+    `
+  }
+
+  const lines = code.split('\n')
+  const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
+  const codeLines = lines.map(line => escapeHtml(line)).join('\n')
+
+  // 使用 base64 编码代码内容，避免特殊字符问题
+  const encodedCode = btoa(unescape(encodeURIComponent(code)))
+
+  return `
+    <div class="code-block-wrapper ${openClass}">
+      <div class="code-header">
+        <span class="language">${escapeHtml(language) || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <button class="copy-btn" data-code-b64="${encodedCode}" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          <span>复制</span>
+        </button>
+      </div>
+      <div class="code-content">
+        <div class="line-numbers">${lineNumbers}</div>
+        <pre><code>${codeLines}</code></pre>
+      </div>
+    </div>
+  `
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+// 格式化时间 - 完整日期时间
+function formatTime(date: Date | string): string {
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  const seconds = String(d.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+}
+
+// 开始编辑
+function startEdit() {
+  isEditing.value = true
+  editContent.value = props.message.content
+}
+
+// 取消编辑
+function cancelEdit() {
+  isEditing.value = false
+  editContent.value = ''
+}
+
+// 保存编辑
+function saveEdit() {
+  if (!editContent.value.trim()) {
+    ElMessage.warning('消息内容不能为空')
+    return
+  }
+  emit('edit', props.message.id, editContent.value)
+  isEditing.value = false
+}
+
+// 复制消息
+async function copyMessage() {
+  try {
+    await navigator.clipboard.writeText(props.message.content)
+    ElMessage.success('已复制源码')
+    emit('copy', props.message.content)
+  } catch (err) {
+    console.error('复制失败:', err)
+    ElMessage.error('复制失败')
+  }
+}
+
+// 复制渲染后的内容（带格式）
+async function copyRenderedContent() {
+  try {
+    // 获取渲染后的 HTML 内容
+    const renderedHtml = formatContent(props.message.content)
+
+    // 使用 Clipboard API 写入 HTML 和纯文本
+    const clipboardItem = new ClipboardItem({
+      'text/html': new Blob([renderedHtml], { type: 'text/html' }),
+      'text/plain': new Blob([props.message.content], { type: 'text/plain' })
+    })
+
+    await navigator.clipboard.write([clipboardItem])
+    ElMessage.success('已复制内容')
+  } catch (err) {
+    console.error('复制失败:', err)
+    // 降级：只复制纯文本
+    try {
+      await navigator.clipboard.writeText(props.message.content)
+      ElMessage.success('已复制')
+    } catch {
+      ElMessage.error('复制失败')
+    }
+  }
+}
+
+// 删除消息
+async function deleteMessage() {
+  try {
+    await ElMessageBox.confirm('确定要删除这条消息吗？', '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    emit('delete', props.message.id)
+  } catch {
+    // 用户取消
+  }
+}
+
+// 重新生成
+function regenerate() {
+  emit('regenerate', props.message.id)
+}
+
+// 打开模型选择对话框
+function openModelSelectDialog() {
+  showModelDialog.value = true
+}
+
+// 处理模型选择
+function handleModelSelect(model: ModelOption) {
+  emit('regenerate', props.message.id, model.id)
+}
+
+// 保存为本地 Markdown 文件
+async function saveAsLocalFile(): Promise<void> {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const defaultName = `AI回答_${timestamp}.md`
+    const r = await saveBlobAs(props.message.content, {
+      defaultName,
+      filters: [{ name: 'Markdown 文件', extensions: ['md'] }],
+      mimeType: 'text/markdown;charset=utf-8',
+    })
+    if (r.canceled) return
+    if (r.success) {
+      ElMessage.success('保存成功')
+    } else {
+      ElMessage.error(r.error || '保存失败')
+    }
+  } catch (error) {
+    console.error('保存文件失败:', error)
+    ElMessage.error('保存文件失败')
+  }
+}
+
+// 打开知识库选择对话框
+async function openKnowledgeBaseDialog(): Promise<void> {
+  try {
+    const response = await window.electronAPI.knowledgeBase.list()
+    if (response.success && response.data) {
+      knowledgeBases.value = response.data
+      showKnowledgeBaseDialog.value = true
+    } else {
+      ElMessage.error('获取知识库列表失败')
+    }
+  } catch (error) {
+    console.error('获取知识库列表失败:', error)
+    ElMessage.error('获取知识库列表失败')
+  }
+}
+
+// 保存到选中的知识库
+async function saveToKnowledgeBase(kbId: string): Promise<void> {
+  savingToKnowledgeBase.value = true
+  try {
+    // 生成文档标题
+    const timestamp = new Date().toLocaleString('zh-CN')
+    const title = `AI回答_${timestamp}`
+
+    const response = await window.electronAPI.knowledgeBase.addDocument(kbId, {
+      name: title,
+      type: 'text',
+      content: props.message.content
+    })
+
+    if (response.success) {
+      ElMessage.success('已保存到知识库')
+      showKnowledgeBaseDialog.value = false
+    } else {
+      ElMessage.error(response.error || '保存失败')
+    }
+  } catch (error) {
+    console.error('保存到知识库失败:', error)
+    ElMessage.error('保存到知识库失败')
+  } finally {
+    savingToKnowledgeBase.value = false
+  }
+}
+
+// 导出为图片
+async function exportAsImage(): Promise<void> {
+  if (!props.message.content) {
+    ElMessage.warning('消息内容为空')
+    return
+  }
+
+  try {
+    // 准备渲染内容（使用与阅读模式相同的渲染逻辑）
+    imageExportContent.value = renderContentForImage(props.message.content)
+
+    // 等待 DOM 更新
+    await nextTick()
+
+    if (!imageExportContainer.value) {
+      ElMessage.error('无法创建图片容器')
+      return
+    }
+
+    // 渲染 Mermaid 图表
+    await renderMermaidInExportContainer()
+
+    // 使用 html2canvas 截图（按需加载）
+    const html2canvas = await loadHtml2Canvas()
+    const canvas = await html2canvas(imageExportContainer.value, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      logging: false
+    })
+
+    // canvas → Blob → 跨端 saveBlobAs（PC dialog / Web 浏览器下载）
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b)
+        else reject(new Error('canvas.toBlob 返回空'))
+      }, 'image/png')
+    })
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const r = await saveBlobAs(blob, {
+      defaultName: `AI回答_${timestamp}.png`,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+      mimeType: 'image/png',
+    })
+    if (r.canceled) {
+      // 用户取消
+    } else if (r.success) {
+      ElMessage.success('图片已保存')
+    } else {
+      ElMessage.error(r.error || '保存图片失败')
+    }
+
+    // 清理
+    imageExportContent.value = ''
+  } catch (error) {
+    console.error('导出图片失败:', error)
+    ElMessage.error('导出图片失败')
+  }
+}
+
+// 在导出容器中渲染 Mermaid 图表
+async function renderMermaidInExportContainer(): Promise<void> {
+  if (!imageExportContainer.value) return
+
+  const mermaidWrappers = imageExportContainer.value.querySelectorAll('.mermaid-wrapper')
+  if (mermaidWrappers.length === 0) return
+
+  // 惰性加载 mermaid（与消息内渲染共用单例）
+  const mermaid = await loadMermaid()
+
+  for (let i = 0; i < mermaidWrappers.length; i++) {
+    const wrapper = mermaidWrappers[i] as HTMLElement
+    const mermaidElement = wrapper.querySelector('.mermaid') as HTMLElement
+    if (!mermaidElement) continue
+
+    const code = mermaidElement.textContent || ''
+    if (!code.trim()) continue
+
+    const id = `mermaid-export-${Date.now()}-${i}`
+
+    try {
+      const { svg } = await mermaid.render(id, code)
+      mermaidElement.innerHTML = svg
+    } catch (error) {
+      console.warn('Mermaid 渲染错误（导出时）:', error)
+      // 渲染失败时显示错误占位符，保持代码显示
+      mermaidElement.innerHTML = `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;color:#dc2626;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <span style="font-weight:500;">图表语法错误</span>
+          </div>
+          <pre style="margin:0;background:transparent;font-size:12px;color:#7f1d1d;white-space:pre-wrap;">${escapeHtml(code)}</pre>
+        </div>
+      `
+    }
+  }
+
+  // 等待渲染完成
+  await new Promise(resolve => setTimeout(resolve, 100))
+}
+
+// 渲染内容为图片用的 HTML（使用与阅读模式相同的逻辑）
+function renderContentForImage(content: string): string {
+  if (!content) return ''
+
+  try {
+    // 使用与阅读模式相同的渲染器
+    const renderer = new marked.Renderer()
+
+    // 自定义代码块渲染（带内联样式）
+    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+      const language = lang || ''
+      const code = text
+
+      if (language === 'mermaid') {
+        return `
+          <div class="mermaid-wrapper" style="background:#f8fafc;border-radius:8px;overflow:hidden;margin:10px 0;border:1px solid #e2e8f0;">
+            <div class="mermaid-header" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
+              <span class="language" style="font-size:12px;color:#64748b;text-transform:lowercase;">mermaid</span>
+            </div>
+            <div class="mermaid-content" style="padding:16px;overflow-x:auto;">
+              <pre class="mermaid" style="margin:0;background:transparent;font-family:inherit;line-height:1.5;">${escapeHtml(code)}</pre>
+            </div>
+          </div>
+        `
+      }
+
+      const lines = code.split('\n')
+      const lineNumbers = lines.map((_, i) => `<span style="display:block;text-align:right;padding:0 8px;font-size:13px;line-height:1.5;color:#64748b;">${i + 1}</span>`).join('')
+      const codeLines = lines.map(line => escapeHtml(line)).join('\n')
+
+      return `
+        <div style="background:#1e293b;border-radius:8px;overflow:hidden;margin:10px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#334155;border-bottom:1px solid #475569;">
+            <span style="font-size:12px;color:#94a3b8;text-transform:lowercase;">${escapeHtml(language) || 'code'}</span>
+          </div>
+          <div style="display:flex;overflow-x:auto;">
+            <div style="padding:12px 0;min-width:40px;text-align:right;background:#1e293b;border-right:1px solid #475569;">
+              ${lineNumbers}
+            </div>
+            <pre style="margin:0;padding:12px 14px;flex:1;overflow-x:auto;"><code style="font-family:'SF Mono',Monaco,Menlo,monospace;font-size:13px;line-height:1.5;color:#e2e8f0;white-space:pre;">${codeLines}</code></pre>
+          </div>
+        </div>
+      `
+    }
+
+    // 自定义行内代码渲染（带内联样式）
+    renderer.codespan = ({ text }: { text: string }) => {
+      return `<code style="background:#f1f5f9;color:#3b82f6;padding:2px 6px;border-radius:4px;font-size:13px;font-family:'SF Mono',Monaco,Menlo,monospace;">${text}</code>`
+    }
+
+    // 其他元素使用默认渲染器，然后通过 CSS 样式包装
+    const html = marked.parse(content, {
+      breaks: true,
+      gfm: true,
+      renderer
+    }) as string
+
+    // 包装一层带样式的容器
+    return `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#334155;line-height:1.7;max-width:100%;">
+        <style>
+          p { margin: 0 0 12px; line-height: 1.7; color: #334155; }
+          h1 { margin: 24px 0 12px; font-size: 22px; font-weight: 600; color: #1e293b; }
+          h2 { margin: 20px 0 10px; font-size: 18px; font-weight: 600; color: #1e293b; }
+          h3 { margin: 16px 0 8px; font-size: 16px; font-weight: 600; color: #1e293b; }
+          h4 { margin: 14px 0 7px; font-size: 14px; font-weight: 600; color: #1e293b; }
+          ul, ol { margin: 8px 0; padding-left: 24px; color: #334155; }
+          li { margin: 4px 0; line-height: 1.6; }
+          a { color: #3b82f6; text-decoration: none; }
+          blockquote { margin: 12px 0; padding: 8px 16px; border-left: 4px solid #e2e8f0; background: #f8fafc; color: #64748b; }
+          strong { font-weight: 600; }
+          em { font-style: italic; }
+        </style>
+        ${html}
+      </div>
+    `
+  } catch (error) {
+    console.error('渲染内容失败:', error)
+    return `<div style="font-family:sans-serif;font-size:14px;color:#334155;white-space:pre-wrap;">${escapeHtml(content)}</div>`
+  }
+}
+
+// 导出为 Word：IPC 仅返回 docx base64 buffer，前端 saveBlobAs 触发本地保存
+async function exportAsWord(): Promise<void> {
+  try {
+    ElMessage.info('正在生成 Word 文档...')
+
+    const response = await window.electronAPI.export.messageAsWord({
+      content: props.message.content,
+      modelId: props.message.modelId
+    })
+
+    if (!response?.success || !response.data?.base64) {
+      ElMessage.error(response?.error || '导出 Word 失败')
+      return
+    }
+    // base64 → Uint8Array → Blob
+    const bin = atob(response.data.base64 as string)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const blob = new Blob([bytes], {
+      type: response.data.mimeType ||
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    const r = await saveBlobAs(blob, {
+      defaultName: response.data.defaultName || `AI回答_${Date.now()}.docx`,
+      filters: [{ name: 'Word 文档', extensions: ['docx'] }],
+    })
+    if (r.canceled) return
+    if (r.success) {
+      ElMessage.success('Word 文档已保存')
+    } else {
+      ElMessage.error(r.error || '导出 Word 失败')
+    }
+  } catch (error) {
+    console.error('导出 Word 失败:', error)
+    ElMessage.error('导出 Word 失败')
+  }
+}
+
+// 导出到 Obsidian
+function exportToObsidian(): void {
+  showExportObsidianDialog.value = true
+}
+
+// 显示知识库片段预览
+function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: string; score: number; snippet?: string }): void {
+  currentKbRef.value = ref
+  showKbSnippetDialog.value = true
+}
+</script>
+
+<style lang="scss" scoped>
+.message-item {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+  position: relative;
+
+  &.user {
+    .message-content {
+      background: var(--el-color-primary);
+      color: #fff;
+      border: none;
+
+      .message-footer {
+        .message-actions {
+          .el-button {
+            color: rgba(255, 255, 255, 0.8);
+
+            &:hover {
+              color: #fff;
+              background: rgba(255, 255, 255, 0.1);
+            }
+          }
+        }
+      }
+
+      .token-info {
+        color: rgba(255, 255, 255, 0.7);
+      }
+    }
+
+    :deep(code:not(pre code)) {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.message-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+// 导航按钮（上一个/下一个回答）
+.nav-btn {
+  padding: 4px 6px;
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  &:not(:disabled):hover {
+    color: var(--el-color-primary);
+  }
+}
+
+// 阅读模式切换按钮
+.view-mode-toggle {
+  padding: 4px 6px;
+}
+
+.sender-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.message-time {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.message-content {
+  background: #fff;
+  padding: 12px 14px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--el-color-primary-light-7);
+  position: relative;
+}
+
+.message-text {
+  font-size: 14px;
+  line-height: 1.6;
+  word-wrap: break-word;
+
+  // markdown 渲染内容样式
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+    margin: 16px 0 8px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  :deep(h1) { font-size: 22px; }
+  :deep(h2) { font-size: 18px; }
+  :deep(h3) { font-size: 16px; }
+  :deep(h4) { font-size: 15px; }
+  :deep(h5), :deep(h6) { font-size: 14px; }
+
+  :deep(p) {
+    margin: 8px 0;
+    line-height: 1.7;
+  }
+
+  :deep(ul), :deep(ol) {
+    margin: 8px 0;
+    padding-left: 24px;
+  }
+
+  :deep(li) {
+    margin: 4px 0;
+    line-height: 1.6;
+  }
+
+  :deep(blockquote) {
+    margin: 8px 0;
+    padding: 8px 16px;
+    border-left: 4px solid var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+    border-radius: 0 4px 4px 0;
+  }
+
+  :deep(blockquote p) {
+    margin: 0;
+  }
+
+  :deep(a) {
+    color: var(--el-color-primary);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  :deep(strong) {
+    font-weight: 600;
+  }
+
+  :deep(em) {
+    font-style: italic;
+  }
+
+  :deep(hr) {
+    margin: 16px 0;
+    border: none;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  :deep(table) {
+    width: 100%;
+    margin: 8px 0;
+    border-collapse: collapse;
+  }
+
+  :deep(th), :deep(td) {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+  }
+
+  :deep(th) {
+    background: #f8fafc;
+    font-weight: 600;
+  }
+
+  :deep(img) {
+    max-width: 100%;
+    border-radius: 8px;
+  }
+
+  // 行内代码样式
+  :deep(.inline-code) {
+    background: #f1f5f9;
+    color: var(--el-color-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 13px;
+  }
+
+  :deep(pre) {
+    margin: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  :deep(code) {
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 13px;
+  }
+
+  :deep(code:not(pre code)) {
+    background: #f1f5f9;
+    color: var(--el-color-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  // 代码块样式
+  :deep(.code-block-wrapper) {
+    background: #1e293b;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 10px 0;
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #334155;
+      border-bottom: 1px solid #475569;
+
+      .language {
+        font-size: 12px;
+        color: #94a3b8;
+        text-transform: lowercase;
+      }
+
+      .copy-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 4px;
+
+        &:hover {
+          color: #e2e8f0;
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        svg {
+          width: 14px;
+          height: 14px;
+        }
+      }
+    }
+
+    .code-content {
+      display: flex;
+      overflow-x: auto;
+
+      .line-numbers {
+        display: flex;
+        flex-direction: column;
+        padding: 12px 0;
+        min-width: 40px;
+        text-align: right;
+        user-select: none;
+        border-right: 1px solid #475569;
+        background: #1e293b;
+
+        .line-number {
+          padding: 0 8px;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #475569;
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+        }
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px 14px;
+        flex: 1;
+        overflow-x: auto;
+
+        code {
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #e2e8f0;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          word-break: break-all;
+        }
+      }
+    }
+  }
+
+  // 未闭合代码块样式（流式输出中）
+  :deep(.code-block-open) {
+    border: 1px dashed #475569;
+
+    .code-header {
+      background: #2d3a4f;
+
+      .language {
+        color: #94a3b8;
+      }
+    }
+
+    .copy-btn {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  // Mermaid 图表样式
+  :deep(.mermaid-wrapper) {
+    background: #f8fafc;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 10px 0;
+    border: 1px solid #e2e8f0;
+
+    .mermaid-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+
+      .language {
+        font-size: 12px;
+        color: #64748b;
+        text-transform: lowercase;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .error-indicator {
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .copy-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: none;
+        color: #64748b;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #e2e8f0;
+          color: #334155;
+        }
+      }
+    }
+
+    .mermaid-content {
+      padding: 16px;
+      overflow-x: auto;
+      overflow-y: visible;
+
+      pre.mermaid {
+        margin: 0;
+        background: transparent;
+        font-family: inherit;
+        line-height: 1.5;
+
+        svg {
+          max-width: 100%;
+          height: auto;
+          display: block;
+        }
+
+        // Mermaid 错误显示样式
+        .mermaid-error {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 6px;
+          padding: 12px;
+
+          .error-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+
+            .error-icon {
+              font-size: 16px;
+            }
+
+            .error-text {
+              font-size: 14px;
+              font-weight: 500;
+              color: #dc2626;
+            }
+          }
+
+          .error-detail {
+            font-size: 12px;
+            color: #ef4444;
+            background: #fee2e2;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+          }
+
+          .error-code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            overflow-x: auto;
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+          }
+        }
+      }
+    }
+  }
+}
+
+// 消息底部：Token 数和操作按钮
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  gap: 12px;
+}
+
+// 回到顶部按钮
+.back-to-top-btn {
+  padding: 4px 6px;
+  color: #94a3b8;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
+
+  &.visible {
+    opacity: 1;
+  }
+}
+
+.token-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.token-placeholder {
+  flex: 1;
+}
+
+.message-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+
+  &.visible {
+    opacity: 1;
+  }
+
+  .el-button {
+    color: #64748b;
+    padding: 4px 6px;
+
+    &:hover {
+      color: var(--el-color-primary);
+      background: rgba(0, 0, 0, 0.04);
+    }
+  }
+
+  // 下拉菜单按钮样式统一
+  .el-dropdown {
+    .el-button {
+      padding: 4px 6px;
+      color: #64748b;
+
+      &:hover {
+        color: var(--el-color-primary);
+        background: rgba(0, 0, 0, 0.04);
+      }
+    }
+  }
+}
+
+.edit-mode {
+  .edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+  }
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.attachment-image {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    transform: scale(1.02);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.08);
+    border-color: #e2e8f0;
+  }
+
+  .el-icon {
+    font-size: 18px;
+    color: var(--el-color-primary);
+  }
+
+  .attachment-asset-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .attachment-name {
+    font-weight: 500;
+    color: #1e293b;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .attachment-size {
+    color: #94a3b8;
+    font-size: 11px;
+  }
+}
+
+.thinking-chain {
+  margin-top: 8px;
+
+  :deep(.el-collapse) {
+    border: none;
+  }
+
+  :deep(.el-collapse-item__header) {
+    font-size: 12px;
+    color: #64748b;
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 32px;
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    border: none;
+    background: #f8fafc;
+    border-radius: 0 0 6px 6px;
+  }
+}
+
+.thinking-content {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  padding: 8px 12px;
+}
+
+.web-search-results {
+  margin-top: 8px;
+
+  :deep(.el-collapse) {
+    border: none;
+  }
+
+  :deep(.el-collapse-item__header) {
+    font-size: 12px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 32px;
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    border: none;
+    background: var(--el-color-primary-light-9);
+    border-radius: 0 0 6px 6px;
+  }
+}
+
+.search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.search-result-item {
+  display: block;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .result-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+    margin-bottom: 4px;
+  }
+
+  .result-snippet {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .result-url {
+    font-size: 11px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.knowledge-base-refs {
+  margin-top: 8px;
+
+  :deep(.el-collapse) {
+    border: none;
+  }
+
+  :deep(.el-collapse-item__header) {
+    font-size: 12px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 32px;
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    border: none;
+    background: var(--el-color-primary-light-9);
+    border-radius: 0 0 6px 6px;
+  }
+}
+
+.knowledge-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  background: linear-gradient(135deg, var(--el-color-primary-light-9) 0%, var(--el-color-primary-light-7) 100%);
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--el-color-primary-dark-2);
+
+  .el-icon {
+    font-size: 14px;
+  }
+}
+
+// ==================== Agent 工具 chips / 引用卡片（28 号 M5） ====================
+
+.agent-tool-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  justify-content: flex-start;
+
+  .tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+
+    .el-icon {
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .tool-chip-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
+.agent-refs {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .agent-ref-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+    background: var(--el-fill-color-lighter);
+    font-size: 12px;
+    width: fit-content;
+    max-width: 100%;
+
+    .el-icon {
+      font-size: 13px;
+      color: var(--el-color-primary);
+      flex-shrink: 0;
+    }
+
+    .agent-ref-kind {
+      color: var(--el-text-color-secondary);
+      flex-shrink: 0;
+
+      &::after {
+        content: '·';
+        margin-left: 6px;
+      }
+    }
+
+    .agent-ref-label {
+      color: var(--el-text-color-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agent-ref-arrow {
+      color: var(--el-text-color-placeholder);
+    }
+
+    &.clickable {
+      cursor: pointer;
+
+      &:hover {
+        border-color: var(--el-color-primary-light-5);
+        background: var(--el-color-primary-light-9);
+      }
+    }
+  }
+}
+
+.kb-refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.kb-ref-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid var(--el-color-primary-light-5);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .ref-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+
+    .el-icon {
+      color: var(--el-color-primary);
+    }
+  }
+
+  .ref-score {
+    font-size: 11px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-7);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+}
+
+// 知识库选择对话框样式
+.knowledge-base-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.kb-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+
+  &:hover {
+    background: #f1f5f9;
+    border-color: var(--el-color-primary);
+  }
+
+  .el-icon {
+    font-size: 20px;
+    color: var(--el-color-primary);
+  }
+
+  .kb-name {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .arrow {
+    font-size: 14px;
+    color: #94a3b8;
+  }
+}
+
+.empty-tip {
+  text-align: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+// 知识库片段预览对话框样式
+.kb-snippet-dialog {
+  :deep(.el-dialog__body) {
+    padding: 16px 20px;
+  }
+}
+
+.kb-snippet-content {
+  .snippet-meta {
+    margin-bottom: 12px;
+  }
+
+  .snippet-text {
+    font-size: 14px;
+    line-height: 1.8;
+    color: #1e293b;
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+</style>

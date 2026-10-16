@@ -1,0 +1,102 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 网页摘要入库",
+  "description": "输入 URL → 提取正文 → AI 结构化摘要（要点/数据/实体/结论）→ 存知识库 + 存资产库",
+  "category": "knowledge",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "url", "label": "网页链接", "type": "string", "required": true },
+            { "key": "depth", "label": "摘要深度", "type": "select", "defaultValue": "keypoints", "options": [
+              { "label": "要点", "value": "keypoints" },
+              { "label": "详细", "value": "detailed" },
+              { "label": "全文重写", "value": "rewrite" }
+            ] },
+            { "key": "language", "label": "摘要语言", "type": "select", "defaultValue": "zh", "options": [
+              { "label": "原文语言", "value": "original" },
+              { "label": "中文", "value": "zh" },
+              { "label": "英文", "value": "en" }
+            ] },
+            { "key": "knowledgeBaseId", "label": "知识库", "type": "select-dynamic", "source": "knowledgeBases", "required": true },
+            { "key": "request", "label": "效果描述", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "提取正文",
+        "position": { "x": 320, "y": 200 },
+        "config": { "url": "{{start.url}}", "maxLength": 50000, "maxLinks": 0 }
+      },
+      {
+        "id": "summary1",
+        "type": "llm-chat",
+        "name": "结构化摘要",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "systemPrompt": "你是阅读助理。输出结构化摘要 JSON：{summary: 一段话, keyPoints: [要点], dataPoints: [关键数据], entities: [涉及实体], conclusion: 结论, suggestedTitle: 建议标题}。摘要语言：{{start.language}}。",
+          "prompt": "网页标题：{{extract1.title}}\n摘要深度：{{start.depth}}\n用户效果要求：{{start.request}}\n\n正文：\n{{extract1.text}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "fmt1",
+        "type": "template-transform",
+        "name": "格式化摘要",
+        "position": { "x": 800, "y": 200 },
+        "config": { "template": "# {{summary1.parsed.suggestedTitle}}\n\n> 原文：{{start.url}} ｜ 摘要时间：{{sys.now}}\n\n## 一句话摘要\n{{summary1.parsed.summary}}\n\n## 要点\n{{summary1.parsed.keyPoints}}\n\n## 关键数据\n{{summary1.parsed.dataPoints}}\n\n## 涉及实体\n{{summary1.parsed.entities}}\n\n## 结论\n{{summary1.parsed.conclusion}}\n" }
+      },
+      {
+        "id": "ingest1",
+        "type": "kb-ingest",
+        "name": "存入知识库",
+        "position": { "x": 1040, "y": 200 },
+        "config": { "knowledgeBaseId": "{{start.knowledgeBaseId}}", "title": "{{summary1.parsed.suggestedTitle}}", "content": "{{fmt1.text}}", "waitForCompletion": false }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "存入资产库",
+        "position": { "x": 1280, "y": 200 },
+        "config": { "content": "{{fmt1.text}}", "kind": "text", "category": "text", "subCategory": "网页摘要", "name": "{{summary1.parsed.suggestedTitle}}", "tags": "网页摘要" }
+      },
+      {
+        "id": "msg1",
+        "type": "message",
+        "name": "完成提示",
+        "position": { "x": 1520, "y": 200 },
+        "config": { "content": "摘要已入库：知识库文档 ID {{ingest1.documentId}}，资产 ID {{save1.assetId}}" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1760, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "extract1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "extract1", "targetNodeId": "summary1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "summary1", "targetNodeId": "fmt1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "fmt1", "targetNodeId": "ingest1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "ingest1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

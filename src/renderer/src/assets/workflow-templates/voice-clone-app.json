@@ -1,0 +1,33 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "语音复刻",
+  "description": "上传 10-20 秒人声样本训练专属音色 → 用该音色合成一段语音并保存到资产库",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
+        { "key": "sample", "label": "人声样本（10-20 秒）", "type": "file", "required": true },
+        { "key": "name", "label": "音色名称", "type": "string", "required": true },
+        { "key": "text", "label": "要合成的文本", "type": "textarea", "required": true, "validation": { "minLength": 1, "maxLength": 2000 } },
+        { "key": "prefix", "label": "voice_id 前缀", "type": "string" },
+        { "key": "model", "label": "合成模型", "type": "model", "modelTypes": ["audio", "multimodal"] }
+      ] } },
+      { "id": "clone1", "type": "voice-clone", "name": "训练音色", "position": { "x": 300, "y": 200 }, "config": { "samplePath": "{{start.sample.path}}", "name": "{{start.name}}", "prefix": "{{start.prefix}}", "waitForCompletion": true } },
+      { "id": "tts1", "type": "tts", "name": "用复刻音色合成", "position": { "x": 540, "y": 200 }, "config": { "text": "{{start.text}}", "voiceId": "{{clone1.voiceId}}", "providerConfigId": "{{start.model.providerConfigId}}", "modelId": "{{start.model.modelId}}" } },
+      { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 780, "y": 200 }, "config": { "content": "{{tts1.audioPath}}", "kind": "file", "category": "audio", "name": "复刻语音.wav", "tags": "语音复刻" } },
+      { "id": "msg1", "type": "message", "name": "提示", "position": { "x": 1000, "y": 200 }, "config": { "content": "复刻完成！语音已保存到资产库：{{save1.name}}（音色：{{clone1.name}}）" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 1220, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "clone1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "clone1", "targetNodeId": "tts1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "tts1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

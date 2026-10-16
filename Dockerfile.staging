@@ -1,0 +1,43 @@
+# Dockerfile · Web 端测试部署
+# 单镜像：装 Node deps（含 native，按 Node ABI 编译）+ 构建 vite 前端 + 用 tsx 跑 web-server
+# 不为 Electron 设计，只跑 Web 模式。
+#
+# 使用：
+#   docker compose -f docker-compose.staging.yml build
+#   docker compose -f docker-compose.staging.yml up -d
+
+FROM node:20-bookworm-slim AS base
+
+# native 依赖（better-sqlite3 / canvas / nodejieba）+ 运行 pg client（restore 时用）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ pkg-config \
+      libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
+      ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 1. 仅 lock 文件 → cache layer
+COPY package.json package-lock.json ./
+
+# 2. 装依赖：跳过 postinstall（electron-builder install-app-deps 会按 Electron ABI 编 better-sqlite3，
+#    Web 容器跑 Node 不能用），随后显式 rebuild 几个 native 模块为 Node ABI
+#    --build-from-source：避免 nodejieba / canvas 等用 prebuild-install 下载到 glibc≥2.38
+#    的 prebuilt 二进制（容器是 bookworm = glibc 2.36，加载时报 GLIBC_2.38 not found）
+RUN npm ci --no-audit --ignore-scripts \
+ && npm rebuild --build-from-source better-sqlite3 canvas nodejieba
+
+# 3. 复制源代码
+COPY . .
+
+# 4. 构建 Web 前端到 out/renderer-web/
+RUN npm run web:client:build
+
+# 5. 运行期配置
+ENV NODE_ENV=production \
+    PORT=4201 \
+    DATA_ROOT=/app/data
+EXPOSE 4201
+
+# 6. 启动 web-server。tsx 直跑 ts，省去额外编译步
+CMD ["npx", "tsx", "-r", "tsconfig-paths/register", "src/web/server/index.ts"]

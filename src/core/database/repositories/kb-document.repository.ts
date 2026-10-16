@@ -1,0 +1,242 @@
+/**
+ * 知识库文档数据访问层
+ * @module database/repositories/kb-document.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
+ */
+
+import type { DataSource } from 'typeorm'
+import { randomUUID } from 'crypto'
+import type {
+  KbDocument,
+  CreateDocumentRequest,
+  DocumentStatus,
+  DocumentMetadata,
+  DocumentSource,
+} from '@shared/types/knowledge-base.types'
+import { KbDocumentEntity } from '../entities/kb-document.entity'
+import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
+
+export class KbDocumentRepository extends BaseRepository<
+  KbDocumentEntity,
+  KbDocument
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, KbDocumentEntity)
+  }
+
+  protected toDto(e: KbDocumentEntity): KbDocument {
+    return {
+      id: e.id,
+      knowledgeBaseId: e.knowledgeBaseId,
+      name: e.name,
+      filePath: e.filePath,
+      fileType: e.fileType,
+      fileSize: e.fileSize,
+      status: e.status as DocumentStatus,
+      progress: e.progress,
+      chunkCount: e.chunkCount,
+      errorMessage: e.errorMessage || undefined,
+      brainStatus: (e.brainStatus as KbDocument['brainStatus']) ?? undefined,
+      brainProgress: e.brainProgress ?? undefined,
+      brainError: e.brainError || undefined,
+      metadata: (e.metadata as DocumentMetadata | null) ?? undefined,
+      source: (e.sourceType && e.sourceId)
+        ? { type: e.sourceType as DocumentSource['type'], id: e.sourceId }
+        : undefined,
+      createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
+      updatedAt: e.updatedAt instanceof Date ? e.updatedAt : new Date(e.updatedAt),
+    }
+  }
+
+  async findByKnowledgeBaseId(knowledgeBaseId: string): Promise<KbDocument[]> {
+    return this.findManyByWhere({ knowledgeBaseId } as any, { createdAt: 'DESC' })
+  }
+
+  async findById(id: string): Promise<KbDocument | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async findBySource(kbId: string, source: DocumentSource): Promise<KbDocument | null> {
+    return this.findOneByWhere({
+      knowledgeBaseId: kbId,
+      sourceType: source.type,
+      sourceId: source.id,
+    } as any)
+  }
+
+  async findByStatus(status: DocumentStatus): Promise<KbDocument[]> {
+    return this.findManyByWhere({ status } as any, { createdAt: 'ASC' })
+  }
+
+  async create(request: CreateDocumentRequest): Promise<KbDocument> {
+    const id = randomUUID()
+    const now = new Date()
+    const entity = this.repo.create({
+      id,
+      knowledgeBaseId: request.knowledgeBaseId,
+      name: request.name,
+      filePath: request.filePath,
+      fileType: request.fileType,
+      fileSize: request.fileSize,
+      status: 'pending',
+      progress: 0,
+      chunkCount: 0,
+      errorMessage: null,
+      metadata: null,
+      sourceType: request.source?.type ?? null,
+      sourceId: request.source?.id ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const saved = await this.scoped.save(entity)
+    return this.toDto(saved)
+  }
+
+  async createBatch(
+    requests: CreateDocumentRequest[],
+  ): Promise<KbDocument[]> {
+    if (requests.length === 0) return []
+    const now = new Date()
+    // 多租户：事务里的 manager.getRepository 绕过了 scoped API 的 user_id 自动注入，
+    // 必须显式带上当前 ALS userId，否则写入 user_id=NULL，
+    // 查询按 user_id 过滤时整批文档不可见（列表为空）。
+    const userId = getCurrentUserId()
+    return this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KbDocumentEntity)
+      const documents: KbDocument[] = []
+      for (const request of requests) {
+        const id = randomUUID()
+        const saved = await repo.save(
+          repo.create({
+            id,
+            userId,
+            knowledgeBaseId: request.knowledgeBaseId,
+            name: request.name,
+            filePath: request.filePath,
+            fileType: request.fileType,
+            fileSize: request.fileSize,
+            status: 'pending',
+            progress: 0,
+            chunkCount: 0,
+            errorMessage: null,
+            metadata: null,
+            sourceType: request.source?.type ?? null,
+            sourceId: request.source?.id ?? null,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        )
+        documents.push(this.toDto(saved))
+      }
+      return documents
+    })
+  }
+
+  async updateProgress(id: string, progress: number): Promise<void> {
+    const res = await this.scoped.update({ id } as any, {
+      progress,
+      status: 'processing',
+      updatedAt: new Date(),
+    })
+    this.assertUpdated(id, res, 'updateProgress')
+  }
+
+  /**
+   * 知识大脑消化状态（与 status/progress 并列，不混用——处理流水线语义不受影响）。
+   * 不 assertUpdated：文档可能已被删除（消化是异步尾随任务，竞态下静默即可）。
+   */
+  async updateBrainStatus(
+    id: string,
+    patch: { status: 'pending' | 'digesting' | 'digested' | 'failed' | 'skipped'; progress?: number; error?: string | null },
+  ): Promise<void> {
+    await this.scoped.update({ id } as any, {
+      brainStatus: patch.status,
+      // undefined 不更新该列（typeorm 会跳过 undefined 属性；显式 null 才清空）
+      ...(patch.progress !== undefined ? { brainProgress: patch.progress } : {}),
+      brainError: patch.error ?? null,
+      updatedAt: new Date(),
+    })
+  }
+
+  async markCompleted(id: string, chunkCount: number): Promise<void> {
+    const res = await this.scoped.update({ id } as any, {
+      status: 'completed',
+      progress: 100,
+      chunkCount,
+      updatedAt: new Date(),
+    })
+    this.assertUpdated(id, res, 'markCompleted')
+  }
+
+  async markFailed(id: string, errorMessage: string): Promise<void> {
+    const res = await this.scoped.update({ id } as any, {
+      status: 'failed',
+      errorMessage,
+      updatedAt: new Date(),
+    })
+    this.assertUpdated(id, res, 'markFailed')
+  }
+
+  /**
+   * 状态回写行数校验：scoped.update 按 ALS user_id 过滤，若目标行 user_id 不匹配
+   * （历史脏数据 / 写入路径漏注入）会静默更新 0 行 —— 文档状态永远停在 pending，
+   * 且上层只打"处理完成"日志，完全无法察觉。这里显式抛错，让问题第一时间暴露。
+   * 注意：ScopedRepoApi.update 返回的是 affected 行数（number），不是 UpdateResult。
+   */
+  private assertUpdated(id: string, affectedRows: number, op: string): void {
+    if (!affectedRows || affectedRows <= 0) {
+      throw new Error(
+        `[KbDocumentRepository] ${op} 未更新任何行（id=${id}）：目标文档 user_id 与当前用户不匹配或不存在`,
+      )
+    }
+  }
+
+  async updateMetadata(id: string, metadata: DocumentMetadata): Promise<void> {
+    await this.scoped.update({ id } as any, {
+      metadata: metadata as Record<string, unknown>,
+      updatedAt: new Date(),
+    })
+  }
+
+  /**
+   * upsert 路径专用：重置文档元信息，准备重新处理。
+   * 同时更新 name / fileSize / status / progress / chunkCount / errorMessage。
+   */
+  async resetForUpsert(
+    id: string,
+    fields: { name: string; fileSize: number },
+  ): Promise<void> {
+    await this.scoped.update({ id } as any, {
+      name: fields.name,
+      fileSize: fields.fileSize,
+      status: 'processing',
+      progress: 0,
+      chunkCount: 0,
+      errorMessage: null,
+      updatedAt: new Date(),
+    } as any)
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
+  }
+
+  async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
+    await this.scoped.delete({ knowledgeBaseId } as any)
+  }
+
+  async countByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {
+    return this.scoped.count({ knowledgeBaseId } as any)
+  }
+
+  async sumSizeByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {
+    const row = await this.repo
+      .createQueryBuilder('d')
+      .select('SUM(d.file_size)', 'total')
+      .where('d.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
+      .getRawOne()
+    return Number(row?.total) || 0
+  }
+}

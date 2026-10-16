@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>地点资产卡 · 茶馆</title>
+  <link rel="stylesheet" href="shell.css">
+  <style>
+    /* 场景缩略图渐变（按时段/天气模拟氛围） */
+    .scene-thumb {
+      aspect-ratio: 16 / 9;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .scene-thumb:hover { border-color: var(--color-primary); }
+    .scene-thumb.active { border-color: var(--color-success); }
+
+    .scene-thumb .scene-label {
+      position: absolute;
+      bottom: 4px; left: 6px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+    }
+    .scene-thumb .scene-icon {
+      font-size: 36px;
+      color: rgba(255,255,255,0.65);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .scene-thumb .ribbon {
+      position: absolute;
+      top: 4px; right: 4px;
+      background: var(--color-success);
+      color: white;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+    }
+    .scene-thumb.empty {
+      background: var(--color-bg);
+      border: 1px dashed var(--color-border);
+      color: var(--color-text-tertiary);
+    }
+    .scene-thumb.empty .scene-icon { color: var(--color-text-tertiary); font-size: 24px; }
+    .scene-thumb.gen { background: var(--color-warning-light); border-color: var(--color-warning); color: var(--color-warning); }
+
+    /* 时段渐变 */
+    .grad-morning { background: linear-gradient(135deg, #fff5d6, #ffd99e, #b8e0d2); }
+    .grad-noon    { background: linear-gradient(135deg, #fff9e6, #ffe699, #cce6ff); }
+    .grad-afternoon { background: linear-gradient(135deg, #ffe6c2, #ffb380, #d6b3a3); }
+    .grad-evening { background: linear-gradient(135deg, #ff9e80, #d97742, #6b4f3a); }
+    .grad-night   { background: linear-gradient(135deg, #1a2747, #2d3a5c, #4a5276); }
+    .grad-dawn    { background: linear-gradient(135deg, #d4a5ff, #ffb3a5, #ffd9b3); }
+    .grad-dusk    { background: linear-gradient(135deg, #ff6b9d, #c2185b, #4a4669); }
+
+    /* 天气渐变 */
+    .grad-sunny   { background: linear-gradient(135deg, #fff9e6, #ffd966, #87ceeb); }
+    .grad-cloudy  { background: linear-gradient(135deg, #c4cdd6, #97a4b1, #6c7884); }
+    .grad-rainy   { background: linear-gradient(135deg, #5a7488, #4a6478, #3a5468); }
+    .grad-snowy   { background: linear-gradient(135deg, #f0f5fa, #c8d8e6, #94abc4); }
+    .grad-foggy   { background: linear-gradient(135deg, #d8d8d8, #b0b0b0, #888888); }
+    .grad-stormy  { background: linear-gradient(135deg, #2c3e50, #4a3a52, #1a1a2e); }
+
+    /* 视角渐变（不同构图氛围） */
+    .grad-angle1  { background: linear-gradient(180deg, #4a6580 0%, #8aa5b8 50%, #c4d4e0 100%); }
+    .grad-angle2  { background: linear-gradient(135deg, #6b5840, #9c7a52, #d4b890); }
+    .grad-angle3  { background: linear-gradient(180deg, #3d4a5a, #5d6a78, #8d9aa8); }
+    .grad-angle4  { background: linear-gradient(135deg, #7a4a3a, #a06848, #c89a6e); }
+
+    /* 3D 区 */
+    .pano-area {
+      aspect-ratio: 21 / 9;
+      background: linear-gradient(135deg, #2c3e50 0%, #4a6080 25%, #6b8aa8 50%, #4a6080 75%, #2c3e50 100%);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.7);
+      position: relative;
+      overflow: hidden;
+    }
+    .pano-area .pano-tag {
+      position: absolute;
+      top: 8px; left: 8px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+    .pano-area .pano-grip {
+      position: absolute;
+      top: 50%; left: 0; right: 0;
+      height: 1px;
+      border-top: 1px dashed rgba(255,255,255,0.3);
+    }
+
+    .pano-empty {
+      aspect-ratio: 21 / 9;
+      background: var(--color-bg);
+      border: 2px dashed var(--color-border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-tertiary);
+      gap: 8px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 6px;
+      font-size: 13px;
+      align-items: baseline;
+    }
+    .info-grid .lbl { color: var(--color-text-tertiary); font-size: 12px; }
+
+    .panel-divider { padding-top: 12px; border-top: 1px solid var(--color-bg); margin-top: 12px; }
+    .panel-section-title { font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 6px; letter-spacing: 0.05em; }
+
+    .grid-7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+
+    .lbl-row { display: grid; gap: 6px; font-size: 10px; color: var(--color-text-tertiary); text-align: center; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="workbench no-sidebar">
+
+    <!-- 顶部进度条 -->
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="02-stage-asset.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 / 第 1 集 · 茶馆相遇
+        <span class="ep-meta">/ 地点资产 / 茶馆</span>
+      </div>
+      <div class="stepper">
+        <a class="step done" href="01-stage-content.html"><span class="dot">✓</span><span>① 内容</span></a>
+        <span class="step-arrow">━</span>
+        <a class="step active" href="02-stage-asset.html"><span class="dot">●</span><span>② 资产</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="03-stage-script.html"><span class="dot">○</span><span>③ 剧本</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="04-stage-storyboard.html"><span class="dot">○</span><span>④ 分镜</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="05-stage-production.html"><span class="dot">○</span><span>⑤ 画面+音频</span></a>
+        <span class="step-arrow">─</span>
+        <a class="step todo" href="06-stage-compose.html"><span class="dot">○</span><span>⑥ 合成</span></a>
+      </div>
+    </div>
+
+    <!-- ② 地点编辑：不显示资产侧栏（user 5/6 决策；二级编辑属于资产语义） -->
+
+    <!-- 主区域 -->
+    <div class="main">
+
+      <!-- 标题栏 -->
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+        <a href="02-stage-asset.html" class="btn btn-sm">← 返回盘点</a>
+        <h2 style="margin: 0; font-size: 22px;">茶馆</h2>
+        <span class="tag tag-linked-lw">linked_lw · 来自《江湖传》原著</span>
+        <span class="tag tag-success">主图齐备</span>
+        <div style="margin-left: auto; display: flex; gap: 6px;">
+          <button class="btn">↺ 拉取最新基础值</button>
+          <button class="btn btn-success">保存</button>
+        </div>
+      </div>
+
+      <div style="background: var(--color-warning-light); border-left: 3px solid var(--color-warning); padding: 8px 14px; border-radius: 0 4px 4px 0; font-size: 13px; margin-bottom: 16px;">
+        ⓘ 长文中"茶馆"的设定 2 天前更新过 — <a href="#" style="color: var(--color-primary);">查看变更</a>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 360px 1fr; gap: 16px;">
+
+        <!-- ─────────── 左：设定卡 ─────────── -->
+        <div class="keyframe-panel">
+          <div style="font-weight: 600; font-size: 15px; margin-bottom: 12px;">📋 设定卡</div>
+
+          <div>
+            <div class="panel-section-title">基础</div>
+            <div class="info-grid">
+              <span class="lbl">名称</span><span>茶馆</span>
+              <span class="lbl">类型</span><span>interior（内景）</span>
+              <span class="lbl">规模</span><span>中（容纳 ~30 人）</span>
+              <span class="lbl">描述</span><span style="font-size: 12px; color: var(--color-text-secondary);">江南古镇老字号茶馆，二层木质阁楼，临河窗</span>
+            </div>
+          </div>
+
+          <div class="panel-divider">
+            <div class="panel-section-title">视觉特征</div>
+            <div style="font-size: 13px; line-height: 1.7;">
+              木质横梁 · 暖色灯笼 · 青花瓷茶具 · 水墨屏风 · 临窗八仙桌
+            </div>
+            <div style="margin-top: 6px;">
+              <span style="font-size: 11px; color: var(--color-primary);">基础值来自长文</span> ·
+              <a href="#" style="font-size: 11px; color: var(--color-primary);">+ 添加 override</a>
+            </div>
+          </div>
+
+          <div class="panel-divider">
+            <div class="panel-section-title">氛围</div>
+            <div style="font-size: 13px;">
+              <span class="tag" style="margin-right: 4px;">温馨</span>
+              <span class="tag" style="margin-right: 4px;">古朴</span>
+              <span class="tag" style="margin-right: 4px;">市井烟火</span>
+            </div>
+          </div>
+
+          <div class="panel-divider">
+            <div class="panel-section-title">变体维度</div>
+            <div class="info-grid">
+              <span class="lbl">默认时间</span>
+              <span><span class="tag tag-linked-lw">evening 黄昏</span></span>
+              <span class="lbl">默认天气</span>
+              <span><span class="tag tag-linked-lw">cloudy 阴天</span></span>
+              <span class="lbl">支持季节</span>
+              <span style="font-size: 12px; color: var(--color-text-tertiary);">（暂不启用）</span>
+            </div>
+          </div>
+
+          <div class="panel-divider">
+            <div class="panel-section-title">风格锚点</div>
+            <div style="font-size: 13px; line-height: 1.5;">
+              <span class="tag" style="margin-right: 4px;">工笔国风</span>
+              <span class="tag" style="margin-right: 4px;">水墨</span>
+              <span class="tag">微写实</span>
+            </div>
+          </div>
+
+          <!-- 360 全景 + 3D 升级 -->
+          <div class="panel-divider" style="background: var(--color-bg); margin-left: -16px; margin-right: -16px; margin-bottom: -16px; padding: 14px 16px; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div style="font-weight: 600;">🌐 360 全景图（panorama_360）</div>
+              <span class="tag tag-success">已生成</span>
+            </div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; line-height: 1.5;">
+              本 phase 主流程：AI 生成或上传 360 全景 → 视角截图给分镜当背景 ref → 同场景多分镜背景 3D 一致。详见右栏。
+            </div>
+            <div style="font-size: 11px; color: var(--color-text-tertiary); border-top: 1px dashed var(--color-border); padding-top: 8px; margin-top: 8px;">
+              🎲 3D 摆位场景（更精准）— Phase 8 实现，本 phase 不启用
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ─────────── 右：图谱 ─────────── -->
+        <div>
+
+          <!-- 主图 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <div>
+                <span style="font-weight: 600; font-size: 15px;">🖼 主图</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 10px;">默认状态：黄昏 · 阴天</span>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm">↺ 重生成</button>
+                <button class="btn btn-sm">⬆ 上传替换</button>
+              </div>
+            </div>
+            <div class="scene-thumb grad-evening" style="aspect-ratio: 16/9;">
+              <div class="scene-icon" style="font-size: 80px;">🏛</div>
+              <span class="scene-label">茶馆 · evening · cloudy</span>
+              <span class="ribbon">主图</span>
+            </div>
+            <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 8px;">
+              生成时间：2 小时前 · dashscope-image · 分辨率 1920×1080
+              <br>
+              📌 派生的所有变体图都用本主图作为"参考图"，保证空间结构一致
+            </div>
+          </div>
+
+          <!-- 时间变体 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">⏰ 时间变体</span>
+                <span class="tag" style="font-size: 10px; margin-left: 6px;">3/7 已生成</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">同一空间在不同时段的氛围</span>
+              </div>
+              <button class="btn btn-sm">✨ 派生剩余</button>
+            </div>
+            <div class="grid-7">
+              <div class="scene-thumb grad-morning"><span class="scene-icon">🌅</span><span class="scene-label">morning</span></div>
+              <div class="scene-thumb grad-noon"><span class="scene-icon">☀</span><span class="scene-label">noon</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">afternoon</span></div>
+              <div class="scene-thumb grad-evening active"><span class="scene-icon">🌇</span><span class="scene-label">evening ★</span></div>
+              <div class="scene-thumb grad-night"><span class="scene-icon">🌙</span><span class="scene-label">night</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">dawn</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">dusk</span></div>
+            </div>
+            <div class="lbl-row" style="grid-template-columns: repeat(7, 1fr);">
+              <span>清晨</span><span>正午</span><span>下午</span><span>黄昏★</span><span>夜晚</span><span>拂晓</span><span>暮色</span>
+            </div>
+          </div>
+
+          <!-- 天气变体 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">🌤 天气变体</span>
+                <span class="tag" style="font-size: 10px; margin-left: 6px;">2/6 已生成</span>
+              </div>
+              <button class="btn btn-sm">✨ 派生剩余</button>
+            </div>
+            <div class="grid-6">
+              <div class="scene-thumb grad-sunny"><span class="scene-icon">☀</span><span class="scene-label">sunny</span></div>
+              <div class="scene-thumb grad-cloudy active"><span class="scene-icon">☁</span><span class="scene-label">cloudy ★</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">rainy</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">snowy</span></div>
+              <div class="scene-thumb gen"><span class="scene-icon">⏳</span><span class="scene-label">foggy</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">stormy</span></div>
+            </div>
+            <div class="lbl-row" style="grid-template-columns: repeat(6, 1fr);">
+              <span>晴</span><span>阴★</span><span>雨</span><span>雪</span><span>雾</span><span>暴风雨</span>
+            </div>
+          </div>
+
+          <!-- 视角变体 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">📷 视角变体</span>
+                <span class="tag" style="font-size: 10px; margin-left: 6px;">3/4 已生成</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">同一空间不同构图 / 视角的快照</span>
+              </div>
+              <button class="btn btn-sm">✨ 派生剩余</button>
+            </div>
+            <div class="grid-4">
+              <div class="scene-thumb grad-angle1"><span class="scene-icon">🏛</span><span class="scene-label">wide_shot 远景</span></div>
+              <div class="scene-thumb grad-angle2"><span class="scene-icon">🚪</span><span class="scene-label">entrance 入口</span></div>
+              <div class="scene-thumb grad-angle3"><span class="scene-icon">🪟</span><span class="scene-label">interior_a 临窗</span></div>
+              <div class="scene-thumb empty"><span class="scene-icon">+</span><span class="scene-label">interior_b 后堂</span></div>
+            </div>
+            <div class="lbl-row" style="grid-template-columns: repeat(4, 1fr);">
+              <span>整体远景</span><span>入口处</span><span>临窗八仙桌</span><span>后堂</span>
+            </div>
+          </div>
+
+          <!-- 360 全景图（本 phase 主流程） -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">🌐 360 全景图（panorama_360）</span>
+                <span class="tag tag-success" style="font-size: 10px; margin-left: 6px;">已生成</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">同场景多分镜共享背景的核心机制（spec §4.5.10）</span>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm">↺ 重新生成</button>
+                <button class="btn btn-sm">⬆ 上传替换</button>
+              </div>
+            </div>
+
+            <!-- panorama 预览（mock） -->
+            <div class="pano-area" style="cursor: grab;">
+              <div class="pano-tag">panorama_360 · 6912×3456 · equirectangular</div>
+              <div class="pano-grip"></div>
+              <div style="font-size: 56px;">🌐</div>
+              <div style="position: absolute; bottom: 8px; right: 10px; background: rgba(0,0,0,0.5); padding: 3px 10px; border-radius: 3px; font-size: 11px; color: white;">拖动旋转 · 滚轮缩放 · 360°</div>
+              <div style="position: absolute; bottom: 8px; left: 10px; background: rgba(0,0,0,0.5); padding: 3px 10px; border-radius: 3px; font-size: 11px; color: white; font-family: monospace;">yaw: 0° · pitch: -5° · fov: 70°</div>
+            </div>
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-top: 6px;">
+              生成时间：1 小时前 · dashscope-image · prompt 含 "equirectangular panoramic 2:1"
+              <br>
+              💡 用 photo-sphere-viewer.js 在浏览器内 360 拖动预览
+            </div>
+          </div>
+
+          <!--
+            视角截图（panorama_snapshot · spec §4.5.10）
+            FU5-A9-L2 修订：截图属于 location 资源，不在本阶段绑分镜（分镜在 ④ 才生成）。
+            ④ 分镜 stage 配镜头时通过 picker 选已存在的 snapshot 绑入 storyboard.background_ref_image_id。
+          -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">📷 视角截图（panorama_snapshot）</span>
+                <span class="tag" style="font-size: 10px; margin-left: 6px;">3 张 · 待绑分镜</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">
+                  从全景图选 yaw/pitch/fov 截出 2D 图；④ 分镜 stage 时把 snapshot 绑给具体分镜 → 同场景多分镜共享 → 背景 3D 几何一致
+                </span>
+              </div>
+              <button class="btn btn-primary btn-sm">+ 进入截图模式</button>
+            </div>
+
+            <div class="grid-4">
+              <div class="scene-thumb grad-angle1">
+                <span class="scene-icon">📍</span>
+                <span class="scene-label">snap_1 · yaw=0° pitch=-5° fov=70°</span>
+              </div>
+              <div class="scene-thumb grad-angle2">
+                <span class="scene-icon">📍</span>
+                <span class="scene-label">snap_2 · yaw=-15° pitch=-25° fov=50°</span>
+              </div>
+              <div class="scene-thumb grad-angle3">
+                <span class="scene-icon">📍</span>
+                <span class="scene-label">snap_3 · yaw=-30° pitch=0° fov=35°</span>
+              </div>
+              <div class="scene-thumb empty">
+                <span class="scene-icon">+</span>
+                <span class="scene-label">为分镜 1.4 截图</span>
+              </div>
+            </div>
+            <div class="lbl-row" style="grid-template-columns: repeat(4, 1fr);">
+              <span>整体远景</span><span>仰拍中景</span><span>临窗特写</span><span>—</span>
+            </div>
+
+            <div style="background: var(--color-success-light); border-left: 3px solid var(--color-success); padding: 8px 12px; border-radius: 0 4px 4px 0; font-size: 12px; color: var(--color-text); margin-top: 12px; line-height: 1.7;">
+              ✓ <strong>3D 一致性效果</strong>：分镜 1.1 / 1.2 / 1.3 都从同一全景图截图，背景里的木梁 / 灯笼 / 屏风位置在 3D 空间里完全一致 → AI 生成的关键帧背景结构稳定，跨分镜剪辑不会"穿帮"。
+            </div>
+          </div>
+
+          <!-- 一致性提示 -->
+          <div style="background: var(--color-primary-light); border-left: 3px solid var(--color-primary); padding: 10px 14px; border-radius: 0 4px 4px 0; font-size: 12px; color: var(--color-text); margin-top: 4px; line-height: 1.7;">
+            💡 <strong>分镜如何用这些图？</strong>
+            <br>
+            ⑤ 画面+音频阶段每生成一张关键帧时，参考图按以下优先级注入：
+            <ol style="margin: 4px 0 0 20px; padding: 0; line-height: 1.6;">
+              <li>★ 该分镜的 panorama_snapshot（背景 ref，3D 一致）</li>
+              <li>没有截图 → 退回到地点 angle 变体（按 time+weather+视角匹配）</li>
+              <li>都没有 → 退回到主图</li>
+            </ol>
+          </div>
+
+          <!-- 3D 摆位 Phase 8 占位 -->
+          <div class="keyframe-panel" style="background: var(--color-bg);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">🎲 3D 摆位场景</span>
+                <span class="tag tag-3d" style="font-size: 10px; margin-left: 6px;">Phase 8 超精准模式</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">本 phase 不实现 · 复杂群戏 / 精确走位时启用</span>
+              </div>
+              <button class="btn btn-sm" disabled style="opacity: 0.5;">升级到 3D 摆位</button>
+            </div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); padding: 8px 0; line-height: 1.7;">
+              在 360 全景基础上，进 3D 编辑器用简易模型代位人物/物品 → 渲染摆位预览图作为关键帧 ref，
+              比 panorama 截图更精准（含人物站位/朝向/物品位置的 3D 几何信息）。<br>
+              90% 场景"360 + 截图"已经够用；这是给战斗 / 群戏 / 多机位调度等专业场景留口。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部时间线 -->
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">0/12 分镜未出片</span>
+      <button class="timeline-action" disabled style="opacity: 0.5;">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="02-stage-asset.html" class="btn btn-sm" style="background: white;">↑ 资产盘点</a>
+    <a href="02-stage-asset-edit.html" class="btn btn-sm" style="background: white;">看角色卡</a>
+    <a href="03-stage-script.html" class="btn btn-primary btn-sm">下一步 → ③</a>
+  </div>
+</body>
+</html>

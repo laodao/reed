@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "mat-776d07db",
+      "category": "report",
+      "subCategory": null,
+      "name": "缅北电诈覆灭深度研究报告（The Bot 主题深度研究工作流）",
+      "description": "",
+      "tags": [
+        "缅北",
+        "电诈",
+        "四大家族",
+        "研究报告"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\report\\mat-776d07db.md",
+      "url": "The Bot 主题深度研究工作流 6 轮检索整合",
+      "mimeType": "text/markdown",
+      "sizeBytes": 17929,
+      "metadata": {
+        "checksum": "sha256:776d07dbaf57911086500aee6551c09596cecce7e491e3fe8ea0334d1372cc65",
+        "via": "主题深度研究",
+        "originalName": "缅北电诈覆灭深度研究报告-2026-10-07.md"
+      },
+      "sourceType": "主题深度研究",
+      "sourceRef": "The Bot 主题深度研究工作流 6 轮检索整合",
+      "createdAt": "2026-10-09T04:22:47.637Z",
+      "updatedAt": "2026-10-09T04:22:47.637Z"
+    },
+    {
+      "id": "mat-bb5fc25a",
+      "category": "note",
+      "subCategory": null,
+      "name": "时政深度文语域蒸馏笔记（4 篇书面向样本对照）",
+      "description": "",
+      "tags": [
+        "写作风格",
+        "语域",
+        "时政",
+        "蒸馏笔记"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\note\\mat-bb5fc25a.md",
+      "url": "卢克文工作室/凤凰网/一棵青木/温骏轩",
+      "mimeType": "text/markdown",
+      "sizeBytes": 4181,
+      "metadata": {
+        "checksum": "sha256:bb5fc25a2cc4f2c5660d325749c96781baf128174749b73a6e5f34a7e85999db",
+        "via": "writing-styles 蒸馏",
+        "originalName": "notes-affairs-formal.md"
+      },
+      "sourceType": "writing-styles 蒸馏",
+      "sourceRef": "卢克文工作室/凤凰网/一棵青木/温骏轩",
+      "createdAt": "2026-10-09T04:22:47.710Z",
+      "updatedAt": "2026-10-09T04:22:47.711Z"
+    },
+    {
+      "id": "mat-2b2f0bb3",
+      "category": "note",
+      "subCategory": null,
+      "name": "卢克文工作室风格画像汇总（14 篇精读）",
+      "description": "",
+      "tags": [
+        "写作风格",
+        "卢克文",
+        "深度叙事"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\note\\mat-2b2f0bb3.md",
+      "url": "卢克文工作室公众号 14 篇",
+      "mimeType": "text/markdown",
+      "sizeBytes": 4353,
+      "metadata": {
+        "checksum": "sha256:2b2f0bb3e891f1e780193da69949bc0cd587ae5c672078ff828fc8a6d4902548",
+        "via": "writing-styles 蒸馏",
+        "originalName": "aggregate-lukewen.md"
+      },
+      "sourceType": "writing-styles 蒸馏",
+      "sourceRef": "卢克文工作室公众号 14 篇",
+      "createdAt": "2026-10-09T04:22:47.787Z",
+      "updatedAt": "2026-10-09T04:22:47.788Z"
+    },
+    {
+      "id": "mat-3289b185",
+      "category": "image",
+      "subCategory": null,
+      "name": "唐·文官俑（大都会博物馆 11.83.2）",
+      "description": "",
+      "tags": [
+        "唐代",
+        "文物",
+        "人物",
+        "配图示例"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-3289b185.jpg",
+      "url": "https://www.metmuseum.org/art/collection/search/49198",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 149540,
+      "metadata": {
+        "checksum": "sha256:3289b185d1afe577635ba955e2d18e0e36a2ab58d9240c45c5250b46109d14e6",
+        "via": "writing-styles 配图（检索路径）",
+        "originalName": "met-49198-civil-official.jpg",
+        "license": "CC0（公有领域，Met Open Access）",
+        "author": "The Metropolitan Museum of Art"
+      },
+      "sourceType": "writing-styles 配图（检索路径）",
+      "sourceRef": "https://www.metmuseum.org/art/collection/search/49198",
+      "createdAt": "2026-10-09T04:42:03.928Z",
+      "updatedAt": "2026-10-09T04:42:03.929Z"
+    },
+    {
+      "id": "mat-72f11fb5",
+      "category": "image",
+      "subCategory": null,
+      "name": "缅甸 8-9 世纪坐佛造像（大都会博物馆 DP309921）",
+      "description": "",
+      "tags": [
+        "缅甸",
+        "佛教造像",
+        "题图",
+        "氛围图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-72f11fb5.jpg",
+      "url": "https://www.metmuseum.org/art/collection/search/73150",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 1245233,
+      "metadata": {
+        "checksum": "sha256:72f11fb5c315b9caf2dce47172bc919435c3315c21ae1af00badc17d2b2cc965",
+        "via": "writing-styles 配图（检索路径）",
+        "originalName": "met-73150-burma-buddha.jpg",
+        "license": "CC0（Met Open Access）",
+        "author": "The Metropolitan Museum of Art"
+      },
+      "sourceType": "writing-styles 配图（检索路径）",
+      "sourceRef": "https://www.metmuseum.org/art/collection/search/73150",
+      "createdAt": "2026-10-09T05:45:19.333Z",
+      "updatedAt": "2026-10-09T05:45:19.334Z"
+    },
+    {
+      "id": "mat-bb868c60",
+      "category": "image",
+      "subCategory": null,
+      "name": "明中期青花鲤藻纹罐（大都会博物馆 DP342697）",
+      "description": "",
+      "tags": [
+        "明代",
+        "青花",
+        "历史经纬",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-bb868c60.jpg",
+      "url": "https://www.metmuseum.org/art/collection/search/42549",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 1058163,
+      "metadata": {
+        "checksum": "sha256:bb868c60495d4f9fd74177c3d0e12cfc5113c84b6fa80b072fe2264595fc36e9",
+        "via": "writing-styles 配图（检索路径）",
+        "originalName": "met-42549-ming-jar.jpg",
+        "license": "CC0（Met Open Access）",
+        "author": "The Metropolitan Museum of Art"
+      },
+      "sourceType": "writing-styles 配图（检索路径）",
+      "sourceRef": "https://www.metmuseum.org/art/collection/search/42549",
+      "createdAt": "2026-10-09T05:45:19.398Z",
+      "updatedAt": "2026-10-09T05:45:19.399Z"
+    },
+    {
+      "id": "mat-da60fdce",
+      "category": "image",
+      "subCategory": null,
+      "name": "果敢与妙瓦底两条边境带位置示意（自绘，非比例）",
+      "description": "",
+      "tags": [
+        "缅甸",
+        "示意图",
+        "地图替代",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-da60fdce.png",
+      "url": "自绘（PIL），依据研究报告地理信息；非比例不含国界",
+      "mimeType": "image/png",
+      "sizeBytes": 130187,
+      "metadata": {
+        "checksum": "sha256:da60fdce5050ed15dee501e378e46f80ff6d7a1301a1f1c85324ef01f7318eeb",
+        "via": "writing-styles 配图（自绘路径）",
+        "originalName": "draw-location-schematic.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘路径）",
+      "sourceRef": "自绘（PIL），依据研究报告地理信息；非比例不含国界",
+      "createdAt": "2026-10-09T05:45:19.462Z",
+      "updatedAt": "2026-10-09T05:45:19.463Z"
+    },
+    {
+      "id": "mat-927d27ea",
+      "category": "image",
+      "subCategory": null,
+      "name": "电诈产业规模关键数据图（自绘：UNODC/美财政部/警官估计）",
+      "description": "",
+      "tags": [
+        "数据图表",
+        "电诈",
+        "产业规模",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-927d27ea.png",
+      "url": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计",
+      "mimeType": "image/png",
+      "sizeBytes": 109883,
+      "metadata": {
+        "checksum": "sha256:927d27ea7cbad959ac2d9c1244b355878336251a639aad6d0d9f32ba4a8df4e4",
+        "via": "writing-styles 配图（自绘路径）",
+        "originalName": "draw-scale-data.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘路径）",
+      "sourceRef": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计",
+      "createdAt": "2026-10-09T05:45:19.532Z",
+      "updatedAt": "2026-10-09T05:45:19.532Z"
+    },
+    {
+      "id": "mat-86e70550",
+      "category": "image",
+      "subCategory": null,
+      "name": "果敢与妙瓦底两条边境带位置示意 v2（自绘，图审修正版：删未审计标注滚弄、1027 表述改为发起并进攻老街）",
+      "description": "",
+      "tags": [
+        "缅甸",
+        "示意图",
+        "图审通过",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-86e70550.png",
+      "url": "自绘（draw_kit 设计系统），事实依据：素材 mat-776d07db",
+      "mimeType": "image/png",
+      "sizeBytes": 304902,
+      "metadata": {
+        "checksum": "sha256:86e70550d39ea915a1de043505ab1275f7690dcf1cdf231daf105ebe7dbb577b",
+        "via": "writing-styles 配图（自绘·图审版）",
+        "originalName": "draw-location-schematic-v2.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘·图审版）",
+      "sourceRef": "自绘（draw_kit 设计系统），事实依据：素材 mat-776d07db",
+      "createdAt": "2026-10-09T09:22:02.737Z",
+      "updatedAt": "2026-10-09T09:22:02.738Z"
+    },
+    {
+      "id": "mat-0dab32f1",
+      "category": "image",
+      "subCategory": null,
+      "name": "电诈产业规模关键数据图 v2（自绘，标注二手转述口径）",
+      "description": "",
+      "tags": [
+        "数据图表",
+        "电诈",
+        "图审通过",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-0dab32f1.png",
+      "url": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计（均为二手转述，图副标题已声明）",
+      "mimeType": "image/png",
+      "sizeBytes": 195053,
+      "metadata": {
+        "checksum": "sha256:0dab32f1c56f2b361a2b40ab85e2f7a0a9cdc63ae3127f80a2ce00f0d5807d63",
+        "via": "writing-styles 配图（自绘·图审版）",
+        "originalName": "draw-scale-data-v2.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘·图审版）",
+      "sourceRef": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计（均为二手转述，图副标题已声明）",
+      "createdAt": "2026-10-09T09:22:02.833Z",
+      "updatedAt": "2026-10-09T09:22:02.835Z"
+    },
+    {
+      "id": "mat-b6c6b99b",
+      "category": "report",
+      "subCategory": null,
+      "name": "2026诺贝尔生理学或医学奖（光遗传学）深度研究",
+      "description": "内置应用 builtin_app_topic_research 实机产出：获奖人与分工、发现链、原理、临床转化（FDA/PMDA）、争议（潘卓华/Bamberg/Miesenböck/三人上限）、中国视角；四级信源分层",
+      "tags": [
+        "诺贝尔奖",
+        "光遗传学",
+        "2026",
+        "主题深度研究"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\report\\mat-b6c6b99b.md",
+      "url": "the-bot 主题深度研究工作流（工作流实机运行，6轮研究+独立评估，2026-10-09）",
+      "mimeType": "text/markdown",
+      "sizeBytes": 56824,
+      "metadata": {
+        "checksum": "sha256:b6c6b99bab3d5e23811876202468444bc95fe9fb4f53f29de74525ac02468605",
+        "via": "unknown-workflow",
+        "originalName": "诺贝尔生理学或医学奖研究报告-2026-10-09.md",
+        "license": null,
+        "author": null
+      },
+      "sourceType": "unknown-workflow",
+      "sourceRef": "the-bot 主题深度研究工作流（工作流实机运行，6轮研究+独立评估，2026-10-09）",
+      "createdAt": "2026-10-09T12:07:38.625Z",
+      "updatedAt": "2026-10-09T12:07:38.626Z"
+    },
+    {
+      "id": "mat-380b8cc3",
+      "category": "article",
+      "subCategory": null,
+      "name": "用光操控大脑的人，等了二十年（2026诺奖光遗传学长文）",
+      "description": "素材锁定研究报告的纪实特稿：五层深度、口径纪律、潘卓华争议与中国视角；AI概率39.9→35.6",
+      "tags": [
+        "诺贝尔奖",
+        "光遗传学",
+        "长文",
+        "风格库"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\article\\mat-380b8cc3.md",
+      "url": "the-bot「深度长文写作（风格库）」工作流（writing-styles→libai-skill 双技能管线，2026-10-09）",
+      "mimeType": "text/markdown",
+      "sizeBytes": 19889,
+      "metadata": {
+        "checksum": "sha256:380b8cc3659497b110746c892137c03935f16d9359c9c9343564f25976b14421",
+        "via": "unknown-workflow",
+        "originalName": "长文-用光操控大脑的人等了二十年.md",
+        "license": null,
+        "author": null
+      },
+      "sourceType": "unknown-workflow",
+      "sourceRef": "the-bot「深度长文写作（风格库）」工作流（writing-styles→libai-skill 双技能管线，2026-10-09）",
+      "createdAt": "2026-10-09T12:43:44.388Z",
+      "updatedAt": "2026-10-09T12:43:44.389Z"
+    }
+  ]
+}

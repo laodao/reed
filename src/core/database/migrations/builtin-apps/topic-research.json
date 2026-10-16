@@ -1,0 +1,246 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 主题深度研究",
+  "description": "澄清契约（领域无关问卷）→ 技能产出《调研方法》方案(报告骨架/分析维度矩阵/数据来源路由/取证纪律/验收口径) → 契约编译(先验地图+步骤+逐条可判定验收；信源四级分级=官方机构/官方媒体/互联网媒体/互联网搜索,跨渠道取材不偏官方) → until 循环「研究执行体(联网+正文深读+私有知识库,素材密度优先,带上一轮进展) → 另一模型按验收标准独立评估 → 打包」直到评估通过或达最大轮数 → 按用途成稿(写作用途=高密度写作素材) → 人工确认 → 保存资产",
+  "category": "调研",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "topic", "label": "研究主题", "type": "textarea", "required": true },
+            { "key": "purpose", "label": "研究用途（决定成稿形态：写作用途=素材密度优先，决策用途=结论路径优先）", "type": "select", "defaultValue": "auto", "options": [
+              { "label": "自适应（按主题判断）", "value": "auto" },
+              { "label": "深度文章/系列报道写作素材", "value": "article-writing" },
+              { "label": "决策支持（做不做/怎么做）", "value": "decision" },
+              { "label": "系统了解一个领域", "value": "learning" }
+            ] },
+            { "key": "focus", "label": "重点关注维度（不选=按主题类型自适应）", "type": "select", "multi": true, "options": [
+              { "label": "背景与来龙去脉", "value": "背景与来龙去脉" },
+              { "label": "关键人物与组织", "value": "关键人物与组织" },
+              { "label": "运作机制与手法", "value": "运作机制与手法" },
+              { "label": "关键数据与规模", "value": "关键数据与规模" },
+              { "label": "时间线与关键事件", "value": "时间线与关键事件" },
+              { "label": "各方说法与争议", "value": "各方说法与争议" },
+              { "label": "影响与后续", "value": "影响与后续" },
+              { "label": "实操做法与步骤", "value": "实操做法与步骤" },
+              { "label": "工具与资源", "value": "工具与资源" }
+            ] },
+            { "key": "depth", "label": "研究深度", "type": "select", "defaultValue": "standard", "options": [
+              { "label": "速览", "value": "quick" },
+              { "label": "标准", "value": "standard" },
+              { "label": "深度", "value": "deep" }
+            ] },
+            { "key": "maxRounds", "label": "最大研究轮数（评估判断深度已足够会提前结束）", "type": "number", "defaultValue": 8, "validation": { "min": 1, "max": 12 } },
+            { "key": "outputSpecs", "label": "产出规格（可多选；不选=按主题类型自适应，勾选项会并入验收标准逐轮检查）", "type": "select", "multi": true, "options": [
+              { "label": "时间线（事件脉络/分阶段里程碑）", "value": "timeline" },
+              { "label": "关键数据清单（规模/金额/人数等硬数据）", "value": "key-data" },
+              { "label": "人物与组织名录（角色/关系/现状）", "value": "actors" },
+              { "label": "案例与细节素材库（可直接引用的具体事例）", "value": "cases" },
+              { "label": "引语与当事人说法摘录", "value": "quotes" },
+              { "label": "对比矩阵（多主体/多方案/多阶段）", "value": "matrix" },
+              { "label": "量化公式与单位经济测算", "value": "quant-formula" },
+              { "label": "多方观点与争议对照", "value": "counterpoint" },
+              { "label": "风险与红线清单", "value": "risk" },
+              { "label": "清单与可复用模板", "value": "checklist" },
+              { "label": "可点击来源链接", "value": "cited-links" }
+            ] },
+            { "key": "outputRequirements", "label": "产出要求（自由补充，例：必须给事件完整时间线 / 必须含涉案园区背景与规模 / 必须给分国家打击行动对比；会并入验收标准）", "type": "textarea" },
+            { "key": "referenceSample", "label": "参照样本（可选：粘贴样本文本或链接，只对标结构与密度，不作为事实来源、不照抄结论）", "type": "textarea" },
+            { "key": "kbs", "label": "允许检索的私有知识库（可多选；不选=只查网络与模型知识）", "type": "select-dynamic", "multi": true, "source": "knowledgeBases" },
+            { "key": "researcherModel", "label": "研究模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true },
+            { "key": "evaluatorModel", "label": "评估模型（可用另一个模型，独立评审每轮成果）", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "clarify",
+        "type": "form-collect",
+        "name": "研究契约澄清",
+        "position": { "x": 300, "y": 200 },
+        "config": {
+          "formTitle": "研究契约（越具体结论越准；不确定的项可留空）",
+          "fields": [
+            { "key": "goal", "label": "你想通过这次研究达成什么？（例：写一组深度文章 / 决定要不要做某件事 / 系统了解一个领域）", "type": "string" },
+            { "key": "audience", "label": "这份研究给谁用、怎么用？（例：自己写文章的素材库 / 团队决策参考；可留空）", "type": "string" },
+            { "key": "angle", "label": "切入角度或侧重（例：侧重打击过程与关键节点 / 侧重运作机制与当事人经历；可留空）", "type": "string" },
+            { "key": "mustCover", "label": "必须覆盖的子问题（例：各园区背景与规模 / 关键人物现状；可留空）", "type": "string" },
+            { "key": "scope", "label": "时间/地域范围（例：2020–2025 / 某国+某地区；可留空）", "type": "string" },
+            { "key": "context", "label": "其他背景补充（已有资料/限制/特殊要求；可留空）", "type": "string" }
+          ]
+        }
+      },
+      {
+        "id": "method1",
+        "type": "skill-call",
+        "name": "调研方法（技能出方案）",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "skillId": "research-method",
+          "inputs": [
+            { "key": "topic", "value": "{{start.topic}}\n（重点关注维度：{{start.focus}}；深度档：{{start.depth}}）" },
+            { "key": "goal", "value": "{{clarify.values.goal}}" },
+            { "key": "domainType", "value": "自适应" },
+            { "key": "depth", "value": "{{start.depth}}" },
+            { "key": "constraints", "value": "研究用途={{start.purpose}}；读者与用法={{clarify.values.audience}}；切入角度={{clarify.values.angle}}；必须覆盖={{clarify.values.mustCover}}；时间地域范围={{clarify.values.scope}}；其他背景={{clarify.values.context}}" },
+            { "key": "requiredOutputs", "value": "产出规格：{{start.outputSpecs}}\n产出要求：{{start.outputRequirements}}" },
+            { "key": "knownContext", "value": "参照样本（仅对标结构与密度，不作事实来源、不照抄结论）：{{start.referenceSample}}" }
+          ],
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "plan1",
+        "type": "llm-chat",
+        "name": "研究契约编译",
+        "position": { "x": 760, "y": 200 },
+        "config": {
+          "systemPrompt": "你是研究契约编译器。系统已用「调研方法」技能产出一份方案（含报告骨架、分析维度矩阵、数据来源路由、取证纪律与验收口径），你的任务是把这份方案落到本主题上，输出结构化研究契约 JSON。\n第一步：先凭你自身的模型认知，针对主题输出「已知地图」——列出你对该主题已经知道的关键概念/主体/事件/常见说法，并明确标注哪些可能已过时或不确定（这些只是待验证的先验假设，不是结论）。\n第二步：把方案具体化到本主题——按主题类型裁剪报告骨架与分析维度（事件/现象/人物类主题按来龙去脉、时间线、人物与组织、运作机制、关键数据、各方说法组织；做法/决策类按技能方案组织），不硬凑维度；为每个 must-answer 指定首选信息来源，并按四级分级搭配渠道（官方机构与官方媒体优先，互联网媒体与互联网搜索补足叙事素材；只有登录后台才能看到的标注「需用户后台核验」）。sourcePlan 必须跨渠道：官方机构只覆盖通报/口径/判决等一手信息，事件经过、当事人说法、案例与引语等叙事素材主要来自官方媒体与互联网媒体/搜索——不得只从官方机构渠道取材。说明哪些步骤先靠模型先验、哪些必须联网或查私有知识库、哪些需要问用户。\n第三步：输出「验收标准」：必须回答的问题清单（每问写明要研究到多深：事实/机制/数字与规模/各方说法）+ 深度档（速览/标准/深度）+ 证据要求。证据要求是**分级标注而不是来源门槛**：每条信息标注来源层级（官方机构 / 官方媒体 / 互联网媒体 / 互联网搜索 / 模型先验-待验证）；关键事实尽量两个独立来源交叉，交叉不到的标注「单一来源」保留；不得因为来源层级不够权威就把信息丢弃——标注层级本身就是交付形态。方法方案里的验收口径与呈现形态要求须逐条落进 acceptance。\n第四步：用户产出规格（outputSpecs 勾选项）与产出要求（outputRequirements 自由文本）是硬性契约：必须逐条转成可逐项判定「有/无、够/不够」的 acceptance 条目；参照样本（referenceSample）只用于对标结构与密度，不得作为事实来源、不得照抄其结论。\n若研究契约给了目标/读者/切入角度/必须覆盖/范围，规划与验收必须围绕这些约束定制，不得泛泛而谈。\n深度与预算：速览 1 轮、标准 2-3 轮、深度可达最大轮数（由 until 循环按评估结果提前收尾）；每轮检索要有目的。\n只输出 JSON：{\"type\":\"主题类型\",\"knownMap\":[\"先验认知条目(标注是否可能过时)\"],\"steps\":[{\"step\":\"步骤名\",\"goal\":\"这步要得出什么\",\"sources\":\"首选信息源(含渠道分级)\"}],\"acceptance\":{\"questions\":[{\"q\":\"必须回答的问题\",\"depth\":\"到多深\"}],\"evidenceRule\":\"证据要求\"},\"sourcePlan\":\"信息源总体策略(官方机构/官方媒体/互联网媒体/互联网搜索跨渠道搭配)\"}。不要输出其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n研究用途：{{start.purpose}}（写作用途=素材密度优先）\n关注维度：{{start.focus}}（未勾选=自适应）\n深度档：{{start.depth}}\n最大轮数：{{start.maxRounds}}\n\n【调研方法方案（技能产出：报告骨架 / 分析维度 / 数据来源路由 / 取证纪律 / 验收口径；按其落地）】\n{{method1.content}}\n\n【研究契约】\n目标：{{clarify.values.goal}}\n读者与用法：{{clarify.values.audience}}\n切入角度：{{clarify.values.angle}}\n必须覆盖：{{clarify.values.mustCover}}\n时间地域范围：{{clarify.values.scope}}\n其他背景：{{clarify.values.context}}\n\n【产出规格（用户勾选，必须并入 acceptance 逐条可验收）】{{start.outputSpecs}}\n【用户产出要求（必须并入 acceptance）】{{start.outputRequirements}}\n【参照样本（仅对标结构与密度，不作事实来源、不照抄结论）】{{start.referenceSample}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "round1",
+        "type": "loop",
+        "name": "研究轮次循环（直到评估通过）",
+        "position": { "x": 980, "y": 320 },
+        "config": {
+          "mode": "until",
+          "stopExpression": "{{pack1.result.verdict}}",
+          "stopValue": "pass",
+          "maxIterations": "{{start.maxRounds}}",
+          "errorPolicy": "skip"
+        }
+      },
+      {
+        "id": "r1",
+        "type": "agent-loop",
+        "name": "本轮研究执行体",
+        "position": { "x": 1180, "y": 400 },
+        "config": {
+          "task": "第 {{round1.index}} 轮研究（轮次从 0 计，最大 {{start.maxRounds}} 轮）。若存在上一轮进展与评估，请在其基础上增量研究：\n上一轮研究进展：{{round1.prev.result.notes}}\n上一轮评估差距：{{round1.prev.result.gaps}}\n（第一轮以上为空，直接从规划开始。）\n研究主题：{{start.topic}}\n研究用途：{{start.purpose}}（写作用途=优先收集可入文的具体事实、案例与引语）\n深度档：{{start.depth}}\n【研究契约】目标={{clarify.values.goal}} 读者与用法={{clarify.values.audience}} 切入角度={{clarify.values.angle}} 必须覆盖={{clarify.values.mustCover}} 范围={{clarify.values.scope}} 其他背景={{clarify.values.context}}\n规划与验收：{{plan1.parsed}}\n执行规划步骤中尚未达标/评估指出的差距部分，最后输出本轮「研究进展」（含上一轮已有结论与证据锚的完整浓缩版，便于下一轮与成稿使用）。",
+          "systemPrompt": "你是主题研究的执行体（研究员）。你的目标是为成稿收集**高信息密度的素材**——具体的事实、数字、案例与说法，而不是干巴巴的结论。工作纪律：\n1. 先按需更新与验证「先验地图」：基于自身知识回答的部分必须标注【先验-待验证】；能查证的一律查证后升级为【已验证】并给出证据锚。\n2. 需要事实/最新信息时：优先查用户私有知识库（先用 wf_kb_list 看系统有哪些库、判断与主题是否相关，再对相关库用 wf_kb_retrieve 检索，引用时注明文档名）；私有库没有或不足时用 web_search 搜索，重要的用 wf_web_extract 抓正文深读。避免只凭标题列表下结论。\n3. 来源纪律——四级分级标注，不做来源门槛：每条信息标注来源层级（官方机构 / 官方媒体 / 互联网媒体 / 互联网搜索 / 模型先验-待验证）。层级低的信息**保留并如实标注**（例：「互联网媒体报道称…」「网络信息，某论坛帖称…」），不要因为不够权威就丢弃；关键事实尽量两个独立来源交叉，交叉不到的标注「单一来源」；网络说法与官方通报矛盾的，并列保留并注明冲突。唯一红线：禁止编造标题/URL/数字/引文——查不到就写「未查到」，不要脑补；政策/费率等易变信息标注「以官方最新为准」并给采集时间。\n4. 渠道结构必须跨级：官方机构只给通报、口径、判决等一手信息；事件经过、当事人说法、案例与引语等叙事素材主要来自官方媒体与互联网媒体/搜索。每轮检索都要覆盖官方渠道之外的媒体与网络渠道，**不得只从官方机构渠道取材**；规划里某步骤只写了官方渠道时，主动补媒体与网络检索。\n5. 素材密度：对每个子问题优先收集可入文的具体材料——时间、地点、人名、机构名、金额与数量级、案件经过、直接或转述引语、生动细节与场景；数字尽量给量级/区间与出处。只有定性概括、没有具体事实的进展视为未完成。\n6. 过程产物是研究笔记不是正文：对每个子问题给「事实与素材 + 证据锚 + 来源层级 + 缺口」；新缺口登记进待研队列，不悄悄跳过。\n7. 预算感：每次搜索/抓取前想清楚要验证什么；重复无效检索等于停滞。\n8. 增量推进：上一轮已证实的内容直接沿用并浓缩（不要重复检索已解决项）；本轮聚焦评估差距/未覆盖步骤，尽量把「未查到」变成「查到了/确认查不到（说明范围）」。\n9. 深度档（standard/deep）下，主动收集可做成时间线、人物与组织名录、对比矩阵、数据清单、案例素材库的条目化信息（数值带量级与层级标签），避免只给定性描述；按验收标准逐条回应，回应不了的在缺口里写明缺什么与去哪里找。\n10. 输出「研究进展」浓缩纪律：事实密度优先——已确认的事实逐条保留（含数字/日期/人名/来源层级），上一轮内容可压缩为短句带过；每轮 ≤ ~2500 字，不要写成正文。\n11. 深度自评：每轮末给出「是否已足以成稿」的判断——若关键验收问题已覆盖、素材足够支撑成稿、剩余缺口都只能靠用户补充（非本次检索能解决），在进展末尾明确写一句【深度已足够成稿】并列出剩余非阻塞项；否则写【仍需继续研究】并给出下一轮要查的具体问题。不要为凑轮数而重复检索已解决问题。",
+          "toolWhitelist": ["web_search", "wf_web_extract", "wf_kb_retrieve", "wf_kb_list"],
+          "maxIterations": 18,
+          "maxToolCalls": 28,
+          "maxDurationMs": 1500000,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "e1",
+        "type": "llm-chat",
+        "name": "本轮独立评估",
+        "position": { "x": 1400, "y": 400 },
+        "config": {
+          "systemPrompt": "你是独立的主题研究评审（用与研究员不同的视角和模型）。对照「验收标准」审查本轮研究进展，输出 JSON：\n{\"verdict\":\"pass 或 revise（二选一）\",\"perAcceptance\":[{\"q\":\"验收问题\",\"coverage\":\"有/部分/无\",\"depth\":\"够/不够\",\"evidence\":\"强/中/弱/无据\",\"note\":\"说明\"}],\"gaps\":[{\"issue\":\"差距\",\"action\":\"下一轮应查什么/问谁\",\"priority\":\"高/中/低\"}],\"hallucinationRisk\":[\"既无来源又无先验/传闻标注的可疑论断\"],\"overall\":\"总体评语\"}\n评审要点（须逐条核对 acceptance，其中包含用户在 outputSpecs/outputRequirements 里提出的必达项；用户规格未满足且属可检索/可执行范畴的判 revise，属检索通道不可达的记为「需用户补充/官方核验」非阻塞项）：覆盖是否齐全；**素材密度是否足够成稿**——有没有具体的时间/人名/机构/数字（含量级与区间）/案例经过/引语，还是只有定性概括；证据是否可溯源；有没有既无来源又无「先验/传闻」标注的论断（幻觉）；来源层级是否逐条按四级标注（官方机构/官方媒体/互联网媒体/互联网搜索；层级低但已如实标注的不算问题，分级标注本身就是交付形态）；渠道结构是否过度单一（只用了官方机构渠道、全无媒体与网络来源时在 gaps 里给出补充建议，除非导致关键验收问题未覆盖，否则不据此判 revise）；时效与范围是否被误用/漏标；维度有无遗漏。\nverdict 判定口径（务必按此判定，避免该停不停）：只有「关键验收问题未覆盖」或「存在可检索却未查的关键缺口」或「素材密度明显不足（多数验收项只有结论没有事实支撑）」或「有无据论断」才判 revise；若关键验收问题已覆盖、素材可支撑成稿、无无据论断，剩余差距（单一来源、来源层级低但已标注、渠道单一、需用户补充信息等）都属于**非阻塞项**，则判 pass（并在 overall 里写明剩余非阻塞项），让流程及时收敛。不要因为「信息不够权威」而要求继续研究——媒体与网络来源正是素材的主要载体。不要替研究员完成研究，只做评估与差距清单。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n用户产出规格：{{start.outputSpecs}}\n用户产出要求：{{start.outputRequirements}}\n本轮研究进展：\n{{r1.answer}}\n\n请按上述要求输出 JSON 评估对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.evaluatorModel.providerConfigId}}",
+          "modelId": "{{start.evaluatorModel.modelId}}"
+        }
+      },
+      {
+        "id": "pack1",
+        "type": "code",
+        "name": "打包本轮结果",
+        "position": { "x": 1620, "y": 400 },
+        "config": {
+          "language": "js",
+          "inputs": [
+            { "key": "notes", "value": "{{r1.answer}}" },
+            { "key": "verdict", "value": "{{e1.parsed.verdict}}" },
+            { "key": "gaps", "value": "{{e1.parsed.gaps}}" }
+          ],
+          "code": "return { notes: inputs.notes, verdict: inputs.verdict, gaps: inputs.gaps };"
+        }
+      },
+      {
+        "id": "writer",
+        "type": "llm-chat",
+        "name": "收敛成稿",
+        "position": { "x": 1080, "y": 80 },
+        "config": {
+          "systemPrompt": "你是研究成稿作者。任务：把研究素材整理成一份**信息密度足够高、可直接支撑写作或决策使用**的深度资料报告。系统已用「调研方法」技能产出方案（含报告骨架与呈现纪律），正文按该骨架组织章节，并按研究用途调整形态——写作用途优先素材密度与可引用性（事实、案例、引语尽量全保留），决策用途优先结论与路径，学习用途优先脉络与解释。基于最后一轮「研究进展」与「独立评估」，把主题写成一份可溯源的报告。输出 JSON：\n{\"title\":\"报告标题\",\"execSummary\":\"执行摘要：核心发现与总体可信度，150-300 字\",\"body\":\"正文（Markdown，按技能方案骨架组织章节）。信息密度优先：把研究得到的全部具体事实写进去——时间线、人物与组织、数字与金额（带量级、口径与来源层级）、案例经过、直接或转述引语、各方说法与争议点；每条关键信息带来源标注（官方机构/官方媒体/互联网媒体/互联网搜索/模型先验-待验证），单一来源如实标注；说法冲突并列呈现，不择一当定论。语言自然流畅、少用学术腔与套话，叙述与清单结合，表格用于数据与对比；宁长勿空，但不注水、不重复、不写空框架\",\"method\":\"方法说明：查了什么（官方机构/官方媒体/互联网媒体/互联网搜索/私有知识库）、共进行几轮研究、每轮是否被跳过、哪些没查到\",\"limits\":\"局限与未决：无法确认的点、评估指出的差距与幻觉风险、需要读者自行核验的问题清单\",\"sourcesMd\":\"参考来源（Markdown 列表，按 官方机构 / 官方媒体 / 互联网媒体 / 互联网搜索与其他网络信息 / 私有知识库文档 分层；每条给可点击链接 [标题](URL) 与采集时间；确无链接的标注「网络信息，未留链接」）\",\"actionPlan\":\"下一步行动（分优先级：可追加研究的方向 / 需用户补充的信息 / 使用这份报告的建议）\",\"disclaimer\":\"时效与核验提示一句话\"}\n硬性契约：用户产出规格（outputSpecs 勾选项）与产出要求（outputRequirements）必须逐条落实——逐项对照，能写进正文的写进正文，写不进去的必须在 limits 里说明原因与缺什么；参照样本只对标结构与密度，禁止照抄其结论。\n纪律：不编造来源与数字；模型先验内容标注「待验证」；若轮次触顶仍未通过或有轮次被跳过，在 limits/method 中如实写明。正文是可直接展示的 Markdown，不要出现 JSON 转义或代码块包裹。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n研究用途：{{start.purpose}}（写作用途=素材密度与可引用性优先）\n【研究契约】目标={{clarify.values.goal}} 读者与用法={{clarify.values.audience}} 切入角度={{clarify.values.angle}} 必须覆盖={{clarify.values.mustCover}} 范围={{clarify.values.scope}}\n【调研方法与报告骨架（技能产出，按此组织正文与章节形态）】\n{{method1.content}}\n验收标准：{{plan1.parsed.acceptance}}\n产出规格：{{start.outputSpecs}}\n产出要求：{{start.outputRequirements}}\n参照样本（仅对标结构与密度）：{{start.referenceSample}}\n研究共进行了 {{round1.iterations}} 轮。\n最后一轮研究进展：\n{{round1.last.result.notes}}\n\n最后一轮评估：\n{{round1.last.result.verdict}} / {{round1.last.result.gaps}}\n\n全部轮次结果（供核对与审计，正文素材以这些研究笔记为准，尽量全量转化进报告）：\n{{round1.results}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "maxTokens": 32768,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "报告拼装",
+        "position": { "x": 1340, "y": 80 },
+        "config": {
+          "title": "{{start.topic}} 深度研究",
+          "template": "# {{writer.parsed.title}}\n\n{{writer.parsed.execSummary}}\n\n---\n\n{{writer.parsed.body}}\n\n---\n\n## 下一步行动\n\n{{writer.parsed.actionPlan}}\n\n---\n\n## 方法与局限\n\n{{writer.parsed.method}}\n\n{{writer.parsed.limits}}\n\n## 参考来源\n\n{{writer.parsed.sourcesMd}}\n\n> {{writer.parsed.disclaimer}}\n\n---\n\n*由 The Bot「主题深度研究」工作流生成*",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "final1",
+        "type": "human-review",
+        "name": "终稿人工确认",
+        "position": { "x": 1600, "y": 80 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "content", "label": "终稿全文（可直接修改，修改后保存修改版）", "type": "string" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1860, "y": 80 },
+        "config": {
+          "content": "{{final1.content}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "研究简报",
+          "name": "{{start.topic}}深度研究",
+          "tags": "主题研究,{{start.topic}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 2120, "y": 80 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "clarify", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "clarify", "targetNodeId": "method1", "kind": "approve" },
+      { "id": "e3", "sourceNodeId": "method1", "targetNodeId": "plan1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "clarify", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e5", "sourceNodeId": "plan1", "targetNodeId": "round1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "round1", "targetNodeId": "r1", "kind": "loop-body" },
+      { "id": "e7", "sourceNodeId": "r1", "targetNodeId": "e1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "e1", "targetNodeId": "pack1", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "pack1", "targetNodeId": "round1", "kind": "loop-back" },
+      { "id": "e10", "sourceNodeId": "round1", "targetNodeId": "writer", "kind": "loop-done" },
+      { "id": "e11", "sourceNodeId": "writer", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "report1", "targetNodeId": "final1", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "final1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e14", "sourceNodeId": "final1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e15", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": { "maxTotalToolCalls": 300, "maxDurationMs": 7200000 }
+}

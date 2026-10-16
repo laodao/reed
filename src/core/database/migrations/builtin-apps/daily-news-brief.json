@@ -1,0 +1,218 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 每日热点早报",
+  "description": "从全球各大新闻媒体（按主题预置源）采集 → AI 定位栏目页/专栏首页 → AI 筛选有价值链接 → 抓取正文（长度可配置不轻易截断）→ 生成早报长图；采集正文与报告原始文件可一键存入知识库",
+  "category": "news",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 320 },
+        "config": {
+          "inputs": [
+            { "key": "sourceCategory", "label": "信息来源类别", "type": "select-dynamic", "source": "infoSourceCategories", "required": true, "defaultValue": "news", "help": "设置 → 信息来源 中的来源类别（内置「新闻来源」；可先在设置里新增金融/物理等领域类别）" },
+            { "key": "topic", "label": "来源分组", "type": "select-dynamic", "source": "infoSourceTopics", "required": true, "defaultValue": "ai", "linkage": { "watch": "sourceCategory", "matchBy": "categoryId" } },
+            { "key": "sourceIds", "label": "信息来源（可多选，可选）", "type": "select-dynamic", "source": "infoSources", "multi": true, "linkage": { "watch": "topic", "matchBy": "topicId" } },
+            { "key": "customUrls", "label": "自定义媒体源 URL（可选）", "type": "json", "required": false, "defaultValue": [] },
+            { "key": "maxItems", "label": "精选新闻条数", "type": "number", "defaultValue": 8 },
+            { "key": "request", "label": "效果描述", "type": "textarea", "required": true, "defaultValue": "聚焦今日重要进展，按主题分组，每条含来源与一句话要点，500 字内" },
+            { "key": "templateAssetId", "label": "报告模板（可选）", "type": "select-dynamic", "source": "assets:template" },
+            { "key": "kbId", "label": "知识库（保存采集正文与报告，可选）", "type": "select-dynamic", "source": "knowledgeBases" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "crawl1",
+        "type": "crawl-news",
+        "name": "全球媒体采集（首页）",
+        "position": { "x": 300, "y": 320 },
+        "config": { "topicId": "{{start.topic}}", "sourceIds": "{{start.sourceIds}}", "customUrls": "{{start.customUrls}}", "maxLinks": 20, "maxSources": 10 }
+      },
+      {
+        "id": "pick1",
+        "type": "llm-chat",
+        "name": "AI 定位栏目页",
+        "position": { "x": 560, "y": 320 },
+        "config": {
+          "systemPrompt": "你是新闻编辑。下面是从各新闻媒体首页抓取的链接列表（每条带来源 source 字段）。请**按来源分组**挑选与主题相关的栏目页/专题页/二级频道页（如「AI 频道」「科技产业」「人工智能」「大模型」「llm」等专栏首页），不要挑选具体的新闻文章页。每个来源最多挑选 8 个栏目页；来源较多时优先选与主题最相关的来源。",
+          "prompt": "主题：{{start.topic}}\n\n候选链接（标题+URL+来源）：\n{{crawl1.links}}\n\n只输出 JSON 数组，每项 {\"source\":\"来源名\",\"items\":[{\"title\":\"栏目页标题\",\"url\":\"完整URL\"}]}，每个 source 的 items 最多 8 个。不要输出任何解释。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "col1",
+        "type": "crawl-links",
+        "name": "抓取栏目页链接",
+        "position": { "x": 820, "y": 320 },
+        "config": { "urls": "{{pick1.parsed}}", "maxLinks": 50, "maxConcurrent": 5 }
+      },
+      {
+        "id": "pick2",
+        "type": "llm-chat",
+        "name": "AI 筛选新闻链接",
+        "position": { "x": 1080, "y": 320 },
+        "config": {
+          "systemPrompt": "你是新闻编辑。从候选链接中挑选与主题最相关、最有新闻价值的文章条目。注意：只选可抓取正文的新闻文章页（媒体官网文章、报道页）；排除社交媒体与短内容平台链接（x.com/twitter/facebook/instagram/youtube/weibo 等推文或短视频页——这些页面无法抓取正文）。",
+          "prompt": "主题：{{start.topic}}\n用户效果要求：{{start.request}}\n\n候选链接（标题+来源+URL）：\n{{col1.links}}\n\n只输出 JSON 数组，每项 {\"title\":\"标题\",\"url\":\"完整URL\",\"reason\":\"不超过20字的入选理由\"}，最多 {{start.maxItems}} 条。不要输出任何解释。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐条抓取正文",
+        "position": { "x": 1340, "y": 320 },
+        "config": { "listExpression": "{{pick2.parsed}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "抓取正文",
+        "position": { "x": 1580, "y": 260 },
+        "config": { "url": "{{loop1.item.url}}", "maxLength": 100000, "maxLinks": 0, "onError": "skip" }
+      },
+      {
+        "id": "saveKb1",
+        "type": "kb-ingest",
+        "name": "网页正文存知识库",
+        "position": { "x": 1820, "y": 260 },
+        "config": {
+          "knowledgeBaseId": "{{start.kbId}}",
+          "title": "「早报采集」{{extract1.title}}",
+          "content": "{{extract1.text}}",
+          "sourceKey": "{{loop1.item.url}}",
+          "waitForCompletion": false,
+          "passthrough": { "title": "{{extract1.title}}", "text": "{{extract1.text}}", "url": "{{loop1.item.url}}", "skipped": "{{extract1.skipped}}" }
+        }
+      },
+      {
+        "id": "gen1",
+        "type": "llm-chat",
+        "name": "生成早报",
+        "position": { "x": 560, "y": 560 },
+        "config": {
+          "systemPrompt": "你是早报编辑。按用户效果要求，把素材整理成结构化早报 markdown：\n- 素材可能包含外文（主要为英文），请先理解其内容，一律用中文撰写早报\n- 主题分组，每组 3-5 条\n- 每条：标题加粗 + 一句话要点 + 来源\n- 文末附「更多请查看完整链接」\n\n只输出 markdown 正文，不要额外解释。",
+          "prompt": "主题：{{start.topic}}\n日期：{{sys.today}}\n用户效果要求：{{start.request}}\n\n已抓取素材（标题+来源+正文，可能为英文）：\n{{loop1.results}}\n\n请用中文生成早报 markdown。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "是否有自定义模板",
+        "position": { "x": 820, "y": 560 },
+        "config": {
+          "branches": [
+            { "branchId": "hasTemplate", "label": "使用自定义模板", "conditions": [{ "left": "{{start.templateAssetId}}", "operator": "not_empty" }] },
+            { "branchId": "noTemplate", "label": "使用内置版式", "conditions": [{ "left": "{{start.templateAssetId}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noTemplate"
+        }
+      },
+      {
+        "id": "read1",
+        "type": "read-asset",
+        "name": "读取模板",
+        "position": { "x": 1060, "y": 620 },
+        "config": { "assetId": "{{start.templateAssetId}}", "output": "content" }
+      },
+      {
+        "id": "report_custom",
+        "type": "report-image",
+        "name": "早报长图（自定义模板）",
+        "position": { "x": 1300, "y": 620 },
+        "config": { "title": "{{start.topic}} 热点早报 {{sys.today}}", "template": "{{read1.content}}", "templateId": "morningReport" }
+      },
+      {
+        "id": "report_default",
+        "type": "report-image",
+        "name": "早报长图（内置版式）",
+        "position": { "x": 1300, "y": 500 },
+        "config": { "title": "{{start.topic}} 热点早报 {{sys.today}}", "template": "# {{start.topic}} 热点早报（{{sys.today}}）\n\n{{gen1.content}}", "templateId": "morningReport" }
+      },
+      {
+        "id": "saveImgCustom",
+        "type": "save-asset",
+        "name": "早报长图存资产库（自定义模板）",
+        "position": { "x": 1720, "y": 660 },
+        "config": { "content": "{{report_custom.filePath}}", "kind": "file", "category": "image", "subCategory": "早报长图", "name": "{{start.topic}}早报长图-{{sys.today}}", "tags": "早报,{{start.topic}}" }
+      },
+      {
+        "id": "saveImgDefault",
+        "type": "save-asset",
+        "name": "早报长图存资产库（内置版式）",
+        "position": { "x": 1720, "y": 440 },
+        "config": { "content": "{{report_default.filePath}}", "kind": "file", "category": "image", "subCategory": "早报长图", "name": "{{start.topic}}早报长图-{{sys.today}}", "tags": "早报,{{start.topic}}" }
+      },
+      {
+        "id": "saveKb2",
+        "type": "kb-ingest",
+        "name": "报告存知识库",
+        "position": { "x": 1540, "y": 560 },
+        "config": {
+          "knowledgeBaseId": "{{start.kbId}}",
+          "title": "「早报报告」{{start.topic}}-{{sys.today}}",
+          "content": "{{report_default.markdown}}{{report_custom.markdown}}",
+          "sourceKey": "report-{{start.topic}}-{{sys.today}}",
+          "waitForCompletion": false
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1780, "y": 560 },
+        "config": { "content": "# {{start.topic}} 热点早报（{{sys.today}}）\n\n{{gen1.content}}", "kind": "text", "category": "text", "subCategory": "早报", "name": "{{start.topic}}早报-{{sys.today}}", "tags": "早报,{{start.topic}}" }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 2020, "y": 560 },
+        "config": { "title": "早报已生成", "message": "{{start.topic}} 热点早报（{{sys.today}}）已生成，资产 ID：{{save1.assetId}}", "level": "success" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 2260, "y": 560 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "crawl1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "crawl1", "targetNodeId": "pick1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "pick1", "targetNodeId": "col1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "col1", "targetNodeId": "pick2", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "pick2", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "extract1", "kind": "loop-body" },
+      { "id": "e7", "sourceNodeId": "extract1", "targetNodeId": "saveKb1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "saveKb1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e9", "sourceNodeId": "loop1", "targetNodeId": "gen1", "kind": "loop-done" },
+      { "id": "e10", "sourceNodeId": "gen1", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "cond1", "targetNodeId": "read1", "kind": "branch", "branchId": "hasTemplate" },
+      { "id": "e12", "sourceNodeId": "cond1", "targetNodeId": "report_default", "kind": "branch", "branchId": "noTemplate" },
+      { "id": "e13", "sourceNodeId": "read1", "targetNodeId": "report_custom", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "report_custom", "targetNodeId": "saveImgCustom", "kind": "normal" },
+      { "id": "e15", "sourceNodeId": "report_default", "targetNodeId": "saveImgDefault", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "saveImgCustom", "targetNodeId": "saveKb2", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "saveImgDefault", "targetNodeId": "saveKb2", "kind": "normal" },
+      { "id": "e18", "sourceNodeId": "saveKb2", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e19", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e20", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [{ "type": "cron", "expression": "0 8 * * *", "preset": "daily", "enabled": false }],
+  "settings": { "maxOutputChars": 800000 }
+}

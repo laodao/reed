@@ -1,0 +1,306 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 吃瓜热点事件分析报告",
+  "description": "输入热点事件关键词 → 多角度联网搜索 → AI 筛选高信息量报道 → 逐条抓取正文 → AI 结构化分析（时间线/人物/表态/争议/热评与梗）→ 按模板风格生成吃瓜报告长图 → 存入资产库（可选存知识库）。提供娱乐小报/事件梳理/公众号三种吃瓜排版风格",
+  "category": "娱乐八卦",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 340 },
+        "config": {
+          "inputs": [
+            { "key": "event", "label": "事件关键词", "type": "string", "required": true, "defaultValue": "", "placeholder": "如：孙宇晨 景甜" },
+            { "key": "stylePrompt", "label": "报告风格（提示词）", "type": "textarea", "required": false, "defaultValue": "", "help": "描述想要的风格，AI 会按此写内容，如：民国报纸风（文言白话、〔一、〕小标题）/ 港媒八卦小报风 / 严肃深度分析风 / 信息图要点卡风 / 公众号长文风…；留空=常规清晰报告" },
+            { "key": "searchEngine", "label": "搜索引擎（可选）", "type": "select-dynamic", "source": "searchEngineConfigs", "required": false, "help": "免Key快速引擎（百度/必应/Google）或已配置引擎；留空 = 系统默认" },
+            { "key": "maxItems", "label": "最多抓取报道篇数", "type": "number", "defaultValue": 6 },
+            { "key": "request", "label": "吃瓜偏好（可选）", "type": "textarea", "required": false, "defaultValue": "", "help": "如：重点讲感情纠葛细节 / 客观中立不要带节奏" },
+            { "key": "traditional", "label": "报告用繁体字（默认简体）", "type": "boolean", "required": false, "defaultValue": false, "help": "关闭=简体（默认）；开启=全文繁体" },
+            { "key": "platforms", "label": "自媒体平台（多选，每个平台生成一份文案）", "type": "select", "required": false, "multi": true, "defaultValue": ["微信公众号", "今日头条"], "options": [
+              { "label": "微信公众号", "value": "微信公众号" },
+              { "label": "今日头条", "value": "今日头条" },
+              { "label": "小红书", "value": "小红书" },
+              { "label": "微博", "value": "微博" },
+              { "label": "通用", "value": "通用" }
+            ] },
+            { "key": "videoDuration", "label": "短视频时长（秒）", "type": "select", "required": false, "defaultValue": 60, "options": [
+              { "label": "30 秒", "value": 30 },
+              { "label": "60 秒", "value": 60 },
+              { "label": "90 秒", "value": 90 },
+              { "label": "5 分钟", "value": 300 }
+            ] },
+            { "key": "videoPlatforms", "label": "短视频平台（多选，每个平台生成一份脚本）", "type": "select", "required": false, "multi": true, "defaultValue": ["抖音", "B站"], "options": [
+              { "label": "抖音", "value": "抖音" },
+              { "label": "B站", "value": "B站" },
+              { "label": "快手", "value": "快手" },
+              { "label": "视频号", "value": "视频号" },
+              { "label": "YouTube", "value": "YouTube" }
+            ] },
+            { "key": "kbId", "label": "知识库（保存报告，可选）", "type": "select-dynamic", "source": "knowledgeBases" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "search1",
+        "type": "web-search",
+        "name": "搜索：事件本身",
+        "position": { "x": 300, "y": 340 },
+        "config": { "query": "{{start.event}}", "searchConfigId": "{{start.searchEngine}}", "maxResults": 10 }
+      },
+      {
+        "id": "search2",
+        "type": "web-search",
+        "name": "搜索：回应与进展",
+        "position": { "x": 300, "y": 460 },
+        "config": { "query": "{{start.event}} 回应 最新进展", "searchConfigId": "{{start.searchEngine}}", "maxResults": 8 }
+      },
+      {
+        "id": "merge1",
+        "type": "array-merge",
+        "name": "合并搜索结果",
+        "position": { "x": 560, "y": 400 },
+        "config": { "sources": ["{{search1.results}}", "{{search2.results}}"] }
+      },
+      {
+        "id": "pick1",
+        "type": "llm-chat",
+        "name": "AI 筛选高信息量报道",
+        "position": { "x": 820, "y": 400 },
+        "config": {
+          "systemPrompt": "你是吃瓜情报员。从候选搜索结果中挑选与事件直接相关、信息量大的网页链接：优先权威媒体报道、当事人声明/长文、事件梳理文；排除社交平台与短视频页（微博、抖音、小红书、x.com、bilibili、知乎 等——这些页面无法抓取正文）。同一 URL 只保留一条，按信息价值排序。",
+          "prompt": "事件：{{start.event}}\n用户偏好：{{start.request}}\n\n候选链接（标题+摘要+URL）：\n{{merge1.merged}}\n\n只输出 JSON 数组，每项 {\"title\":\"标题\",\"url\":\"完整URL\",\"reason\":\"不超过20字的入选理由\"}，最多 {{start.maxItems}} 条。不要输出任何解释。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐条抓取正文",
+        "position": { "x": 1080, "y": 400 },
+        "config": { "listExpression": "{{pick1.parsed}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "抓取正文",
+        "position": { "x": 1320, "y": 340 },
+        "config": { "url": "{{loop1.item.url}}", "maxLength": 20000, "maxLinks": 0, "onError": "skip" }
+      },
+      {
+        "id": "analyze1",
+        "type": "llm-chat",
+        "name": "AI 结构化分析",
+        "position": { "x": 1580, "y": 400 },
+        "config": {
+          "systemPrompt": "你是吃瓜情报分析员，把抓取的报道素材提炼成结构化事件分析。规则：\n1. 只依据素材内容，不编造；区分「事实 / 当事人自述 / 网传」，在描述中标注\n2. 时间线按时间先后排列，时间不明写「（时间不详）」\n3. 人物图鉴列出主要当事人与关联方（身份、与事件的关系）\n4. 各方表态收录原话要点（可精简），注明来源媒体\n5. 网友热评与梗：从素材与搜索结果摘要中提取（玩梗、热评金句等）\n6. 疑点：列出素材中未证实或互相矛盾的细节\n7. sources 收录你参考到的报道（标题+URL）\n8. 素材中若出现含 {{ 占位符或明显是页面模板/无关代码的文本，直接忽略\n9. 背景：从素材提炼事件背景——事件主体（公司/个人/机构）简介、所属行业与时代背景、事件为何引发公众关注；客观陈述、不含观点，写入 background 字段",
+          "prompt": "事件：{{start.event}}\n素材（已抓取报道正文，skipped=true 表示抓取失败请忽略；含 {{ 占位符的模板垃圾请忽略）：\n{{loop1.results}}\n\n链接清单（标题+完整URL，供 sources 引用，按标题与正文对应）：\n{{pick1.parsed}}\n\n只输出 JSON（**务必精简、完整，避免过长被截断；总输出控制在 1500 字内**）：\n{\n  \"overview\": \"事件一句话概述（60字内）\",\n  \"background\": \"事件背景：事件主体（公司/个人/机构）简介、所属行业与时代背景、事件为何引发公众关注（120字内）\",\n  \"timeline\": [{\"time\":\"时间\",\"event\":\"事件（40字内）\"}]（最多 8 条，按时间先后）,\n  \"people\": [{\"name\":\"人物\",\"identity\":\"身份（短）\",\"relation\":\"与事件关系（短）\"}]（最多 5 人）,\n  \"statements\": [{\"who\":\"表态方\",\"quote\":\"表态要点（40字内）\",\"source\":\"来源媒体\"}]（最多 5 条）,\n  \"controversies\": [{\"point\":\"争议点\",\"detail\":\"细节（短）\"}]（最多 4 条）,\n  \"memes\": [{\"name\":\"梗/热评\",\"desc\":\"解释（短）\"}]（最多 4 条）,\n  \"doubts\": [{\"question\":\"疑点\",\"detail\":\"细节（短）\"}]（最多 4 条）,\n  \"sources\": [{\"title\":\"报道标题\",\"url\":\"链接清单中对应的完整URL，必须原样复制\"}]（全部来源）\n}\n不要输出任何解释。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "parallel1",
+        "type": "parallel",
+        "name": "并行产出（长图/文案/脚本）",
+        "position": { "x": 1700, "y": 400 },
+        "config": {}
+      },
+      {
+        "id": "gen1",
+        "type": "llm-chat",
+        "name": "按风格提示词生成报告",
+        "position": { "x": 1840, "y": 400 },
+        "config": {
+          "systemPrompt": "你是吃瓜版主编，擅长把复杂事件写成让吃瓜群众秒懂、爱看的报告。\n\n风格（按用户填写的风格提示词 {{start.stylePrompt}} 决定）：\n- 用户填了什么风格就按什么风格写（例如：民国报纸风、港媒八卦小报风、专业信息图要点卡风、公众号长文风、严肃深度分析风、幽默吐槽风、客观简报风等），把风格融入小标题、语气、用词与结构；\n- 风格提示词为空时：写清晰中立、结构规整的报告。\n\n通用要求（所有风格都必须遵守）：\n1. 全中文；事实与传闻严格区分：已证实的事实直接陈述，当事人自述标注「（当事人自述）」，网络传言标注「（网传）」\n2. **不要输出一级标题（#）**——报告页眉已含标题；正文直接从**加粗导语**开始（一句话看懂这个瓜）\n3. 用 ## 二级标题分节，按「背景速览 → 爆点速览 → 事件时间线 → 人物图鉴 → 各方表态 → 争议焦点与疑点 → 网友热评与梗 → 吃瓜小结/后续关注 → 信息来源」顺序（可随风格微调）\n4. 信息来源必须列出（markdown 链接 [标题](URL)），放在最后\n5. 只输出报告 markdown 正文，不要输出任何解释或前后缀\n6. 繁简：报告**默认用简体字**；仅当繁简开关（{{start.traditional}}）为 true 时，全文（标题、正文、小标题、标注）改用繁体字；为 false 一律简体，任何风格都遵守本条。\n7. **长图排版结构（视觉要求，务必遵守）**：\n   - 每个 ## 小节标题开头必须带一个贴切的 emoji 图标（如 🏛️背景速览、🔥爆点速览、📅事件时间线、👥人物图鉴、🗣️各方表态、⚔️争议焦点、💬网友热评与梗、🧭吃瓜小结、🔗信息来源）\n   - 关键要点、结论、金句用 > 引用块呈现（每条一句、简短醒目，渲染为带底色的要点卡片）\n   - 时间线、人物、表态、信息来源用 markdown 表格呈现（表头自动带彩色底色）\n   - 重要数字、结论、人名加粗；列表项可用 🔸 / ✅ / ❓ 等 emoji 前缀增强可读性\n   - 严禁输出任何 HTML 标签，只用 markdown 语法与 emoji",
+          "prompt": "事件：{{start.event}}\n报告风格提示词：{{start.stylePrompt}}\n用户补充要求：{{start.request}}\n\n结构化事件分析（来自 AI 分析节点，sources 已含完整 URL）：\n{{analyze1.parsed}}\n\n请生成吃瓜报告 markdown。注意：\n1. 「信息来源」小节必须用 markdown 链接 [标题](URL)，URL 直接使用结构化分析里 sources 的 url 字段，不得省略或写成 #\n2. 正文里引用报道时也可带上可点击的来源链接\n3. 开头用「背景速览」小节：依据分析里的 background，先介绍事件主体（公司/个人/机构）简介、行业与时代背景、为何引发公众关注，让不了解的读者也能跟上",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report-image",
+        "name": "吃瓜报告长图",
+        "position": { "x": 2100, "y": 400 },
+        "config": { "title": "🍉 {{start.event}} 吃瓜速报（{{sys.today}}）", "template": "{{gen1.content}}", "templateId": "generic" }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "是否存知识库",
+        "position": { "x": 2360, "y": 400 },
+        "config": {
+          "branches": [
+            { "branchId": "hasKb", "label": "存知识库", "conditions": [{ "left": "{{start.kbId}}", "operator": "not_empty" }] },
+            { "branchId": "noKb", "label": "跳过知识库", "conditions": [{ "left": "{{start.kbId}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noKb"
+        }
+      },
+      {
+        "id": "saveKb1",
+        "type": "kb-ingest",
+        "name": "报告存知识库",
+        "position": { "x": 2620, "y": 300 },
+        "config": {
+          "knowledgeBaseId": "{{start.kbId}}",
+          "title": "「吃瓜报告」{{start.event}}-{{sys.today}}",
+          "content": "{{report1.markdown}}",
+          "sourceKey": "gossip-{{start.event}}-{{sys.today}}",
+          "waitForCompletion": false
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "报告存资产库",
+        "position": { "x": 2620, "y": 500 },
+        "config": { "content": "{{report1.markdown}}", "kind": "text", "category": "text", "subCategory": "吃瓜报告", "name": "{{start.event}}吃瓜报告-{{sys.today}}", "tags": "吃瓜,{{start.event}},自媒体文案" }
+      },
+      {
+        "id": "saveImg1",
+        "type": "save-asset",
+        "name": "长图存资产库",
+        "position": { "x": 2620, "y": 620 },
+        "config": { "content": "{{report1.filePath}}", "kind": "file", "category": "image", "subCategory": "吃瓜长图", "name": "{{start.event}}吃瓜长图-{{sys.today}}", "tags": "吃瓜,{{start.event}},自媒体文案" }
+      },
+      {
+        "id": "loop2",
+        "type": "loop",
+        "name": "逐平台生成文案",
+        "position": { "x": 1840, "y": 120 },
+        "config": { "listExpression": "{{start.platforms}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "copyN",
+        "type": "llm-chat",
+        "name": "生成平台文案",
+        "position": { "x": 2000, "y": 120 },
+        "config": {
+          "systemPrompt": "你是自媒体文案编辑，为吃瓜事件按所选平台写完整文案。当前平台：{{loop2.item}}。\n- 微信公众号：完整图文长文，正文 **1500-2500 字**——吸睛标题、导语、5-8 个分节（## 小标题）、每节展开细节、金句、结尾互动引导；风格适配微信阅读（分段清爽、金句突出）；严禁敷衍两三段。\n- 今日头条：资讯流风格，标题党适度、开头直接给结论抓人，正文 **800-2000 字**，分段小标题，强调信息量、事件反转与数据，适配头条算法（重停留时长与互动）。\n- 小红书：正文 **600-1000 字**——标题 + emoji 分行段落，把事件来龙去脉讲清楚，结尾 3-6 个话题标签（#…），口语化、种草式、留互动钩子。\n- 微博：150 字以内短文案 + 2-4 个话题词（#…），快节奏、有梗。\n- 通用：正文 **800-1500 字**，结构清晰完整。\n要求：事实/当事人自述/网传严格标注；基于素材扩写细节、串联因果、补充背景，不要只罗列要点；风格提示词（{{start.stylePrompt}}）若填写则叠加生效；繁简按开关（{{start.traditional}}，true 才繁体）。只输出文案正文，不要解释。",
+          "prompt": "事件：{{start.event}}\n平台：{{loop2.item}}\n风格提示词：{{start.stylePrompt}}\n\n结构化分析（素材）：\n{{analyze1.parsed}}\n\n请生成该平台的吃瓜文案 markdown：把素材要点展开成完整叙述（扩写细节、串联因果、补充背景与影响），按上面平台篇幅要求写足字数再收尾。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveCopyN",
+        "type": "save-asset",
+        "name": "文案存资产库",
+        "position": { "x": 2160, "y": 120 },
+        "config": { "content": "{{copyN.content}}", "kind": "text", "category": "text", "subCategory": "自媒体文案", "name": "{{start.event}}文案-{{loop2.item}}-{{sys.today}}", "tags": "吃瓜,{{start.event}},{{loop2.item}},自媒体文案" }
+      },
+      {
+        "id": "script1",
+        "type": "llm-chat",
+        "name": "生成短视频脚本",
+        "position": { "x": 2000, "y": 700 },
+        "config": {
+          "systemPrompt": "你是短视频编导。为「{{start.event}}」生成约 {{start.videoDuration}} 秒的竖版吃瓜短视频脚本。**关键要求：先写完整、连贯的口播文案（能一口气读完的整段解说，信息密度高），再依据文案拆分分镜——每个镜头的「口播」列必须放文案中切分出的完整句子，不能是一两句摘要**。用 markdown 输出：\n1. ## 脚本概览：主题、时长、定位（吃瓜向）\n2. ## 完整口播文案：把事件讲完整、有起承转合的一整段口播（口播字数按时长：约「时长秒数×4」字，如 300 秒约 1200-1500 字；按「1 背景铺垫 → 2 钩子开场 → 3 事件核心（来龙去脉）→ 4 各方反应/反转 → 5 金句/总结 → 6 结尾引导」时间线展开，信息密度足、能一口气读下来，不是要点罗列）\n3. ## 分镜表（表格）：镜头 | 画面 | 口播 | 字幕 | 音效/BGM | 时长(秒) —— 口播列 = 上面文案按镜头切分后的完整句子（不缩写），画面列给可执行画面描述（人物/场景/运镜/贴纸字幕）\n4. ## 发布文案与话题标签\n要求：基于素材事实，标注（事实/当事人自述/网传）；用分析里的 background 做开场背景铺垫（介绍事件主体/行业/时代背景、为何引发关注）；风格提示词（{{start.stylePrompt}}）叠加；繁简按开关（{{start.traditional}}，true 才繁体）。只输出脚本 markdown，不要解释。",
+          "prompt": "事件：{{start.event}}\n时长：{{start.videoDuration}} 秒\n\n结构化分析：\n{{analyze1.parsed}}\n\n请生成短视频脚本。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveScript1",
+        "type": "save-asset",
+        "name": "脚本存资产库",
+        "position": { "x": 2160, "y": 700 },
+        "config": { "content": "{{script1.content}}", "kind": "text", "category": "text", "subCategory": "短视频脚本", "name": "{{start.event}}短视频脚本-{{sys.today}}", "tags": "吃瓜,{{start.event}},自媒体文案" }
+      },
+      {
+        "id": "loop3",
+        "type": "loop",
+        "name": "逐平台生成视频脚本",
+        "position": { "x": 1840, "y": 900 },
+        "config": { "listExpression": "{{start.videoPlatforms}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "scriptN",
+        "type": "llm-chat",
+        "name": "生成平台视频脚本",
+        "position": { "x": 2000, "y": 900 },
+        "config": {
+          "systemPrompt": "你是短视频编导，为「{{start.event}}」按指定平台生成约 {{start.videoDuration}} 秒的吃瓜视频脚本。**当前平台：{{loop3.item}}**。时长以用户设定 {{start.videoDuration}} 秒为准（各平台标注的秒数是短时长参考；若设定 300 秒请按 5 分钟充实——口播约 1200-1500 字、分镜相应增多，节奏按平台调性灵活适配）。\n- 抖音：竖屏快节奏，3-5 秒一切镜、前 2 秒强钩子、高信息密度口播、大字幕贴纸；口播时长按实际设定。\n- B站：中长视频（2-5 分钟），分镜更细、解说连贯有层次、适合深度梳理；可含引言/结尾总结、字幕注释。\n- 快手：极短口播、大标题大字幕、接地气口语；口播约 20-60 秒。\n- 视频号：私域朋友圈向，口播温和亲近、图文注释、金句收尾；口播约 40-80 秒。\n- YouTube：中长视频（3-8 分钟），标题/封面文案 + 章节（chapters）、叙述完整、信息量足；适配海外/长内容。\n- 通用：竖版通用脚本（不区分平台）。\n**关键要求：先写完整、连贯的口播文案（能一口气读完的整段解说，信息密度高），再依据文案拆分分镜——每个镜头的「口播」列必须放文案中切分出的完整句子，不能是一两句摘要**。用 markdown 输出：\n1. ## 脚本概览：主题、时长、平台、定位（吃瓜向）\n2. ## 完整口播文案：把事件讲完整、有起承转合的一整段口播（口播字数按时长：约「时长秒数×4」字，如 300 秒约 1200-1500 字；按「1 背景铺垫 → 2 钩子开场 → 3 事件核心（来龙去脉）→ 4 各方反应/反转 → 5 金句/总结 → 6 结尾引导」时间线展开，信息密度足、能一口气读下来，不是要点罗列）\n3. ## 分镜表（表格）：镜头 | 画面 | 口播 | 字幕 | 音效/BGM | 时长(秒) —— 口播列 = 上面文案按镜头切分后的完整句子（不缩写），画面列给可执行画面描述（人物/场景/运镜/贴纸字幕）\n4. ## 发布文案与话题标签\n要求：基于素材事实，标注（事实/当事人自述/网传）；用分析里的 background 做开场背景铺垫（介绍事件主体/行业/时代背景、为何引发关注）；风格提示词（{{start.stylePrompt}}）叠加；繁简按开关（{{start.traditional}}，true 才繁体）。只输出脚本 markdown，不要解释。",
+          "prompt": "事件：{{start.event}}\n平台：{{loop3.item}}\n时长：{{start.videoDuration}} 秒\n\n结构化分析：\n{{analyze1.parsed}}\n\n请生成该平台的短视频脚本。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveScriptN",
+        "type": "save-asset",
+        "name": "平台脚本存资产库",
+        "position": { "x": 2160, "y": 900 },
+        "config": { "content": "{{scriptN.content}}", "kind": "text", "category": "text", "subCategory": "短视频脚本", "name": "{{start.event}}脚本-{{loop3.item}}-{{sys.today}}", "tags": "吃瓜,{{start.event}},{{loop3.item}},自媒体文案" }
+      },
+      {
+        "id": "merge2",
+        "type": "parallel-merge",
+        "name": "汇合产出",
+        "position": { "x": 2600, "y": 400 },
+        "config": { "waitPolicy": "all", "outputMode": "merge" }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 2880, "y": 400 },
+        "config": { "title": "吃瓜报告已生成", "message": "{{start.event}} 吃瓜报告已生成，资产 ID：{{save1.assetId}}", "level": "success" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 3140, "y": 400 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "search1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "search1", "targetNodeId": "search2", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "search2", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "merge1", "targetNodeId": "pick1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "pick1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "extract1", "kind": "loop-body" },
+      { "id": "e7", "sourceNodeId": "extract1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e8", "sourceNodeId": "loop1", "targetNodeId": "analyze1", "kind": "loop-done" },
+      { "id": "e9", "sourceNodeId": "analyze1", "targetNodeId": "parallel1", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "parallel1", "targetNodeId": "gen1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "gen1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "report1", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "cond1", "targetNodeId": "saveKb1", "kind": "branch", "branchId": "hasKb" },
+      { "id": "e14", "sourceNodeId": "cond1", "targetNodeId": "save1", "kind": "branch", "branchId": "noKb" },
+      { "id": "e15", "sourceNodeId": "saveKb1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "save1", "targetNodeId": "saveImg1", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "saveImg1", "targetNodeId": "merge2", "kind": "normal" },
+      { "id": "e18", "sourceNodeId": "parallel1", "targetNodeId": "loop2", "kind": "normal" },
+      { "id": "e19", "sourceNodeId": "loop2", "targetNodeId": "copyN", "kind": "loop-body" },
+      { "id": "e20", "sourceNodeId": "copyN", "targetNodeId": "saveCopyN", "kind": "normal" },
+      { "id": "e21", "sourceNodeId": "saveCopyN", "targetNodeId": "loop2", "kind": "loop-back" },
+      { "id": "e22", "sourceNodeId": "loop2", "targetNodeId": "merge2", "kind": "loop-done" },
+      { "id": "e23", "sourceNodeId": "parallel1", "targetNodeId": "script1", "kind": "normal" },
+      { "id": "e24", "sourceNodeId": "script1", "targetNodeId": "saveScript1", "kind": "normal" },
+      { "id": "e25", "sourceNodeId": "saveScript1", "targetNodeId": "merge2", "kind": "normal" },
+      { "id": "e28", "sourceNodeId": "parallel1", "targetNodeId": "loop3", "kind": "normal" },
+      { "id": "e29", "sourceNodeId": "loop3", "targetNodeId": "scriptN", "kind": "loop-body" },
+      { "id": "e30", "sourceNodeId": "scriptN", "targetNodeId": "saveScriptN", "kind": "normal" },
+      { "id": "e31", "sourceNodeId": "saveScriptN", "targetNodeId": "loop3", "kind": "loop-back" },
+      { "id": "e32", "sourceNodeId": "loop3", "targetNodeId": "merge2", "kind": "loop-done" },
+      { "id": "e26", "sourceNodeId": "merge2", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e27", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": { "maxOutputChars": 800000 }
+}

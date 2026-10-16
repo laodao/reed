@@ -1,0 +1,330 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 多平台文案生成",
+  "description": "素材驱动的多平台分发器：素材/主稿 + 主题 → 内容策略提炼（主张/论点必须以素材为依据）→ 逐平台生成适配文案（公众号/今日头条/知乎/微博/小红书/抖音，事实与引语来自素材并保留出处口径，逐平台自检）→ 统一审核修改 → 平台×策略对照报告。SOP：与「主题深度研究」「长文写作」串联——研究报告或主稿填入素材框，一次产出全平台分发文案。",
+  "category": "writing",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": {
+          "x": 40,
+          "y": 200
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "topic",
+              "label": "主题",
+              "type": "textarea",
+              "required": true
+            },
+            {
+              "key": "material",
+              "label": "素材（研究报告/主稿全文；提供后事实与引语以素材为准并保留出处）",
+              "type": "textarea"
+            },
+            {
+              "key": "keyPoints",
+              "label": "核心卖点/信息点（每行一个）",
+              "type": "textarea"
+            },
+            {
+              "key": "targetAudience",
+              "label": "目标人群",
+              "type": "string"
+            },
+            {
+              "key": "platforms",
+              "label": "目标平台",
+              "type": "select",
+              "multi": true,
+              "required": true,
+              "options": [
+                {
+                  "label": "公众号",
+                  "value": "wechat"
+                },
+                {
+                  "label": "小红书",
+                  "value": "xiaohongshu"
+                },
+                {
+                  "label": "微博",
+                  "value": "weibo"
+                },
+                {
+                  "label": "知乎",
+                  "value": "zhihu"
+                },
+                {
+                  "label": "抖音",
+                  "value": "douyin"
+                },
+                {
+                  "label": "今日头条",
+                  "value": "toutiao"
+                }
+              ]
+            },
+            {
+              "key": "tone",
+              "label": "语气",
+              "type": "select",
+              "defaultValue": "professional",
+              "options": [
+                {
+                  "label": "专业",
+                  "value": "professional"
+                },
+                {
+                  "label": "活泼",
+                  "value": "lively"
+                },
+                {
+                  "label": "文艺",
+                  "value": "artistic"
+                },
+                {
+                  "label": "营销",
+                  "value": "marketing"
+                }
+              ]
+            },
+            {
+              "key": "length",
+              "label": "篇幅",
+              "type": "select",
+              "defaultValue": "standard",
+              "options": [
+                {
+                  "label": "精简",
+                  "value": "short"
+                },
+                {
+                  "label": "标准",
+                  "value": "standard"
+                },
+                {
+                  "label": "详尽",
+                  "value": "long"
+                }
+              ]
+            },
+            {
+              "key": "request",
+              "label": "效果描述",
+              "type": "textarea"
+            },
+            {
+              "key": "model",
+              "label": "模型",
+              "type": "model",
+              "modelTypes": [
+                "text",
+                "multimodal"
+              ],
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "strategy1",
+        "type": "llm-chat",
+        "name": "内容策略提炼",
+        "position": {
+          "x": 320,
+          "y": 200
+        },
+        "config": {
+          "systemPrompt": "你是内容策略师。基于主题/卖点/人群（提供素材时以素材为唯一事实来源）提炼：1 个核心主张 + 3 个支撑论点 + 1 个差异化角度。纪律：主张与每个论点都必须有素材或要点依据——素材里没有的不要提；论点尽量带上素材中的具体数字/事实/引语锚点。只输出 JSON 对象，不要解释：{claim, points: [3 个], angle}",
+          "prompt": "主题：{{start.topic}}\n核心卖点：{{start.keyPoints}}\n目标人群：{{start.targetAudience}}\n\n素材（事实与论点依据，可空）：\n{{start.material}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐平台生成",
+        "position": {
+          "x": 560,
+          "y": 200
+        },
+        "config": {
+          "listExpression": "{{start.platforms}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "gen1",
+        "type": "llm-chat",
+        "name": "平台文案",
+        "position": {
+          "x": 800,
+          "y": 260
+        },
+        "config": {
+          "systemPrompt": "你是文案写手，为指定平台撰写适配文案。平台调性：\n- wechat 公众号：长文结构、小标题、信息密度高\n- toutiao 今日头条：长文、段落短（1-3 句一段）、信息密度高、标题信息量优先但不过度标题党、开篇前三行必须给足继续读的理由\n- xiaohongshu 小红书：emoji+标题党+标签、口语化、种草感\n- weibo 微博：140 字内、带话题、简洁有力\n- zhihu 知乎：专业段落、逻辑严谨、可引用\n- douyin 抖音：短平快、钩子开头、画面感\n\n事实纪律（提供素材时生效，优先级最高）：日期/数字/人名/引语必须来自素材，与素材一致；引用素材中的话保留出处口径（如「据××报道」）；素材未覆盖处用一般性表述，不得编造具体事实。\n\n逐平台自检（输出前逐项核对，不通过就改完再输出）：\n1. 钩子：前三行是否给足继续读/看的理由；\n2. 篇幅符合所选档位与平台调性；\n3. 素材中的关键数字与引语是否准确、出处是否保留；\n4. 敏感表述是否已降级（暴力/血腥细节用概括性说法）。\n\n遵守平台调性与篇幅要求，只输出文案正文。",
+          "prompt": "平台：{{loop1.item}}\n语气：{{start.tone}}\n篇幅：{{start.length}}\n核心主张：{{strategy1.parsed.claim}}\n支撑论点：{{strategy1.parsed.points}}\n差异化角度：{{strategy1.parsed.angle}}\n用户效果要求：{{start.request}}\n素材（事实与引语唯一来源，可空）：\n{{start.material}}\n\n请撰写该平台文案。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "统一审核",
+        "position": {
+          "x": 560,
+          "y": 460
+        },
+        "config": {
+          "payload": "{{reviewPrep.result}}",
+          "interaction": "input",
+          "editableFields": [
+            {
+              "key": "output_result",
+              "label": "文案",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "文案报告",
+        "position": {
+          "x": 800,
+          "y": 460
+        },
+        "config": {
+          "title": "{{start.topic}} 多平台文案",
+          "template": "# {{start.topic}} 多平台文案\n\n## 内容策略\n- 核心主张：{{strategy1.parsed.claim}}\n- 支撑论点：{{strategy1.parsed.points}}\n- 差异化角度：{{strategy1.parsed.angle}}\n\n## 各平台文案\n\n{{review1.output_result}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": {
+          "x": 1040,
+          "y": 460
+        },
+        "config": {
+          "content": "# {{start.topic}} 多平台文案\n\n{{review1.output_result}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "文案",
+          "name": "{{start.topic}}文案",
+          "tags": "文案,{{start.platforms}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": {
+          "x": 1280,
+          "y": 460
+        },
+        "config": {}
+      },
+      {
+        "id": "reviewPrep",
+        "type": "code",
+        "name": "审核载荷组装",
+        "position": {
+          "x": 1180,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "code": "const arr = Array.isArray(inputs.chapters) ? inputs.chapters : [];\nconst platforms = Array.isArray(inputs.platforms) ? inputs.platforms : [];\nconst text = arr.map(function (c, i) {\n  const content = c && c.content ? c.content : (typeof c === 'string' ? c : '');\n  const label = platforms[i] ? ('## 平台：' + platforms[i]) : ('## 文案 ' + (i + 1));\n  return (i > 0 ? '\n\n---\n\n' : '') + label + '\n\n' + content;\n}).join('');\n// output_result 直接挂进 payload：审核「直接批准」时原样直通（修复无编辑批准丢文案），\n// 「修改后批准」时被 editedValues.output_result 覆盖\nreturn { output_result: text, results: arr };",
+          "inputs": [
+            {
+              "key": "chapters",
+              "value": "{{loop1.results}}"
+            },
+            {
+              "key": "platforms",
+              "value": "{{start.platforms}}"
+            }
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "sourceNodeId": "start",
+        "targetNodeId": "strategy1",
+        "kind": "normal"
+      },
+      {
+        "id": "e2",
+        "sourceNodeId": "strategy1",
+        "targetNodeId": "loop1",
+        "kind": "normal"
+      },
+      {
+        "id": "e3",
+        "sourceNodeId": "loop1",
+        "targetNodeId": "gen1",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e4",
+        "sourceNodeId": "gen1",
+        "targetNodeId": "loop1",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e5",
+        "sourceNodeId": "loop1",
+        "targetNodeId": "reviewPrep",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e_rp",
+        "sourceNodeId": "reviewPrep",
+        "targetNodeId": "review1",
+        "kind": "normal"
+      },
+      {
+        "id": "e6",
+        "sourceNodeId": "review1",
+        "targetNodeId": "report1",
+        "kind": "approve"
+      },
+      {
+        "id": "e7",
+        "sourceNodeId": "review1",
+        "targetNodeId": "end",
+        "kind": "reject"
+      },
+      {
+        "id": "e8",
+        "sourceNodeId": "report1",
+        "targetNodeId": "save1",
+        "kind": "normal"
+      },
+      {
+        "id": "e9",
+        "sourceNodeId": "save1",
+        "targetNodeId": "end",
+        "kind": "normal"
+      }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

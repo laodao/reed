@@ -1,0 +1,839 @@
+/**
+ * 工作流运行服务：启动（互斥/并发）/ 取消 / 续跑 / 审核委托 / 历史 / boot 恢复
+ * @module core/platform/workflow/workflow-run.service
+ * @description 引擎与存储之间的编排层：
+ *              - 启动：同工作流互斥（命中→记 skipped）；全局并发超限→pending 排队
+ *              - 引擎在后台执行（void + catch），绝不占住 IPC/HTTP 调用方
+ *              - ALS 纪律：所有引擎调用以 runWithUserAsync(run.userId) 包裹
+ *              - boot 恢复：running 且超时→timed_out，未超时→interrupted；
+ *                waiting_review 保持挂起（重启后的审核决策 V1 不支持，需续跑重驱）
+ */
+
+import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import type { WorkflowGraph, WorkflowRunStatus, WorkflowStartInput, WorkflowTriggerType } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
+import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
+import type { WorkflowEngineDeps, WorkflowEventPort } from './engine/ports'
+import { createWorkflowRunEventProducer } from '@core/platform/services/event-system/workflow-run-producer'
+import type {
+  CreateWorkflowRunInput,
+  UpdateWorkflowRunInput,
+  WorkflowRunRecord,
+  WorkflowRunStats,
+} from '../../database/repositories/workflow-run.repository'
+import type { WorkflowRunRepository } from '../../database/repositories/workflow-run.repository'
+import type { WorkflowNodeRunRepository, WorkflowNodeRunRecord } from '../../database/repositories/workflow-node-run.repository'
+import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
+import { createLogger } from '@core/utils/logger'
+import { getNotificationService } from '@core/platform/services/notification.service'
+import { getVariableDataService } from './variables/variable-data.service'
+import { runVariableScope } from '@shared/types/variable.types'
+
+const logger = createLogger('WorkflowRunService')
+
+/** 全局并发上限来源：构造入参（片6 接 settings 表后由调用方解析传入） */
+export interface WorkflowRunServiceDeps {
+  runs: WorkflowRunRepository
+  nodeRuns: WorkflowNodeRunRepository
+  definitions: WorkflowDefinitionRepository
+  engine: WorkflowEngineService
+  /** 全局并发运行上限（默认 WORKFLOW_DEFAULTS.maxConcurrentRuns） */
+  maxConcurrentRuns?: number
+  /**
+   * settings 表 `wf:defaults` 的全局执行设置**读取器**（每次运行前现读）。
+   *
+   * 2026-09-13「参数设置」改造：原来是 boot 时读一次的快照（改完必须重启客户端），
+   * 改为读取器后，设置页保存即对**下一次运行**生效。
+   */
+  globalSettingsProvider?: () => Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings | null>
+  /** 兼容：静态全局执行设置（没有 provider 时用；测试与旧调用方） */
+  globalSettings?: import('@shared/types/workflow.types').WorkflowExecutionSettings | null
+  /** 轨迹查询端口（25 号 M2 批2；缺省/未装配时查询返回空——观测面降级） */
+  trajectories?: { listByScope(scopeKey: string): Promise<import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRow[]> } | null
+}
+
+/** 启动入参 */
+export interface StartRunInput {
+  definitionId: string
+  triggerType: WorkflowTriggerType
+  triggerInfo?: Record<string, unknown>
+  inputs?: Record<string, unknown>
+  /**
+   * 互斥作用域（可选）：提供后，互斥只对「同 mutexScope」的在途运行生效——
+   * 不同作用域（如不同项目/不同章节的章法 run）可并行。缺省保持旧语义：
+   * 同定义全局互斥（保守兼容既有单例工作流）。
+   */
+  mutexScope?: string
+  /** C3 一次性配置覆盖（REST invoke 实验参数；透传引擎，不落定义） */
+  configOverrides?: Record<string, Record<string, unknown>>
+  /**
+   * 强制执行发布图（C3b 分享页）：访客只跑 publishedGraph——不受草稿改动影响。
+   * 手动触发缺省允许跑草稿（编辑器试运行的既有语义）。
+   */
+  usePublishedGraph?: boolean
+}
+
+/** run 级 token 汇总（25 号 M2 批1；来源 = 各节点 output_json.usage，无表变更） */
+export interface RunTokenUsage {
+  promptTokens: number
+  completionTokens: number
+  toolCalls: number
+  /** 有用量声明的节点数（output.usage 存在的 node run） */
+  billedNodes: number
+  byNode: Record<string, { promptTokens: number; completionTokens: number; toolCalls: number }>
+}
+
+/**
+ * 从节点执行记录聚合 run 级 token 用量（agent-loop/llm-chat/skill-call 同构 usage 字段）。
+ * 解析失败/字段缺失按 0 计（观测面容错——历史 run 与非 AI 节点无 usage）。
+ */
+export function aggregateRunTokenUsage(nodeRuns: WorkflowNodeRunRecord[]): RunTokenUsage {
+  const out: RunTokenUsage = { promptTokens: 0, completionTokens: 0, toolCalls: 0, billedNodes: 0, byNode: {} }
+  for (const nr of nodeRuns) {
+    const usage = (nr.output as { usage?: Record<string, unknown> } | null | undefined)?.usage
+    if (!usage || typeof usage !== 'object') continue
+    const p = Number(usage.promptTokens) || 0
+    const c = Number(usage.completionTokens) || 0
+    const t = Number(usage.toolCalls) || 0
+    if (p === 0 && c === 0 && t === 0) continue
+    out.promptTokens += p
+    out.completionTokens += c
+    out.toolCalls += t
+    out.billedNodes += 1
+    out.byNode[nr.nodeId] = { promptTokens: p, completionTokens: c, toolCalls: t }
+  }
+  return out
+}
+
+/** 唯一约束冲突识别（评审 #31/#40）：SQLite 与 PG 的报错形态 */
+function isUniqueConstraintError(e: unknown): boolean {
+  const code = (e as { code?: string; driverError?: { code?: string } }) ?? {}
+  if (code.code === '23505' || code.driverError?.code === '23505') return true
+  const msg = e instanceof Error ? e.message : String(e)
+  return /UNIQUE constraint failed|duplicate key value violates unique constraint/i.test(msg)
+}
+
+export class WorkflowRunService {
+  /** 排队待启动的运行（全局并发超限时 FIFO） */
+  private queue: Array<{ runId: string; userId: string; execInput: ExecuteRunInput }> = []
+  /** 评审 #35：重启后 keptWaiting 审核运行的死线定时器（runId → timer），到期释放互斥槽 */
+  private reviewTimeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  constructor(private readonly deps: WorkflowRunServiceDeps) {}
+
+  /**
+   * 现读全局层（`wf:defaults`）：每次运行/出队都读一次，设置页保存后下一次运行即生效。
+   * 读取失败回落静态快照/空对象——配置读不到绝不能让工作流跑不起来。
+   */
+  private async readGlobalSettings(): Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings> {
+    if (this.deps.globalSettingsProvider) {
+      try {
+        return (await this.deps.globalSettingsProvider()) ?? {}
+      } catch (e) {
+        logger.warn('[WorkflowRunService] 读取 wf:defaults 失败（退回静态快照/内置默认）', e)
+      }
+    }
+    return this.deps.globalSettings ?? {}
+  }
+
+  /** 合并配置链：definition.settings 覆盖全局层（wf:defaults） */
+  private async effectiveSettings(definitionSettings: unknown): Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings | null> {
+    return { ...(await this.readGlobalSettings()), ...((definitionSettings as object) ?? {}) }
+  }
+
+  /**
+   * 全局并发运行上限：现读全局层 `maxConcurrentRuns`（夹到 WORKFLOW_LIMITS）。
+   * 只认全局层——并发是平台级护栏，单个工作流不能靠 definition.settings 抬高它。
+   */
+  private async maxConcurrentRuns(): Promise<number> {
+    const raw = (await this.readGlobalSettings()).maxConcurrentRuns
+    const value = typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : (this.deps.maxConcurrentRuns ?? WORKFLOW_DEFAULTS.maxConcurrentRuns)
+    return Math.min(value, WORKFLOW_LIMITS.maxConcurrentRuns)
+  }
+
+  /**
+   * 启动一次运行。
+   * 返回运行记录（status: running=已启动 / pending=排队 / skipped=互斥跳过）。
+   */
+  async startRun(input: StartRunInput): Promise<WorkflowRunRecord> {
+    const def = await this.deps.definitions.getById(input.definitionId)
+    if (!def) throw new Error('工作流不存在')
+
+    // 互斥：同工作流已有 pending/running/waiting_review → 记 skipped（审计留痕）。
+    // 带 mutexScope 的运行只与「同 scope」的持有者互斥（不同项目/章节的章法 run
+    // 可并行——忘川渡实跑：全局粒度让两个项目的章节写作互相 skip）；任一方
+    // 无 scope 时保守回退为同定义互斥。
+    // allowParallelInstances：未显式声明 scope 时按定义设置给每次启动派生唯一
+    // scope——blocking 过滤与互斥唯一索引都按 scope 区分 → 同定义多实例互不妨碍
+    // （全局 maxConcurrentRuns 护栏仍生效；显式 mutexScope 优先级更高，语义不变）。
+    const parallelAllowed = (def.settings as { allowParallelInstances?: boolean } | null)?.allowParallelInstances === true
+    const effectiveMutexScope = input.mutexScope
+      ?? (parallelAllowed ? `auto:${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : undefined)
+    const holders = await this.deps.runs.findMutexHolders(input.definitionId)
+    const blocking = holders.filter((h) => {
+      if (!effectiveMutexScope) return true
+      // 带作用域的启动只与「同作用域」持有者互斥；无作用域持有者（旧调用方）不拦截——
+      // 作用域语义以调用方声明为准（DB 唯一索引按 (user,definition,scope) 兜底同章双跑）
+      return !!h.mutexScope && h.mutexScope === effectiveMutexScope
+    })
+    if (blocking.length > 0) {
+      return this.deps.runs.create({
+        definitionId: input.definitionId,
+        definitionVersion: def.publishedVersion,
+        graphSnapshot: def.draftGraph ?? { version: 1, nodes: [], edges: [] },
+        triggerType: input.triggerType,
+        triggerInfo: input.triggerInfo,
+        mutexScope: effectiveMutexScope ?? '',
+        startInputs: input.inputs,
+        status: WORKFLOW_RUN_STATUSES.skipped,
+        skipReason: '同工作流已有运行中实例',
+      })
+    }
+
+    // 图快照：已发布用发布图；未发布允许手动跑草稿（触发必须已发布，片6 校验）。
+    // C3b：分享/外部入口强制发布图——访客不能执行未发布的草稿内容
+    // usePublishedGraph=true（系统工具/任务树等无人值守面）必须有发布图：
+    // 曾静默回退草稿图，击穿「生成草稿→人工发布→运行」闸门（总收口 C-P1-1）
+    const publishedGraph = def.publishedGraph
+    if (input.usePublishedGraph && !publishedGraph) {
+      throw new Error(`工作流「${def.name}」尚未发布，无法运行（请先在编辑器中发布）`)
+    }
+    const graph: WorkflowGraph = input.usePublishedGraph
+      ? (publishedGraph || def.draftGraph)
+      : ((input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph)
+    if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
+    // start 输入参数：required + 扩展规则校验，defaultValue 合并（定时/事件触发无来源时用默认值）
+    const startNode = graph.nodes.find(n => n.type === WORKFLOW_NODE_TYPES.start)
+    const inputDefs = (startNode?.config as { inputs?: WorkflowStartInput[] } | undefined)?.inputs ?? []
+    const mergedInputs: Record<string, unknown> = { ...(input.inputs ?? {}) }
+    for (const def2 of inputDefs) {
+      if (mergedInputs[def2.key] === undefined && def2.defaultValue !== undefined) {
+        mergedInputs[def2.key] = def2.defaultValue
+      }
+    }
+    // P8：类型感知判空——空串/空数组/空对象均视为缺失（json 传 {} 不再漏检）
+    const isEmptyInput = (v: unknown): boolean =>
+      v === undefined ||
+      v === null ||
+      (typeof v === 'string' && v.trim() === '') ||
+      (Array.isArray(v) && v.length === 0) ||
+      (typeof v === 'object' && Object.keys(v).length === 0)
+    // 必填 + 扩展规则（minLength/maxLength/pattern/min/max，与前端 RunInputForm 同规则；错误提示自动生成）
+    const problems: string[] = []
+    for (const def2 of inputDefs) {
+      const label = def2.label || def2.key
+      const v = mergedInputs[def2.key]
+      if (def2.required && isEmptyInput(v)) {
+        problems.push(`缺少必填的输入参数「${label}」`)
+        continue
+      }
+      if (isEmptyInput(v)) continue
+      const rule = def2.validation
+      // 类型校验：数字字段收到非数字即报"类型不正确"
+      if (def2.type === 'number' && typeof v !== 'number') {
+        problems.push(`「${label}」类型不正确：应为数字`)
+        continue
+      }
+      if (def2.type === 'json') {
+        try { JSON.parse(String(v)) } catch { problems.push(`「${label}」类型不正确：JSON 格式无效`); continue }
+      }
+      // 模型字段：值为 { providerConfigId, modelId }，必填时两者都需有值
+      if (def2.type === 'model') {
+        const mv = v as { providerConfigId?: string; modelId?: string } | null | undefined
+        if (def2.required && (!mv?.providerConfigId || !mv?.modelId)) {
+          problems.push(`「${label}」需选择 Provider 与模型`)
+        }
+        continue
+      }
+      if (!rule) continue
+      if (def2.type === 'string' || def2.type === 'textarea' || !def2.type) {
+        const s = String(v)
+        if (rule.minLength != null && s.length < rule.minLength) problems.push(`「${label}」长度不足：至少 ${rule.minLength} 个字符`)
+        if (rule.maxLength != null && s.length > rule.maxLength) problems.push(`「${label}」超出长度：最多 ${rule.maxLength} 个字符`)
+        if (rule.pattern) {
+          try {
+            if (!new RegExp(rule.pattern).test(s)) problems.push(`「${label}」格式不匹配`)
+          } catch { /* 非法正则容错：不拦截 */ }
+        }
+      } else if (def2.type === 'number') {
+        const n = v as number
+        if (rule.min != null && n < rule.min) problems.push(`「${label}」不能小于 ${rule.min}`)
+        if (rule.max != null && n > rule.max) problems.push(`「${label}」不能大于 ${rule.max}`)
+      }
+    }
+    if (problems.length > 0) {
+      throw new Error(`输入参数校验失败：${problems.join('；')}`)
+    }
+
+    // 评审 #31/#40：check-then-create 的竞态窗口由部分唯一索引兜底——
+    // 并发第二个活动行插入被 DB 拒绝，此处捕获后与互斥检查同语义转 skipped 留痕
+    let run: WorkflowRunRecord
+    try {
+      run = await this.deps.runs.create({
+        definitionId: input.definitionId,
+        definitionVersion: def.publishedVersion,
+        graphSnapshot: graph,
+        triggerType: input.triggerType,
+        triggerInfo: input.triggerInfo,
+        mutexScope: effectiveMutexScope ?? '',
+        startInputs: mergedInputs,
+        status: WORKFLOW_RUN_STATUSES.pending,
+        timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
+      })
+    } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return this.deps.runs.create({
+          definitionId: input.definitionId,
+          definitionVersion: def.publishedVersion,
+          graphSnapshot: graph,
+          triggerType: input.triggerType,
+          triggerInfo: input.triggerInfo,
+          mutexScope: effectiveMutexScope ?? '',
+          startInputs: mergedInputs,
+          status: WORKFLOW_RUN_STATUSES.skipped,
+          skipReason: '同工作流已有运行中实例（并发启动被互斥约束拦截）',
+        })
+      }
+      throw e
+    }
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, await this.effectiveSettings(def.settings), mergedInputs, undefined, input.configOverrides, input.triggerInfo)
+    return (await this.deps.runs.getById(run.id)) ?? run
+  }
+
+  /** 直接启动或进全局并发队列 */
+  private async launch(
+    runId: string,
+    userId: string,
+    definitionId: string,
+    graph: WorkflowGraph,
+    settings: import('@shared/types/workflow.types').WorkflowExecutionSettings | null,
+    startInputs: Record<string, unknown> | null,
+    resumedCheckpoints?: ExecuteRunInput['resumedCheckpoints'],
+    configOverrides?: Record<string, Record<string, unknown>>,
+    triggerInfo?: Record<string, unknown>
+  ): Promise<void> {
+    const execInput: ExecuteRunInput = {
+      runId,
+      userId,
+      definitionId,
+      graph,
+      startInputs: startInputs ?? {},
+      settings,
+      resumedCheckpoints,
+      configOverrides,
+      triggerInfo,
+    }
+    if (this.deps.engine.activeRunningCount >= (await this.maxConcurrentRuns())) {
+      this.queue.push({ runId, userId, execInput })
+      return
+    }
+    void this.executeRun(runId, userId, execInput)
+  }
+
+  /** 后台执行（引擎内部含看门狗/兜底 finalize）；完成后触发出队 */
+  private async executeRun(runId: string, userId: string, execInput: ExecuteRunInput): Promise<void> {
+    try {
+      await runWithUserAsync(userId, () => this.deps.engine.execute(execInput))
+    } catch (e) {
+      logger.error('[WorkflowRunService] 引擎执行异常', e)
+      // 引擎兜底失败时的最后防线：落 failed 终态
+      try {
+        await runWithUserAsync(userId, () =>
+          this.deps.runs.update(runId, {
+            status: WORKFLOW_RUN_STATUSES.failed,
+            error: `引擎执行异常: ${e instanceof Error ? e.message : String(e)}`,
+            finishedAt: new Date(),
+          })
+        )
+      } catch (e2) {
+        logger.error('[WorkflowRunService] 兜底落库失败', e2)
+      }
+    } finally {
+      // 触发来源定义的 last_run_at 触达 + 队列出队
+      const defId = execInput.definitionId
+      if (defId) {
+        void runWithUserAsync(userId, () =>
+          this.deps.definitions.update(defId, { lastRunAt: new Date() })
+        ).catch(e => logger.warn('[WorkflowRunService] lastRunAt 更新失败（不影响运行）', e))
+      }
+      this.drainQueue()
+    }
+  }
+
+  /** FIFO 出队一个排队运行 */
+  private drainQueue(): void {
+    void this.drainQueueAsync()
+  }
+
+  /** 出队实现（并发上限现读全局层，故是异步的） */
+  private async drainQueueAsync(): Promise<void> {
+    const limit = await this.maxConcurrentRuns()
+    while (this.queue.length > 0 && this.deps.engine.activeRunningCount < limit) {
+      const next = this.queue.shift()
+      if (!next) break
+      void this.executeRun(next.runId, next.userId, next.execInput)
+    }
+  }
+
+  /** 取消：活动运行走引擎；排队/仅库中运行原子条件落库 */
+  async cancelRun(runId: string, userId: string): Promise<boolean> {
+    const cancelledByEngine = await runWithUserAsync(userId, () =>
+      this.deps.engine.cancelRun(runId)
+    )
+    if (cancelledByEngine) {
+      this.autoClearRunNotices(runId)
+      return true
+    }
+    // 排队中未启动：从队列移除并落库
+    const idx = this.queue.findIndex(q => q.runId === runId)
+    if (idx >= 0) this.queue.splice(idx, 1)
+    const run = await this.deps.runs.getById(runId)
+    if (!run) return false
+    if ([WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review].includes(run.status)) {
+      // 评审 #34：原子条件迁移（UPDATE ... WHERE status IN），
+      // 消除「读-判-写」窗口里与 resumeReview/引擎完结交错的终态覆盖
+      const ok = await this.deps.runs.transitionIfStatus(runId, [WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review], {
+        status: WORKFLOW_RUN_STATUSES.cancelled,
+        finishedAt: new Date(),
+        cancelRequestedAt: new Date(),
+      })
+      if (ok) this.autoClearRunNotices(runId)
+      return ok
+    }
+    return false
+  }
+
+  /** 审核决策：委托引擎（活动挂起运行） */
+  async reviewDecide(
+    runId: string,
+    nodeId: string,
+    decision: ReviewDecisionInput,
+    userId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    // S7 指派校验（27 号）：节点声明 assigneeId 时仅被指派人可决策。
+    // 数据源 = 专用 status 过滤查询（review M1/M4：无序 findOne 曾可能取到历史
+    // 迭代行使授权检查失效）。⚠️ 跨用户边界（review M2）：assignee≠owner 时
+    // resumeReview 的引擎守卫仍按属主拒绝——指派机制当前生效域为单用户/
+    // 同属主会话，跨用户代执行需共享 token 立项（27 号 §0 注记）。
+    const pending = await this.deps.nodeRuns.findWaitingReviewByNode(runId, nodeId)
+    if (pending && pending.nodeType === 'human-review') {
+      const assigneeId = (pending.input as { assigneeId?: unknown } | null)?.assigneeId
+      if (assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== '') {
+        if (String(assigneeId) !== userId) {
+          logger.warn(`[review] S7 指派拒绝：assignee=${String(assigneeId)} operator=${userId}（run ${runId}/${nodeId}）`)
+          return { success: false, error: '该审批已指派给其他成员，仅被指派人可决策' }
+        }
+      } else if (assigneeId !== undefined) {
+        logger.warn(`[review] S7 assigneeId 非字符串被忽略（run ${runId}/${nodeId}）`)
+      }
+    }
+    const applied = await runWithUserAsync(userId, () =>
+      this.deps.engine.resumeReview(runId, nodeId, decision)
+    )
+    if (!applied) {
+      // rehydrate 重路由（11 号 §5.4）：库中仍为挂起且 run 有 journal 日志 →
+      // 重建式恢复后重试一次决策（跨重启挂起 run 不再要求"先续跑"）
+      const rerun = await runWithUserAsync(userId, async () => {
+        const run = await this.deps.runs.getById(runId)
+        if (run?.status !== 'waiting_review') return false
+        if (!(await this.deps.engine.ensureActive(runId))) return false
+        return this.deps.engine.resumeReview(runId, nodeId, decision)
+      })
+      if (rerun) return { success: true }
+      return {
+        success: false,
+        error: '决策未生效：运行不在活动挂起状态（应用重启后请先续跑），或提交被校验拒绝（如必填缺失/选项非法）',
+      }
+    }
+    // 该审核已处理 → 运行名下待审核通知自动已读（消失，铃铛回落）；失败不影响运行
+    this.autoClearRunNotices(runId)
+    return { success: true }
+  }
+
+  /** 通知"自动消失"：把该运行名下所有通知事件标已读（fire-and-forget，失败仅告警） */
+  private autoClearRunNotices(runId: string): void {
+    try {
+      const svc = getNotificationService()
+      if (svc) void svc.resolveRunNotices(runId).catch(() => undefined)
+    } catch (e) {
+      logger.warn('[WorkflowRunService] 通知自动已读失败（不影响运行）', e)
+    }
+  }
+
+  /**
+   * 断点续跑：新运行（resumed_from_run_id 链接），装配源运行 succeeded checkpoint。
+   * 互斥同样适用（源运行必须是终态才可续跑）。
+   */
+  /**
+   * 断点续跑：新运行（resumed_from_run_id 链接），装配源运行 succeeded checkpoint。
+   * @param forceRerunNodeIds 强制重跑的节点（其 checkpoint 不装配，执行时重跑）——
+   *        功能定稿"强制重跑指定节点"选项
+   */
+  async resumeRun(sourceRunId: string, forceRerunNodeIds?: string[]): Promise<WorkflowRunRecord> {
+    const source = await this.deps.runs.getById(sourceRunId)
+    if (!source) throw new Error('源运行不存在')
+    if (![WORKFLOW_RUN_STATUSES.failed, WORKFLOW_RUN_STATUSES.cancelled, WORKFLOW_RUN_STATUSES.interrupted, WORKFLOW_RUN_STATUSES.timed_out, WORKFLOW_RUN_STATUSES.waiting_review].includes(source.status)) {
+      throw new Error(`源运行状态 ${source.status} 不可续跑`)
+    }
+    // 互斥与 startRun 同语义：同工作流已有在途/挂起运行则拒绝
+    // （waiting_review 源运行自身就占用互斥，需先取消才能续跑——错误消息说明出路）
+    const holders = await this.deps.runs.findMutexHolders(source.definitionId)
+    if (holders.length > 0) {
+      throw new Error(
+        `同工作流已有运行中实例（${holders[0].status}），请先取消或等待其结束后再续跑`
+      )
+    }
+    const graph = source.graphSnapshot
+    if (!graph) throw new Error('源运行缺少图快照')
+    // 评审 #33：续跑运行沿用定义当前的执行设置与死线
+    const def = await this.deps.definitions.getById(source.definitionId)
+    if (!def) throw new Error('源工作流定义不存在（可能已被删除）')
+
+    const checkpoints = await this.deps.nodeRuns.findSucceededWithOutput(sourceRunId)
+    const run = await this.deps.runs.create({
+      definitionId: source.definitionId,
+      definitionVersion: source.definitionVersion,
+      graphSnapshot: graph,
+      triggerType: WORKFLOW_TRIGGER_TYPES.resume,
+      // 继承源运行触发来源（C4 dialogId 等）+ 续跑溯源
+      triggerInfo: { ...((source.triggerInfo as Record<string, unknown> | null) ?? {}), resumedFrom: sourceRunId },
+      startInputs: source.startInputs,
+      status: WORKFLOW_RUN_STATUSES.pending,
+      // 评审 #33：续跑运行同样带定义级执行死线（否则重启/续跑链无限挂）
+      timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
+      resumedFromRunId: sourceRunId,
+    }).catch(e => {
+      // 评审 #31/#40：检查与插入之间被并发运行抢先（唯一索引拒绝）——给出与互斥检查一致的出路提示
+      if (isUniqueConstraintError(e)) {
+        throw new Error('同工作流已有运行中实例（并发竞态，请稍后重试）')
+      }
+      throw e
+    })
+    // 实例上下文跟随：源运行的 run 作用域变量复制到新 runId（checkpoint 语义一致——
+    // 续跑后的 variable 节点 get 到的是同一份实例数据）。变量服务未装配则跳过。
+    try {
+      const svc = getVariableDataService()
+      const carried = await svc.listVariables(runVariableScope(sourceRunId))
+      for (const v of carried) {
+        try { await svc.setVariable(runVariableScope(run.id), v.key, JSON.parse(v.valueJson)) } catch { /* 单键损坏不阻断续跑 */ }
+      }
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 实例变量复制跳过（变量服务未装配，run ${run.id}）`, e)
+    }
+    await this.launch(
+      run.id,
+      run.userId ?? LOCAL_DEFAULT_USER_ID,
+      source.definitionId,
+      graph,
+      // 评审 #33：续跑丢定义级执行设置（并发/循环/超时全落默认）——按 startRun 同款装配
+      await this.effectiveSettings(def.settings),
+      source.startInputs,
+      // 只装配根作用域 checkpoint（iteration 0）；循环体迭代行随未完成循环重跑
+      checkpoints
+        .filter(cp => cp.iterationIndex === 0 && !(forceRerunNodeIds ?? []).includes(cp.nodeId))
+        .map(cp => ({
+        nodeId: cp.nodeId,
+        nodeType: cp.nodeType,
+        nodeName: cp.nodeName,
+        output: cp.output ?? {},
+        routeTaken: cp.routeTaken,
+      })),
+      undefined,
+      run.triggerInfo
+    )
+    return (await this.deps.runs.getById(run.id)) ?? run
+  }
+
+  getRun(runId: string): Promise<WorkflowRunRecord | null> {
+    return this.deps.runs.getById(runId)
+  }
+
+  /** 运行详情（含节点执行记录，历史回放用） */
+  async getRunDetail(runId: string): Promise<
+    { run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[]; tokenUsage: RunTokenUsage } | null
+  > {
+    const run = await this.deps.runs.getById(runId)
+    if (!run) return null
+    const nodeRuns = await this.deps.nodeRuns.getByRun(runId)
+    return { run, nodeRuns, tokenUsage: aggregateRunTokenUsage(nodeRuns) }
+  }
+
+  listByDefinition(definitionId: string, params: { status?: WorkflowRunStatus; page: number; pageSize: number }) {
+    return this.deps.runs.listByDefinition(definitionId, params)
+  }
+
+  list(params: { status?: WorkflowRunStatus; page: number; pageSize: number }) {
+    return this.deps.runs.list(params)
+  }
+
+  /** 当前用户待审核列表（顶栏徽标） */
+  findWaitingReviews(): Promise<WorkflowNodeRunRecord[]> {
+    return this.deps.nodeRuns.findWaitingReview()
+  }
+
+  /**
+   * 已审批历史（待办中心「审批历史」页签）：review 留痕节点行分页，
+   * 附运行状态与定义名。运行/定义已删除的行降级为 null（历史行随 run 级联删除，
+   * 正常不会命中，防御式展示）。
+   */
+  async listReviewed(params: { page: number; pageSize: number }): Promise<{
+    items: Array<WorkflowNodeRunRecord & { definitionId: string | null; definitionName: string | null; runStatus: WorkflowRunStatus | null }>
+    total: number
+  }> {
+    const { items, total } = await this.deps.nodeRuns.findReviewed(params)
+    const runIds = [...new Set(items.map((r) => r.runId))]
+    const runs = await Promise.all(runIds.map((id) => this.deps.runs.getById(id)))
+    const runMap = new Map(runs.filter((r): r is WorkflowRunRecord => r !== null).map((r) => [r.id, r]))
+    const defIds = [...new Set([...runMap.values()].map((r) => r.definitionId))]
+    const defs = await Promise.all(defIds.map((id) => this.deps.definitions.getById(id)))
+    const defNames = new Map(defs.filter((d) => d !== null).map((d) => [d.id, d.name]))
+    return {
+      items: items.map((r) => {
+        const run = runMap.get(r.runId)
+        return {
+          ...r,
+          definitionId: run?.definitionId ?? null,
+          definitionName: run ? (defNames.get(run.definitionId) ?? run.definitionId) : null,
+          runStatus: run?.status ?? null,
+        }
+      }),
+      total,
+    }
+  }
+
+  /**
+   * agent-loop 节点轨迹（轨迹视图数据源，25 号 M2 批2）。
+   * 属主校验：getRun 走 scoped 读，非属主/不存在同 404 语义（抛错由 IPC 层扁平化）。
+   */
+  async getNodeTrajectories(runId: string, nodeId: string, iterationIndex = 0): Promise<
+    import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRow[]
+  > {
+    if (!this.deps.trajectories) return [] // 未装配（无数据源）：观测面降级为空
+    const run = await this.getRun(runId)
+    if (!run) throw new Error(`运行不存在或无权访问：${runId}`)
+    return this.deps.trajectories.listByScope(`${runId}:${nodeId}:${iterationIndex}`)
+  }
+
+  /** 删除运行历史（连带节点记录）。属主校验前置（review C1/D2：级联含跨租户
+   *  raw 删除——journal/轨迹/审计，非属主绝不可触达）。 */
+  async deleteRun(runId: string): Promise<void> {
+    const run = await this.deps.runs.getById(runId)
+    if (!run) throw new Error(`运行不存在或无权访问：${runId}`)
+    await this.deps.nodeRuns.deleteByRun(runId)
+    // 实例上下文级联：run 作用域变量随运行删除（并行实例的独享 KV 不留孤儿）
+    try {
+      void getVariableDataService().deleteByScope(runVariableScope(runId)).catch(() => undefined)
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 实例变量清理跳过（变量服务未装配，run ${runId}）`, e)
+    }
+    // journal 级联（11 号 §5.10：保留策略与 run 生命周期绑定——孤儿事件日志会永久累积）
+    try {
+      await this.deps.engine.deleteJournal(runId)
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 删除运行日志失败（run ${runId}，孤儿事件将由保留策略清扫）`, e)
+    }
+    // 轨迹/审计级联（25 号 M2 批1；fire-and-forget——观测面失败不阻断删除）
+    try {
+      const { AgentTrajectoryRepository } = await import('@core/database/repositories/agent-trajectory.repository')
+      const { AgentToolCallRepository } = await import('@core/database/repositories/agent-tool-call.repository')
+      const { getCoreDatabaseManager } = await import('@core/database/database-manager.interface')
+      const ds = getCoreDatabaseManager().dataSource
+      if (ds) {
+        await new AgentTrajectoryRepository(ds).deleteByRunRaw(runId)
+        await new AgentToolCallRepository(ds).deleteByRunRaw(runId)
+      }
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 删除运行轨迹/审计失败（run ${runId}）`, e)
+    }
+    await this.deps.runs.deleteById(runId)
+  }
+
+  /**
+   * 评审 #35：为重启后仍在挂起审核的运行注册死线定时器。
+   * 引擎的 tickReviewTimeouts 只遍历内存 activeExecutions，重启后纯库态的
+   * waiting_review 运行无人看管——到点将其转 interrupted（可续跑），互斥槽随之释放。
+   * 条件迁移保证与「用户先取消/续跑」并发时安全（状态已变则 no-op）。
+   */
+  private armWaitingReviewTimeout(run: WorkflowRunRecord): void {
+    const timeoutAt = run.timeoutAt
+    if (!timeoutAt) return
+    if (this.reviewTimeoutTimers.has(run.id)) return
+
+    // 自重挂定时器：setTimeout 上限为 2^31-1 ms（≈24.8 天），若死线仍远超上限，
+    // 到期后重挂而非钳到上限提前终态（评审 #35 后续修正）。
+    const arm = (): void => {
+      const remaining = timeoutAt.getTime() - Date.now()
+      if (remaining <= 0) {
+        // 真正到期才转 interrupted（条件迁移，与用户取消/续跑并发安全）
+        this.reviewTimeoutTimers.delete(run.id)
+        void runWithUserAsync(run.userId ?? LOCAL_DEFAULT_USER_ID, async () => {
+          const moved = await this.deps.runs.transitionIfStatus(
+            run.id,
+            [WORKFLOW_RUN_STATUSES.waiting_review],
+            {
+              status: WORKFLOW_RUN_STATUSES.interrupted,
+              finishedAt: new Date(),
+              error: '审核等待已超时（应用重启后中断）',
+            }
+          )
+          if (moved) {
+            logger.info(`[WorkflowRunService] 重启后挂起审核运行 ${run.id} 到期转 interrupted，互斥槽已释放`)
+          }
+        }).catch(() => {})
+        return
+      }
+      // 死线未到：注册一个定时器（超过上限则先等一个上限周期，到期后由 arm 决定重挂或终态）
+      const capped = Math.min(remaining, 2_147_483_647)
+      const timer = setTimeout(arm, capped)
+      // 定时器不阻止进程退出
+      ;(timer as { unref?: () => void }).unref?.()
+      this.reviewTimeoutTimers.set(run.id, timer)
+    }
+
+    arm()
+  }
+
+  /**
+   * boot 恢复：跨租户扫描在途运行，按 userId 分组处理。
+   * - running/pending 且 timeout_at 已过 → timed_out
+   * - running/pending 未超时 → interrupted（不自动续跑，等用户操作）
+   * - waiting_review → 保持（重启后审核决策 V1 不支持，需续跑重驱）
+   */
+  /** 过期挂起审核的旧格式收敛（新格式 ensureActive 重建交 ticker；返回 true=已处理） */
+  private async recoverExpiredReview(runId: string): Promise<boolean> {
+    const run = await this.deps.runs.getById(runId)
+    if (run?.status !== 'waiting_review') return true
+    if (await this.deps.engine.ensureActive(runId)) return true // 新格式：重建后 ticker 按策略处理
+    await this.deps.runs.update(runId, {
+      status: WORKFLOW_RUN_STATUSES.interrupted,
+      error: '审核等待已超时（应用重启后中断）',
+    })
+    return true
+  }
+
+  async recoverOnBoot(): Promise<{ timedOut: number; interrupted: number; keptWaiting: number }> {
+    // 先处理已过期的挂起审核：旧格式（无 journal）标 interrupted 续跑重驱；
+    // 新格式（有日志）不动——走下方 ensureActive 重建后由 tickReviewTimeouts
+    // 按 timeoutPolicy 处理（11 号 §5.9-2 行为变更，P1 修复）
+    try {
+      const expired = await this.deps.nodeRuns.scanExpiredWaitingReview(new Date())
+      const expiredRunIds = [...new Set(expired.map(r => r.runId))]
+      for (const runId of expiredRunIds) {
+        // Web 端 boot 无 ALS 上下文：runs 读写均为 scoped——先按行属主重建 ALS
+        //（总收口 review P3：此前缺包裹，属主查询恒 miss，该循环退化为 no-op）
+        const ownerId = (await this.deps.runs.getByIdRaw(runId))?.userId ?? null
+        const handled = ownerId
+          ? await runWithUserAsync(ownerId, () => this.recoverExpiredReview(runId))
+          : await this.recoverExpiredReview(runId)
+        if (handled) continue
+      }
+    } catch (e) {
+      logger.error('[WorkflowRunService] 过期审核清理失败（继续 boot 恢复）', e)
+    }
+    const recoverable = await this.deps.runs.scanBootRecoverable()
+    const result = { timedOut: 0, interrupted: 0, keptWaiting: 0 }
+    const byUser = new Map<string, WorkflowRunRecord[]>()
+    for (const run of recoverable) {
+      const uid = run.userId ?? LOCAL_DEFAULT_USER_ID
+      const list = byUser.get(uid) ?? []
+      list.push(run)
+      byUser.set(uid, list)
+    }
+    const now = Date.now()
+    for (const [userId, runs] of byUser) {
+      await runWithUserAsync(userId, async () => {
+        for (const run of runs) {
+          if (run.status === 'waiting_review') {
+            // 挂起保留：新格式先重建（内存态复活，决策/超时即时生效——ticker 承接 #35 语义）；
+            // 旧格式（无日志）外部死线兜底。两路径计数一致，仅恢复能力不同
+            await this.deps.engine.ensureActive(run.id)
+            result.keptWaiting++
+            this.armWaitingReviewTimeout(run)
+            continue
+          }
+          // running/pending：新格式优先重建续驱（在途节点重执行——11 号 §5.3）
+          if (await this.deps.engine.ensureActive(run.id)) {
+            // rehydrate 已接管（后台续驱到终态）；超时死线由引擎看门狗约束
+            continue
+          }
+          const timedOut = run.timeoutAt ? run.timeoutAt.getTime() < now : false
+          await this.deps.runs.update(run.id, {
+            status: timedOut ? WORKFLOW_RUN_STATUSES.timed_out : WORKFLOW_RUN_STATUSES.interrupted,
+            finishedAt: timedOut ? new Date() : null,
+            error: timedOut ? '应用退出前已超时' : null,
+          })
+          if (timedOut) result.timedOut++
+          else result.interrupted++
+        }
+      })
+    }
+    return result
+  }
+}
+
+/**
+ * 引擎依赖装配：仓库 → 引擎端口适配 + 事件推送到前端（wf:run-event 单通道）。
+ * ⚠️ 事件 emit 依赖 ALS userId（Web 端按用户路由）——引擎调用链已在
+ * runWithUserAsync 内，语义成立。
+ *
+ * M1 起（10-event-system §9）：emit 经 producer 适配器派生平台事件
+ * （workflow.run.*，总线就绪时），由 ipc/ws 通道翻译回五型载荷推前端；
+ * 总线未就绪/发布失败回退下方存量直推（前端实时推送不断、不影响恢复）。
+ */
+export function makeEngineDeps(
+  runs: WorkflowRunRepository,
+  nodeRuns: WorkflowNodeRunRepository,
+  journal?: import('@core/platform/workflow/engine/journal').WorkflowJournalPort | null
+): WorkflowEngineDeps {
+  // 存量直推路径（总线未启动/平台事件发布失败时的兜底；语义与改动前一致）
+  const legacyEmit = (event: Parameters<WorkflowEventPort['emit']>[0]): void => {
+    try {
+      getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, event)
+    } catch (e) {
+      logger.warn('[WorkflowRunService] 事件推送失败（不影响执行）', e)
+    }
+  }
+  return {
+    runs: {
+      getById: async runId => {
+        const row = await runs.getById(runId)
+        if (!row) return null
+        return {
+          runId: row.id,
+          userId: row.userId ?? '',
+          definitionId: row.definitionId,
+          graphSnapshot: row.graphSnapshot,
+          startInputs: row.startInputs ?? null,
+          // workflow_runs 行不持久化 settings（启动时由 definition 链即时解析）——
+          // rehydrate 以缺省设置重建（护栏类参数回到默认；已知近似，11 号 §5.3 注记）
+          settings: null,
+          triggerInfo: (row.triggerInfo as Record<string, unknown> | null) ?? null,
+          status: row.status,
+        }
+      },
+      patchRun: (runId, patch) =>
+        runs.update(runId, patch as UpdateWorkflowRunInput).then(() => undefined),
+    },
+    nodeRuns: {
+      // P4 冒烟实证：曾调用不存在的 listByRun（被 tsc 基线噪音掩盖）——rehydrate
+      // 预载读必炸；仓储实际方法为 getByRun（DTO 含 stateJson）
+      listByRun: async runId => {
+        const rows = await nodeRuns.getByRun(runId)
+        return rows.map(r => ({
+          nodeId: r.nodeId,
+          iterationIndex: r.iterationIndex,
+          status: r.status,
+          stateJson: (r as { stateJson?: string | null }).stateJson ?? null,
+        }))
+      },
+      startNode: input => nodeRuns.start(input).then(() => undefined),
+      patchNode: (runId, nodeId, iterationIndex, patch) =>
+        nodeRuns.update(runId, nodeId, iterationIndex, patch).then(() => undefined),
+    },
+    events: createWorkflowRunEventProducer(legacyEmit),
+    journal: journal ?? null,
+  }
+}
+
+export type { CreateWorkflowRunInput, UpdateWorkflowRunInput, WorkflowRunStats }

@@ -1,0 +1,18 @@
+[
+  {
+    "version": 1,
+    "time": "2026-10-09T12:43:44.100Z",
+    "type": "init",
+    "note": "",
+    "feedback": "",
+    "changes": "当前工作文件内容"
+  },
+  {
+    "version": 2,
+    "time": "2026-10-09T12:43:44.211Z",
+    "type": "import",
+    "note": "",
+    "feedback": "libai-skill 去AI味（独立模型 deepseek-v4-pro）：拆2处「不是A而是B」、拆对仗金句、破对称尾句；七维全[x]+手工补诊4项",
+    "changes": "内容取自 outputs/content/长文-用光操控大脑的人等了二十年-风格库终稿.md"
+  }
+]

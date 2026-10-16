@@ -1,0 +1,29 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "语音转文本",
+  "description": "上传音频文件识别为文字，并自动保存到资产库（文本分类）",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
+        { "key": "audio", "label": "音频文件", "type": "file", "required": true },
+        { "key": "language", "label": "语言提示", "type": "string" },
+        { "key": "model", "label": "模型", "type": "model", "modelTypes": ["audio", "multimodal"] }
+      ] } },
+      { "id": "stt1", "type": "stt", "name": "语音识别", "position": { "x": 300, "y": 200 }, "config": { "audio": "{{start.audio.path}}", "language": "{{start.language}}", "providerConfigId": "{{start.model.providerConfigId}}", "modelId": "{{start.model.modelId}}" } },
+      { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 540, "y": 200 }, "config": { "content": "{{stt1.text}}", "kind": "text", "category": "text", "name": "识别文本", "tags": "语音识别" } },
+      { "id": "msg1", "type": "message", "name": "输出识别结果", "position": { "x": 780, "y": 200 }, "config": { "content": "识别结果：{{stt1.text}}" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 1000, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "stt1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "stt1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

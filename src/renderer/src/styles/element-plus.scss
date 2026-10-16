@@ -1,0 +1,337 @@
+/**
+ * Element Plus 组件主题覆盖
+ * 让 Element Plus 组件跟随自定义主题变化
+ */
+
+// ==================== 全局主题变量 ====================
+// Element Plus 使用 CSS 变量，// 我们通过 JavaScript 动态更新这些变量，// 参见 useTheme.ts 中的 updateElementPlusTheme 函数
+
+// ==================== 按钮增强 ====================
+
+.el-button--primary {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+// ==================== 菜单增强 ====================
+
+.el-menu-item {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    background-color: rgba(0, 0, 0, 0.04) !important;
+  }
+
+  &.is-active {
+    background-color: rgba(0, 0, 0, 0.06) !important;
+    font-weight: 500;
+  }
+}
+
+// ==================== 卡片增强 ====================
+
+.el-card {
+  transition: all var(--transition-normal);
+  border-radius: var(--radius-lg);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card-hover);
+  }
+}
+
+// ==================== 标签页增强 ====================
+
+.el-tabs__item {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
+
+  &.is-active {
+    font-weight: 500;
+  }
+}
+
+.el-tabs__active-bar {
+  transition: all var(--transition-normal);
+}
+
+// ==================== 输入框增强 ====================
+
+.el-input__wrapper {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  }
+
+  &.is-focus {
+    box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  }
+}
+
+// ==================== 选择器增强 ====================
+
+.el-select {
+  .el-input__wrapper {
+    transition: all var(--transition-normal);
+  }
+
+  &:hover .el-input__wrapper {
+    box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  }
+}
+
+// ==================== 对话框增强 ====================
+
+.el-dialog {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+
+  .el-dialog__header {
+    border-bottom: 1px solid var(--border-color-lighter);
+    padding: 16px 20px;
+  }
+
+  .el-dialog__body {
+    padding: 20px;
+  }
+
+  .el-dialog__footer {
+    border-top: 1px solid var(--border-color-lighter);
+    padding: 12px 20px;
+  }
+}
+
+// ==================== 消息提示增强 ====================
+
+.el-message {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+// ==================== 标签增强 ====================
+
+.el-tag {
+  transition: all var(--transition-fast);
+
+  &:hover {
+    transform: scale(1.02);
+  }
+}
+
+// ==================== 徽章增强 ====================
+
+.el-badge {
+  transition: all var(--transition-fast);
+
+  &:hover {
+    transform: scale(1.05);
+  }
+}
+
+// ==================== 空状态增强 ====================
+
+.el-empty__description {
+  color: var(--text-secondary);
+}
+
+.el-empty__image {
+  opacity: 0.6;
+}
+
+// ==================== 步骤条增强 ====================
+
+.el-steps {
+  .el-step__head {
+    transition: all var(--transition-normal);
+
+    &.is-process {
+      border-color: var(--el-color-primary);
+      background-color: var(--el-color-primary);
+    }
+
+    &.is-finish {
+      border-color: var(--el-color-primary);
+      background-color: var(--el-color-primary);
+    }
+  }
+}
+
+// ==================== 进度条增强 ====================
+
+.el-progress-bar__inner {
+  background-color: var(--el-color-primary);
+  transition: all var(--transition-normal);
+}
+
+// ==================== 开关增强 ====================
+
+.el-switch {
+  &.is-checked .el-switch__core {
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+}
+
+// ==================== 复选框增强 ====================
+
+.el-checkbox {
+  &.is-checked .el-checkbox__inner {
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+}
+
+// ==================== 单选框增强 ====================
+
+.el-radio {
+  &.is-checked .el-radio__inner {
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+}
+
+// ==================== 表格增强 ====================
+
+.el-table {
+  .el-table__row:hover > td {
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+
+  .el-table__body tr:hover > td {
+    background-color: rgba(0, 0, 0, 0.02);
+    transition: background-color var(--transition-fast);
+  }
+}
+
+// ==================== 分页增强 ====================
+
+.el-pagination {
+  .el-pager li {
+    transition: all var(--transition-fast);
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+
+    &.is-active {
+      background-color: var(--el-color-primary);
+      color: #fff;
+    }
+  }
+
+  .btn-prev,
+  .btn-next {
+    transition: all var(--transition-fast);
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+  }
+}
+
+// ==================== 下拉菜单增强 ====================
+
+.el-dropdown-menu__item {
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+}
+
+// ==================== 工具提示增强 ====================
+
+.el-tooltip__popper {
+  transition: all var(--transition-fast);
+}
+
+// ==================== 骨架屏增强 ====================
+
+.el-skeleton {
+  .el-skeleton__paragraph {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 37%, #f0f0f0 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+// ==================== 加载动画 ====================
+
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.9);
+}
+
+.el-loading-spinner {
+  .circular {
+    animation: loading-rotate 2s linear infinite;
+  }
+
+  .path {
+    stroke: var(--el-color-primary);
+    animation: loading-dash 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes loading-rotate {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-dash {
+  0% {
+    stroke-dasharray:1, 1, 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 0, 3, 150;
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dasharray: 1, 4, 150;
+    stroke-dashoffset: 0;
+  }
+}
+
+// ==================== 现代皮肤覆盖（data-skin="modern"，皮肤方案 D3/D4） ====================
+// classic（默认）保持现有行为；modern 调整 EP 组件圆角并关闭经典 hover 动效
+[data-skin="modern"] {
+  // EP 圆角收紧到现代皮肤尺度
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 999px;
+
+  // 关闭经典皮肤的浮起/弹跳类 hover 动效
+  .el-card,
+  .el-button--primary {
+    &:hover {
+      transform: none;
+      box-shadow: var(--shadow-sm);
+    }
+
+    &:active {
+      transform: none;
+    }
+  }
+}

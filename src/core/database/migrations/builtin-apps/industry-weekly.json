@@ -1,0 +1,166 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 行业动态周报",
+  "description": "每周定时从全球财经/科技媒体按行业关键词采集 → AI 趋势分析（不止列新闻）→ 模板渲染周报长图（模板可自定义）",
+  "category": "news",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "sourceCategory", "label": "信息来源类别", "type": "select-dynamic", "source": "infoSourceCategories", "required": true, "defaultValue": "news", "help": "设置 → 信息来源 中的来源类别（内置「新闻来源」；可先在设置里新增金融/物理等领域类别）" },
+            { "key": "topic", "label": "来源分组", "type": "select-dynamic", "source": "infoSourceTopics", "required": true, "defaultValue": "finance", "linkage": { "watch": "sourceCategory", "matchBy": "categoryId" } },
+            { "key": "sourceIds", "label": "信息来源（可多选，可选）", "type": "select-dynamic", "source": "infoSources", "multi": true },
+            { "key": "customUrls", "label": "自定义媒体源 URL（可选）", "type": "json", "required": false, "defaultValue": [] },
+            { "key": "maxItems", "label": "每行业条数", "type": "number", "defaultValue": 15 },
+            { "key": "request", "label": "效果描述", "type": "textarea", "required": true, "defaultValue": "总结本周行业趋势、关键事件与数据点，给出下周展望，1500 字内" },
+            { "key": "templateAssetId", "label": "报告模板（可选）", "type": "select-dynamic", "source": "assets:template" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "crawl1",
+        "type": "crawl-news",
+        "name": "行业媒体采集",
+        "position": { "x": 300, "y": 200 },
+        "config": { "topicId": "{{start.topic}}", "sourceIds": "{{start.sourceIds}}", "customUrls": "{{start.customUrls}}", "maxLinks": 40, "maxSources": 10 }
+      },
+      {
+        "id": "filter1",
+        "type": "llm-chat",
+        "name": "AI 筛选相关链接",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "systemPrompt": "你是行业分析师。从候选链接中挑选与「{{start.topic}}」行业最相关的条目，最多 20 条。只输出 JSON 数组：[{title, url, reason}]。",
+          "prompt": "候选链接（标题+来源+URL）：\n{{crawl1.links}}\n\n请挑选并输出 JSON 数组。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐条抓取正文",
+        "position": { "x": 820, "y": 200 },
+        "config": { "listExpression": "{{filter1.parsed}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "抓取正文",
+        "position": { "x": 1060, "y": 260 },
+        "config": { "url": "{{loop1.item.url}}", "maxLength": 10000, "maxLinks": 0 }
+      },
+      {
+        "id": "gen1",
+        "type": "llm-chat",
+        "name": "行业趋势分析",
+        "position": { "x": 560, "y": 460 },
+        "config": {
+          "systemPrompt": "你是资深行业分析师。基于素材输出结构化周报 markdown：\n## 本周趋势\n## 关键事件（每条：标题+要点+来源）\n## 数据点\n## 下周展望\n\n只输出 markdown 正文。",
+          "prompt": "行业：{{start.topic}}\n周：{{sys.week}}\n用户效果要求：{{start.request}}\n\n已抓取素材（标题+来源+要点）：\n{{loop1.results}}\n\n请生成行业动态周报 markdown。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "是否有自定义模板",
+        "position": { "x": 820, "y": 460 },
+        "config": {
+          "branches": [
+            { "branchId": "hasTemplate", "label": "使用自定义模板", "conditions": [{ "left": "{{start.templateAssetId}}", "operator": "not_empty" }] },
+            { "branchId": "noTemplate", "label": "使用内置版式", "conditions": [{ "left": "{{start.templateAssetId}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noTemplate"
+        }
+      },
+      {
+        "id": "read1",
+        "type": "read-asset",
+        "name": "读取模板",
+        "position": { "x": 1060, "y": 520 },
+        "config": { "assetId": "{{start.templateAssetId}}", "output": "content" }
+      },
+      {
+        "id": "report_custom",
+        "type": "report-image",
+        "name": "周报长图（自定义模板）",
+        "position": { "x": 1300, "y": 520 },
+        "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "{{read1.content}}", "templateId": "industryWeekly" }
+      },
+      {
+        "id": "report_default",
+        "type": "report-image",
+        "name": "周报长图（内置版式）",
+        "position": { "x": 1300, "y": 400 },
+        "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "# {{start.topic}} 行业周报（{{sys.week}}）\n\n{{gen1.content}}", "templateId": "industryWeekly" }
+      },
+      {
+        "id": "saveImgCustom",
+        "type": "save-asset",
+        "name": "周报长图存资产库（自定义模板）",
+        "position": { "x": 1540, "y": 580 },
+        "config": { "content": "{{report_custom.filePath}}", "kind": "file", "category": "image", "subCategory": "行业周报长图", "name": "{{start.topic}}周报长图-{{sys.week}}", "tags": "周报,{{start.topic}}" }
+      },
+      {
+        "id": "saveImgDefault",
+        "type": "save-asset",
+        "name": "周报长图存资产库（内置版式）",
+        "position": { "x": 1540, "y": 340 },
+        "config": { "content": "{{report_default.filePath}}", "kind": "file", "category": "image", "subCategory": "行业周报长图", "name": "{{start.topic}}周报长图-{{sys.week}}", "tags": "周报,{{start.topic}}" }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1540, "y": 460 },
+        "config": { "content": "{{gen1.content}}", "kind": "text", "category": "text", "subCategory": "行业周报", "name": "{{start.topic}}周报-{{sys.week}}", "tags": "周报,{{start.topic}}" }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 1780, "y": 460 },
+        "config": { "title": "周报已生成", "message": "{{start.topic}} 行业周报（{{sys.week}}）已生成，资产 ID：{{save1.assetId}}", "level": "success" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 2020, "y": 460 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "crawl1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "crawl1", "targetNodeId": "filter1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "filter1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "loop1", "targetNodeId": "extract1", "kind": "loop-body" },
+      { "id": "e5", "sourceNodeId": "extract1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "gen1", "kind": "loop-done" },
+      { "id": "e7", "sourceNodeId": "gen1", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "cond1", "targetNodeId": "read1", "kind": "branch", "branchId": "hasTemplate" },
+      { "id": "e9", "sourceNodeId": "cond1", "targetNodeId": "report_default", "kind": "branch", "branchId": "noTemplate" },
+      { "id": "e10", "sourceNodeId": "read1", "targetNodeId": "report_custom", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "report_custom", "targetNodeId": "saveImgCustom", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "report_default", "targetNodeId": "saveImgDefault", "kind": "normal" },
+      { "id": "e15", "sourceNodeId": "saveImgCustom", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "saveImgDefault", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [{ "type": "cron", "expression": "0 9 * * 1", "preset": "weekly", "enabled": false }],
+  "settings": null
+}

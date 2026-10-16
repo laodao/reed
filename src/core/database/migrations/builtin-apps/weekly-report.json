@@ -1,0 +1,110 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 周报生成器",
+  "description": "零散工作流水 → 结构化归类 → 撰写周报正文（完成/进行中/计划/风险）→ 人工确认 → 保存资产",
+  "category": "office",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "workLog", "label": "本周工作流水（每行一件事）", "type": "textarea", "required": true, "validation": { "minLength": 1 } },
+            { "key": "goals", "label": "本周目标（可选）", "type": "textarea" },
+            { "key": "nextWeek", "label": "下周计划要点（可选）", "type": "textarea" },
+            { "key": "tone", "label": "风格", "type": "select", "defaultValue": "pragmatic", "options": [
+              { "label": "务实", "value": "pragmatic" },
+              { "label": "积极向上", "value": "positive" },
+              { "label": "简洁", "value": "concise" }
+            ] },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "classify1",
+        "type": "llm-chat",
+        "name": "流水归类",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是周报整理助手。把零散工作流水按状态归类：已完成事项、进行中事项、下周计划；并提炼本周风险/求助。只输出 JSON 对象：{completed: [字符串数组], inProgress: [字符串数组], nextWeek: [字符串数组], risks: [字符串数组]}。无法归类的跳过，不要编造。",
+          "prompt": "本周工作流水：\n{{start.workLog}}\n\n本周目标：{{start.goals}}\n下周计划要点：{{start.nextWeek}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "write1",
+        "type": "llm-chat",
+        "name": "撰写周报",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "systemPrompt": "你是周报撰写助手。基于归类结果撰写正式周报正文，markdown 格式，包含：一、本周完成；二、进行中；三、下周计划；四、风险与求助。风格要求：\n- 务实：简洁陈述、重结果\n- 积极向上：突出成果亮点、表达主动\n- 简洁：极简要点式\n尽量量化成果（可依据流水中的数字），不要编造未提及的内容。只输出周报正文。",
+          "prompt": "风格：{{start.tone}}\n\n归类结果：\n{{classify1.parsed}}\n\n请撰写周报正文。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 800, "y": 200 },
+        "config": {
+          "payload": "{{write1.content}}",
+          "interaction": "input",
+          "editableFields": [{ "key": "output_result", "label": "周报正文", "type": "string" }]
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "周报输出",
+        "position": { "x": 1040, "y": 200 },
+        "config": {
+          "title": "周报（{{sys.week}}）",
+          "template": "# 周报（{{sys.week}}）\n\n{{review1.output_result}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "content": "# 周报（{{sys.week}}）\n\n{{review1.output_result}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "工作报告",
+          "name": "周报-{{sys.week}}",
+          "tags": "周报,工作报告"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1520, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "classify1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "classify1", "targetNodeId": "write1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "write1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "review1", "targetNodeId": "report1", "kind": "approve" },
+      { "id": "e5", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e6", "sourceNodeId": "report1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

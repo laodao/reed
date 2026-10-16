@@ -1,0 +1,18 @@
+{
+  "withMermaid": {
+    "toList": 322,
+    "toMessages": 957,
+    "toSettled": 3958,
+    "messages": 22,
+    "mermaidDone": 2,
+    "mermaidPending": 0
+  },
+  "withoutMermaid": {
+    "toList": 436,
+    "toMessages": 1160,
+    "toSettled": 4167,
+    "messages": 22,
+    "mermaidDone": 2,
+    "mermaidPending": 0
+  }
+}

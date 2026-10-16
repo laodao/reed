@@ -1,0 +1,1225 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 长文写作",
+  "description": "长文引擎 v2（全新创作/修订双模式）：素材消化选材 → 模式分流（修订模式=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章末尾卡点）→ 大纲人工确认（可直接改大纲 JSON）→ 逐章写作（writing-styles 风格卡技能逐章承接前文）→ 合并 → 事实校验（纪实逐条对照素材）→ 编辑评审循环（独立模型五维评分）→ 合流 → libai 去AI味（独立模型）→ 终稿事实审计（穷举时间/数字/人物/机构/事件，逐条对照素材判 一致/有出入/素材未载，报告呈给用户）→ 终稿人工确认（可直接改稿，驳回=带意见重跑续版本链）→ 备选标题 → 入资产（versioned 版本链，资产中心可查历史/回滚）",
+  "category": "内容创作",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": {
+          "x": 40,
+          "y": 320
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "topic",
+              "label": "主题",
+              "type": "string",
+              "required": true
+            },
+            {
+              "key": "material",
+              "label": "素材（研究报告/资料全文；非空=纪实长文模式，事实锁定素材）",
+              "type": "textarea"
+            },
+            {
+              "key": "mode",
+              "label": "写作模式",
+              "type": "select",
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动（素材非空=纪实长文，空=小说）",
+                  "value": "auto"
+                },
+                {
+                  "label": "纪实长文（必须提供素材）",
+                  "value": "nonfiction"
+                },
+                {
+                  "label": "小说/虚构",
+                  "value": "fiction"
+                }
+              ]
+            },
+            {
+              "key": "feedback",
+              "label": "修改意见（修订模式）/版本说明",
+              "type": "textarea"
+            },
+            {
+              "key": "base_asset_id",
+              "label": "基底资产 ID（修订续链：填上次运行产出的资产 ID，终稿将追加为该资产新版本）",
+              "type": "string"
+            },
+            {
+              "key": "current_content",
+              "label": "已有成稿（修订模式；非空=跳过创作管线，直接按意见修订）",
+              "type": "textarea"
+            },
+            {
+              "key": "premise",
+              "label": "设定/背景（小说模式）；纪实模式=写作侧重（可空）",
+              "type": "textarea"
+            },
+            {
+              "key": "reader",
+              "label": "目标读者与平台（例：公众号深度读者；可空）",
+              "type": "string"
+            },
+            {
+              "key": "chapterCount",
+              "label": "目标章节数",
+              "type": "number",
+              "defaultValue": 5,
+              "validation": {
+                "min": 1,
+                "max": 30
+              }
+            },
+            {
+              "key": "wordCountPerChapter",
+              "label": "每章目标字数",
+              "type": "number",
+              "defaultValue": 1200
+            },
+            {
+              "key": "style_card",
+              "label": "风格卡（writing-styles 风格库；auto=按主题自动判定）",
+              "type": "select",
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动判定（按主题选最合适的风格卡）",
+                  "value": "auto"
+                },
+                {
+                  "label": "时政深度·书面分析体",
+                  "value": "affairs-formal"
+                },
+                {
+                  "label": "深度叙事·说书杂谈",
+                  "value": "luke-narrative"
+                },
+                {
+                  "label": "深度叙事·人物特稿",
+                  "value": "luke-feature"
+                },
+                {
+                  "label": "深度叙事·战局复盘",
+                  "value": "luke-war"
+                },
+                {
+                  "label": "科技解读·科普特稿（诺奖/新技术，类比通俗化）",
+                  "value": "science-explainer"
+                },
+                {
+                  "label": "财经产业史诗",
+                  "value": "finance-story"
+                },
+                {
+                  "label": "调查特稿",
+                  "value": "feature-report"
+                },
+                {
+                  "label": "情感共鸣文",
+                  "value": "emotional"
+                },
+                {
+                  "label": "干货教程",
+                  "value": "knowledge"
+                },
+                {
+                  "label": "知乎高赞回答体",
+                  "value": "zhihu-answer"
+                },
+                {
+                  "label": "小红书清单体",
+                  "value": "listicle"
+                },
+                {
+                  "label": "短视频口播脚本",
+                  "value": "script-spoken"
+                }
+              ]
+            },
+            {
+              "key": "style",
+              "label": "文风",
+              "type": "select",
+              "defaultValue": "深度纪实",
+              "options": [
+                {
+                  "label": "深度纪实",
+                  "value": "深度纪实"
+                },
+                {
+                  "label": "通俗小说",
+                  "value": "通俗小说"
+                },
+                {
+                  "label": "网文爽文",
+                  "value": "网文爽文"
+                },
+                {
+                  "label": "严肃文学",
+                  "value": "严肃文学"
+                },
+                {
+                  "label": "科普说明",
+                  "value": "科普说明"
+                },
+                {
+                  "label": "商业文案",
+                  "value": "商业文案"
+                }
+              ]
+            },
+            {
+              "key": "traditional",
+              "label": "用繁体字（默认简体）",
+              "type": "boolean",
+              "defaultValue": false
+            },
+            {
+              "key": "kbId",
+              "label": "知识库（可选，保存长文）",
+              "type": "select-dynamic",
+              "source": "knowledgeBases"
+            },
+            {
+              "key": "libaiModel",
+              "label": "去AI味模型（建议与写作模型不同族，保证独立视角）",
+              "type": "model",
+              "required": true
+            },
+            {
+              "key": "keep",
+              "label": "去AI味时必须保留（默认保护引语与口径）",
+              "type": "textarea",
+              "defaultValue": "直接引语一字不动；数字、日期与口径标注不得改"
+            },
+            {
+              "key": "intensity",
+              "label": "去AI味强度",
+              "type": "select",
+              "defaultValue": "标准",
+              "options": [
+                {
+                  "label": "保守（学术/公文，只删连接词与套话）",
+                  "value": "保守"
+                },
+                {
+                  "label": "标准（自媒体/公关，完整去AI清单+适度口语化）",
+                  "value": "标准"
+                },
+                {
+                  "label": "激进（创意写作/社交帖，可大改句式注入口语）",
+                  "value": "激进"
+                }
+              ]
+            },
+            {
+              "key": "model",
+              "label": "写作模型",
+              "type": "model",
+              "modelTypes": [
+                "text",
+                "multimodal"
+              ],
+              "required": true
+            },
+            {
+              "key": "evalModel",
+              "label": "编辑评审模型（可选，建议与写作模型不同以保持独立视角）",
+              "type": "model",
+              "modelTypes": [
+                "text",
+                "multimodal"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "digest",
+        "type": "llm-chat",
+        "name": "素材消化与选材",
+        "position": {
+          "x": 260,
+          "y": 320
+        },
+        "config": {
+          "systemPrompt": "你是素材消化与选材编辑。任务：把素材整理成可直接支撑长文写作的选材方案。纪律：\n1. 只依据素材提取，禁止编造——每条事实/引语必须能在素材中找到原句依据；\n2. 叙事线候选 2~3 条：每条给一句话主线 + 为什么它成立（冲突/反差/悬念在哪）；\n3. 最强事实 ≤10 条：具体（时间/数字/人名/机构/结果）且对主线最有支撑力的，保留素材中的口径标注；\n4. 引语库：可直接引用的原话（注明说话者/身份与出处口径）；\n5. 口径冲突：素材中互相矛盾的数字/说法，两条并列 + 一句说明。\n素材为空时输出 {\"hasMaterial\":false} 全空结构，不要编造。",
+          "prompt": "主题：{{start.topic}}\n写作侧重：{{start.premise}}\n素材全文：\n{{start.material}}\n\n请输出选材方案 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "modePick",
+        "type": "code",
+        "name": "模式决策",
+        "position": {
+          "x": 480,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "code": "const choice = String(inputs.modeChoice || 'auto');\nconst material = String(inputs.material || '').trim();\nconst hasMaterial = material.length > 0 || Boolean(inputs.digest && inputs.digest.hasMaterial);\nlet mode;\nif (choice === 'fiction') mode = 'fiction';\nelse if (choice === 'nonfiction') mode = 'nonfiction';\nelse mode = hasMaterial ? 'nonfiction' : 'fiction';\nif (mode === 'nonfiction' && material.length === 0 && !(inputs.digest && inputs.digest.hasMaterial)) mode = 'fiction';\nreturn { mode, hasMaterial };",
+          "inputs": [
+            {
+              "key": "modeChoice",
+              "value": "{{start.mode}}"
+            },
+            {
+              "key": "material",
+              "value": "{{start.material}}"
+            },
+            {
+              "key": "digest",
+              "value": "{{digest.parsed}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "angle",
+        "type": "llm-chat",
+        "name": "开篇钩子比选",
+        "position": {
+          "x": 680,
+          "y": 320
+        },
+        "config": {
+          "systemPrompt": "你是开篇设计师。为这篇长文设计 2~3 个开头方案并择优。钩子类型库：反差数字（用最悬殊的一组数据对撞）/ 场景切入（一个具体时刻的具体画面）/ 悬念设问（读者最想知道答案的一问）/ 时间锚点（把读者拉到决定性的一天）/ 引语开场（一句最有分量的话）。\n纪律：\n- 纪实模式下钩子必须取自选材方案里的最强事实/引语，不得虚构；\n- 小说模式按故事线自由设计；\n- 每个方案给出 why（为什么它能抓住读者）；\n- 择优 chosen 综合读者与文风判断。",
+          "prompt": "主题：{{start.topic}}\n写作模式：{{modePick.result.mode}}\n读者：{{start.reader}}\n文风：{{start.style}}\n选材方案：\n{{digest.parsed}}\n\n请输出开篇方案 JSON 对象：{\"options\":[{\"type\":\"\",\"text\":\"\",\"why\":\"\"}],\"chosen\":{\"type\":\"\",\"text\":\"\"},\"reason\":\"\"}",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "storyline",
+        "type": "llm-chat",
+        "name": "构思故事线/叙事主线",
+        "position": {
+          "x": 880,
+          "y": 320
+        },
+        "config": {
+          "systemPrompt": "你是资深长文策划。根据模式产出主线：\n【模式=fiction 小说模式】构思一条有起承转合、有核心冲突与张力的故事线：创意新颖、逻辑自洽、结构清晰。\n【模式=nonfiction 纪实模式】从选材方案的叙事线候选中择优或融合成一条叙事主线：只依据素材中的真实事件脉络，冲突与张力必须来自素材中真实存在的矛盾/反差/悬念；说明选择理由；不得引入素材外的人物或事件。\n开场执行开篇比选选定的钩子方案。结构清晰、分段写出关键节点。繁简按开关（{{start.traditional}} 为 true 才繁体）。只输出主线正文，不要任何解释。",
+          "prompt": "主题：{{start.topic}}\n写作模式：{{modePick.result.mode}}\n设定/侧重：{{start.premise}}\n文风：{{start.style}}\n开篇钩子（开场必须执行）：{{angle.parsed.chosen}}\n选材方案（纪实模式的主线来源）：\n{{digest.parsed}}\n\n请构思主线。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "outline",
+        "type": "llm-chat",
+        "name": "生成章节大纲",
+        "position": {
+          "x": 1080,
+          "y": 320
+        },
+        "config": {
+          "systemPrompt": "你是内容编辑，基于主线输出章节大纲。只输出 JSON 数组，不要任何解释或代码块包裹：\n[{\"title\":\"章节标题\",\"summary\":\"本章要点（一句话）\",\"facts\":\"本章可用素材要点（纪实模式必填：本章要用到的具体事实/数据/案例，摘自选材方案；小说模式留空）\"}, ...]\n章节数不超过目标；纪实模式必须让选材方案的最强事实/引语/口径冲突分配到具体章节（开篇章执行既定钩子，末章负责收束）；小说模式保持剧情推进逻辑。繁简按开关（{{start.traditional}}，true 才繁体）。\n每个章节的输出字段增加 \"hook\"（本章末尾的钩子/卡点：悬念、反差或未解问题，负责把读者推向下一章；至少两章设置卡点，末章负责收束或留开放问题）。开篇章必须执行既定钩子方案。",
+          "prompt": "主线：\n{{storyline.content}}\n\n写作模式：{{modePick.result.mode}}\n目标章节数：{{start.chapterCount}}\n文风：{{start.style}}\n选材方案：\n{{digest.parsed}}\n\n请输出章节大纲 JSON 数组。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 8192
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐章写作",
+        "position": {
+          "x": 1280,
+          "y": 320
+        },
+        "config": {
+          "listExpression": "{{parseOutline.result.sections}}",
+          "emptyPolicy": "skip",
+          "errorPolicy": "skip"
+        }
+      },
+      {
+        "id": "chapter",
+        "type": "skill-call",
+        "name": "写作本章",
+        "position": {
+          "x": 1480,
+          "y": 400
+        },
+        "config": {
+          "skillId": "writing-styles",
+          "inputs": [
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "material",
+              "value": "{{start.material}}"
+            },
+            {
+              "key": "style",
+              "value": "{{start.style_card}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{start.reader}}"
+            },
+            {
+              "key": "word_count",
+              "value": "{{start.wordCountPerChapter}}"
+            },
+            {
+              "key": "extra",
+              "value": "{{start.premise}}"
+            },
+            {
+              "key": "current_content",
+              "value": ""
+            },
+            {
+              "key": "feedback",
+              "value": ""
+            },
+            {
+              "key": "section_brief",
+              "value": "第 {{loop1.index}} 章「{{loop1.item.title}}」\n本章要点：{{loop1.item.summary}}\n本章素材要点：{{loop1.item.facts}}\n本章末尾钩子/卡点：{{loop1.item.hook}}\n开篇钩子（首章执行）：{{angle.parsed.chosen}}\n全文主线：{{storyline.content}}\n写作模式：{{modePick.result.mode}}（nonfiction=纪实锁定素材口径；fiction=小说模式自由写作）"
+            }
+          ],
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 16384
+        }
+      },
+      {
+        "id": "concat1",
+        "type": "code",
+        "name": "合并成完整长文",
+        "position": {
+          "x": 1680,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "code": "const chapters = Array.isArray(inputs.chapters) ? inputs.chapters : [];\nconst title = (inputs.title || '').trim();\nconst body = chapters.map(function (c, i) {\n  const text = c && c.content ? c.content : (typeof c === 'string' ? c : '');\n  const clean = text.replace(/\\n*【本章梗概】[^\\n]*/g, '').trim();\n  const head = (c && c.title) ? '## ' + c.title + '\\n\\n' : '';\n  return (i > 0 ? '\\n\\n' : '') + head + clean;\n}).join('');\nreturn (title ? '# ' + title + '\\n\\n' : '') + body;",
+          "inputs": [
+            {
+              "key": "chapters",
+              "value": "{{loop1.results}}"
+            },
+            {
+              "key": "title",
+              "value": "{{start.topic}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "factCheck",
+        "type": "llm-chat",
+        "name": "事实校验",
+        "position": {
+          "x": 1880,
+          "y": 320
+        },
+        "config": {
+          "systemPrompt": "你是事实校验员。\n【模式=nonfiction】把正文中的可核查断言（日期/数字/金额/人名/机构/地名/引语/排序）逐条抽取，与素材逐条对照：\n- 每条给 verdict：一致 / 偏差（写明素材原文与正确值）/ 素材未载（正文有而素材没有的具体断言）；\n- corrected 给出修正后的全文（markdown）：只改错误处——偏差改成与素材一致；「素材未载」的具体断言改为一般性表述或删除；其余一字不动；\n- 引语必须逐字与素材一致。\n【模式=fiction】无需校验：输出 {\"mode\":\"fiction\",\"checked\":null,\"issues\":[],\"corrected\":\"\"}。\n只输出 JSON：{\"mode\":\"\",\"checked\":{\"total\":0,\"matched\":0,\"deviated\":0,\"missing\":0},\"issues\":[{\"claim\":\"\",\"inDraft\":\"\",\"inMaterial\":\"\",\"verdict\":\"\",\"fix\":\"\"}],\"corrected\":\"\"}\n穷举纪律：先通读全文把所有可核查断言列成完整清单（时间/日期、数字、人名、机构、期刊、地名、事件断言），再逐条判定——漏一条即失职；拿不准的一律判「素材未载」而不是放过。",
+          "prompt": "写作模式：{{modePick.result.mode}}\n素材全文：\n{{start.material}}\n\n正文全文：\n{{concat1.result}}\n\n请执行校验并输出 JSON。",
+          "jsonMode": true,
+          "maxTokens": 32768,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "applyFix",
+        "type": "code",
+        "name": "应用校验修正",
+        "position": {
+          "x": 2080,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "code": "const corrected = String(inputs.corrected || '').trim();\nconst draft = String(inputs.draft || '');\nreturn { draft: corrected.length > 0 ? corrected : draft };",
+          "inputs": [
+            {
+              "key": "corrected",
+              "value": "{{factCheck.parsed.corrected}}"
+            },
+            {
+              "key": "draft",
+              "value": "{{concat1.result}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "editLoop",
+        "type": "loop",
+        "name": "编辑评审循环（直到达标）",
+        "position": {
+          "x": 2280,
+          "y": 400
+        },
+        "config": {
+          "mode": "until",
+          "stopExpression": "{{editPack.result.verdict}}",
+          "stopValue": "pass",
+          "maxIterations": 3,
+          "errorPolicy": "skip"
+        }
+      },
+      {
+        "id": "editEval",
+        "type": "llm-chat",
+        "name": "独立编辑评审",
+        "position": {
+          "x": 2480,
+          "y": 480
+        },
+        "config": {
+          "systemPrompt": "你是独立编辑（与作者不同视角），按读者体验给这篇长文打分并给出可执行差距。五个维度各 0~10 分：\n- hook 开头钩子：前三行能不能让人停下来（是否执行了既定钩子方案）；\n- pacing 节奏与信息密度：段落节奏是否交替、有无冗长空洞段；\n- factDensity 事实密度：具体事实/数字/案例是否充分，有没有连续抽象概括的空段；\n- language 语言与金句：表达是否流畅有记忆点，有没有可以打磨成金句的句子；\n- ending 收束：结尾是否有力量、是否回应了开头。\n读者：{{start.reader}}；文风：{{start.style}}。\n跨章一致性（一票否决，不计分）：同一修辞模式在 ≥2 章重复出现即判 revise——重点扫：\"不是A而是B/并不是X而是Y\"判断句、同款反差收尾（\"这个反差/恰恰相反\"）、相同章首转折词、同一比喻复用、连续章节以同结构判断句收束；逐处给 chapterHint 与替换方向（拆直陈/换比喻/删）。章间语域漂移（这章口语、那章书面）同样判 revise。verdict 判定：total≥40 且无单维低于 6 且跨章一致性无碰撞 → pass；否则 revise。gaps 最多 5 条按影响排序，每条给 chapterHint（哪一章/哪个位置）+ issue + instruction（具体怎么改）。\n只输出 JSON：{\"scores\":{\"hook\":0,\"pacing\":0,\"factDensity\":0,\"language\":0,\"ending\":0},\"total\":0,\"verdict\":\"pass 或 revise\",\"gaps\":[{\"chapterHint\":\"\",\"issue\":\"\",\"instruction\":\"\"}],\"overall\":\"\"}。评审对象是下方「全文」字段；若其为空则评审「全文备选」。",
+          "prompt": "主题：{{start.topic}}\n写作模式：{{modePick.result.mode}}\n（纪实模式时以下选材方案可用于核对事实密度是否兑现）选材方案：\n{{digest.parsed}}\n\n全文：\n{{editLoop.prev.result.draft}}\n\n全文备选：\n{{applyFix.result.draft}}\n\n请评审并输出 JSON。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.evalModel.providerConfigId}}",
+          "modelId": "{{start.evalModel.modelId}}"
+        }
+      },
+      {
+        "id": "editFix",
+        "type": "llm-chat",
+        "name": "按差距修订",
+        "position": {
+          "x": 2680,
+          "y": 480
+        },
+        "config": {
+          "systemPrompt": "你是长文作者，根据编辑评审差距修订全文。规则：\n- verdict=pass：一个字都不要改，原样输出全文；\n- verdict=revise：只按 gaps 逐条修订对应位置（chapterHint 定位），未涉及的段落一字不动；\n- 纪实模式修订时仍受事实纪律约束：不得为「更好看」而编造或改动事实与引语；\n- 只输出修订后的全文 markdown，不要解释。\n评审对象是下方「原文全文」字段；若其为空则用「原文备选」。",
+          "prompt": "写作模式：{{modePick.result.mode}}\n评审结果：\n{{editEval.parsed}}\n\n原文全文：\n{{editLoop.prev.result.draft}}\n\n原文备选：\n{{applyFix.result.draft}}\n\n请输出全文。",
+          "maxTokens": 32768,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "editPack",
+        "type": "code",
+        "name": "打包评审轮结果",
+        "position": {
+          "x": 2880,
+          "y": 480
+        },
+        "config": {
+          "language": "js",
+          "code": "return { draft: String(inputs.draft || ''), verdict: String(inputs.verdict || '') };",
+          "inputs": [
+            {
+              "key": "draft",
+              "value": "{{editFix.content}}"
+            },
+            {
+              "key": "verdict",
+              "value": "{{editEval.parsed.verdict}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "titles",
+        "type": "llm-chat",
+        "name": "备选标题方案",
+        "position": {
+          "x": 3080,
+          "y": 320
+        },
+        "config": {
+          "systemPrompt": "你是标题编辑。为这篇长文给 3~5 个标题方案：\n- 类型多样：反差数字式 / 悬念设问式 / 结论先行式 / 场景代入式；\n- 纪实模式：标题中的数字与事实必须来自正文（不得夸大或虚构）；\n- 每案给 why（适合什么读者/平台场景）；给出 recommended 推荐项及理由。\n只输出 JSON：{\"options\":[{\"title\":\"\",\"why\":\"\"}],\"recommended\":\"\"}",
+          "prompt": "主题：{{start.topic}}\n读者：{{start.reader}}\n文风：{{start.style}}\n全文：\n{{editLoop.last.result.draft}}\n\n请输出标题方案 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "finalPack",
+        "type": "code",
+        "name": "组装终稿（正文+标题方案）",
+        "position": {
+          "x": 3280,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "code": "const draft = String(inputs.draft || '');\nconst t = inputs.titles && typeof inputs.titles === 'object' ? inputs.titles : null;\nlet md = draft;\nif (t && Array.isArray(t.options) && t.options.length) {\n  const lines = t.options.map(function (o, i) { return (i + 1) + '. ' + String(o.title || '') + (o.why ? ('（' + o.why + '）') : ''); });\n  const rec = t.recommended ? ('\\n\\n推荐：' + String(t.recommended)) : '';\n  md = md + '\\n\\n---\\n\\n## 备选标题方案\\n\\n' + lines.join('\\n') + rec;\n}\nreturn { md };",
+          "inputs": [
+            {
+              "key": "draft",
+              "value": "{{editLoop.last.result.draft}}"
+            },
+            {
+              "key": "titles",
+              "value": "{{titles.parsed}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "是否存知识库",
+        "position": {
+          "x": 3480,
+          "y": 320
+        },
+        "config": {
+          "branches": [
+            {
+              "branchId": "hasKb",
+              "label": "存知识库",
+              "conditions": [
+                {
+                  "left": "{{start.kbId}}",
+                  "operator": "not_empty"
+                }
+              ]
+            },
+            {
+              "branchId": "noKb",
+              "label": "跳过知识库",
+              "conditions": [
+                {
+                  "left": "{{start.kbId}}",
+                  "operator": "is_empty"
+                }
+              ]
+            }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noKb"
+        }
+      },
+      {
+        "id": "saveKb1",
+        "type": "kb-ingest",
+        "name": "长文存知识库",
+        "position": {
+          "x": 3700,
+          "y": 220
+        },
+        "config": {
+          "knowledgeBaseId": "{{start.kbId}}",
+          "title": "「长文」{{start.topic}}-{{sys.today}}",
+          "content": "{{finalPick.result.content}}",
+          "sourceKey": "longform-{{start.topic}}-{{sys.today}}",
+          "waitForCompletion": false
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "长文存资产库",
+        "position": {
+          "x": 3700,
+          "y": 420
+        },
+        "config": {
+          "content": "{{finalPick.result.content}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "长文写作",
+          "name": "{{start.topic}}长文-{{sys.today}}",
+          "tags": "长文,{{start.topic}}",
+          "versioned": true,
+          "versionOfAssetId": "{{start.base_asset_id}}",
+          "feedback": "{{start.feedback}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": {
+          "x": 3942,
+          "y": 320
+        },
+        "config": {}
+      },
+      {
+        "id": "outlineReview",
+        "type": "human-review",
+        "name": "大纲确认",
+        "position": {
+          "x": 1420,
+          "y": 300
+        },
+        "config": {
+          "payload": "## 章节大纲（确认后执行；可直接修改「大纲」字段——每章 title/summary/facts/hook 均可改）\n\n{{outline.parsed}}",
+          "editableFields": [
+            {
+              "key": "outline",
+              "label": "章节大纲 JSON（可直接修改）",
+              "type": "string"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "parseOutline",
+        "type": "code",
+        "name": "解析确认后大纲",
+        "position": {
+          "x": 1660,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "edited",
+              "value": "{{outlineReview.values.outline}}"
+            },
+            {
+              "key": "fallback",
+              "value": "{{outline.parsed}}"
+            }
+          ],
+          "code": "function tryParse(t) {\n  if (!t) return null;\n  const clean = String(t).replace(/^```(json)?/gm, '').replace(/```/gm, '').trim();\n  try { return JSON.parse(clean); } catch (e) { return null; }\n}\nlet obj = tryParse(inputs.edited);\nif (!obj) obj = tryParse(inputs.fallback);\nif (Array.isArray(obj)) obj = { sections: obj };\nif (!obj || !Array.isArray(obj.sections)) obj = { sections: [] };\nreturn { sections: obj.sections };"
+        }
+      },
+      {
+        "id": "planHint",
+        "type": "message",
+        "name": "驳回提示（大纲）",
+        "position": {
+          "x": 1660,
+          "y": 520
+        },
+        "config": {
+          "content": "结构大纲已驳回。请调整「设定/侧重」或「修改意见」后重新运行本应用，大纲将按新要求重新生成。"
+        }
+      },
+      {
+        "id": "cond_mode",
+        "type": "condition",
+        "name": "修订还是新写",
+        "position": {
+          "x": 300,
+          "y": 300
+        },
+        "config": {
+          "branches": [
+            {
+              "branchId": "revision",
+              "label": "修订模式（已有成稿）",
+              "conditions": [
+                {
+                  "left": "{{start.current_content}}",
+                  "operator": "not_empty"
+                }
+              ]
+            },
+            {
+              "branchId": "normal",
+              "label": "全新创作",
+              "conditions": [
+                {
+                  "left": "{{start.current_content}}",
+                  "operator": "is_empty"
+                }
+              ]
+            }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "normal"
+        }
+      },
+      {
+        "id": "revise1",
+        "type": "skill-call",
+        "name": "按意见修订（writing-styles 修订模式）",
+        "position": {
+          "x": 540,
+          "y": 560
+        },
+        "config": {
+          "skillId": "writing-styles",
+          "inputs": [
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "material",
+              "value": "{{start.material}}"
+            },
+            {
+              "key": "style",
+              "value": "{{start.style_card}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{start.reader}}"
+            },
+            {
+              "key": "word_count",
+              "value": "{{start.wordCountPerChapter}}"
+            },
+            {
+              "key": "extra",
+              "value": "{{start.premise}}"
+            },
+            {
+              "key": "current_content",
+              "value": "{{start.current_content}}"
+            },
+            {
+              "key": "feedback",
+              "value": "{{start.feedback}}"
+            },
+            {
+              "key": "section_brief",
+              "value": ""
+            }
+          ],
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 32768
+        }
+      },
+      {
+        "id": "mergePick",
+        "type": "code",
+        "name": "合流（修订稿/创作稿）",
+        "position": {
+          "x": 3060,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "revised",
+              "value": "{{revise1.content}}"
+            },
+            {
+              "key": "draft",
+              "value": "{{finalPack.result.md}}"
+            }
+          ],
+          "code": "const revised = String(inputs.revised || '').trim();\nconst draft = String(inputs.draft || '');\nreturn { content: revised || draft, revised: Boolean(revised) };"
+        }
+      },
+      {
+        "id": "libai",
+        "type": "skill-call",
+        "name": "去AI味（libai-skill）",
+        "position": {
+          "x": 3300,
+          "y": 300
+        },
+        "config": {
+          "skillId": "libai-skill",
+          "inputs": [
+            {
+              "key": "source_text",
+              "value": "{{mergePick.result.content}}"
+            },
+            {
+              "key": "intensity",
+              "value": "{{start.intensity}}"
+            },
+            {
+              "key": "keep",
+              "value": "{{start.keep}}"
+            }
+          ],
+          "providerConfigId": "{{start.libaiModel.providerConfigId}}",
+          "modelId": "{{start.libaiModel.modelId}}",
+          "maxTokens": 32768
+        }
+      },
+      {
+        "id": "pack",
+        "type": "code",
+        "name": "终稿切分",
+        "position": {
+          "x": 3540,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "libai",
+              "value": "{{libai.content}}"
+            },
+            {
+              "key": "draft",
+              "value": "{{mergePick.result.content}}"
+            }
+          ],
+          "code": "const SPLIT = '=====FINAL=====';\nconst src = String(inputs.libai || '');\nconst draft = String(inputs.draft || '');\nconst i = src.indexOf(SPLIT);\nlet final = '';\nlet diagnosis = '';\nif (i >= 0) {\n  diagnosis = src.slice(0, i).trim();\n  final = src.slice(i + SPLIT.length).trim();\n}\nif (!final) final = draft;\nreturn { final, diagnosis: diagnosis || '（未产出诊断段）', fallbackUsed: i < 0 };"
+        }
+      },
+      {
+        "id": "finalReview",
+        "type": "human-review",
+        "name": "终稿确认",
+        "position": {
+          "x": 3780,
+          "y": 300
+        },
+        "config": {
+          "payload": "{{auditMd.result.payload}}",
+          "editableFields": [
+            {
+              "key": "content",
+              "label": "终稿全文（可直接修改，修改后保存修改版；审核报告见上方卡片内容）",
+              "type": "string"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "finalPick",
+        "type": "code",
+        "name": "终稿取值",
+        "position": {
+          "x": 4020,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "edited",
+              "value": "{{finalReview.values.content}}"
+            },
+            {
+              "key": "final",
+              "value": "{{pack.result.final}}"
+            }
+          ],
+          "code": "const edited = String(inputs.edited || '').trim();\nconst final = String(inputs.final || '');\nreturn { content: edited || final };"
+        }
+      },
+      {
+        "id": "reviseHint",
+        "type": "message",
+        "name": "驳回提示（终稿）",
+        "position": {
+          "x": 4020,
+          "y": 540
+        },
+        "config": {
+          "content": "终稿已驳回。请在同一会话再次运行本应用：填「基底资产 ID」（上次运行产出的资产 ID）+「已有成稿」+「修改意见」，修订内容将作为该资产的新版本保存（历史版本可回滚）。"
+        }
+      },
+      {
+        "id": "finalAudit",
+        "type": "llm-chat",
+        "name": "终稿事实审计（逐条穷举）",
+        "position": {
+          "x": 3660,
+          "y": 140
+        },
+        "config": {
+          "systemPrompt": "你是事实审计员，对终稿做穷举式事实清点。分两步：\n第一步 通读全文，把所有可核查断言逐条列成清单：时间/日期、数字（引用量/百分比/金额/人数/期数）、人名（含外文原名）、机构/公司/期刊、地名、事件断言（谁在何时做了什么）——一条不许漏；\n第二步 逐条对照素材判定：\n- verified：与素材一致（evidence 写素材依据要点）；\n- deviated：与素材有出入（evidence 写素材原文与正确表述）；\n- unverified：素材未载（无法从素材核验；evidence 给出建议：补口径「据××报道」或删除）。\n只输出 JSON：{\"items\":[{\"type\":\"时间|数字|人物|机构|事件\",\"claim\":\"\",\"verdict\":\"verified|deviated|unverified\",\"evidence\":\"\"}],\"stats\":{\"total\":0,\"verified\":0,\"deviated\":0,\"unverified\":0}}",
+          "prompt": "终稿全文：\n{{pack.result.final}}\n\n素材全文：\n{{start.material}}\n\n请执行穷举审计并输出 JSON。",
+          "jsonMode": true,
+          "maxTokens": 16384,
+          "providerConfigId": "{{start.libaiModel.providerConfigId}}",
+          "modelId": "{{start.libaiModel.modelId}}"
+        }
+      },
+      {
+        "id": "auditMd",
+        "type": "code",
+        "name": "审计报告拼装",
+        "position": {
+          "x": 3660,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "audit",
+              "value": "{{finalAudit.parsed}}"
+            },
+            {
+              "key": "final",
+              "value": "{{pack.result.final}}"
+            }
+          ],
+          "code": "const NL = String.fromCharCode(10);\nconst audit = inputs.audit && typeof inputs.audit === 'object' ? inputs.audit : { items: [], stats: { total: 0, verified: 0, deviated: 0, unverified: 0 } };\nconst items = Array.isArray(audit.items) ? audit.items : [];\nconst st = audit.stats || {};\nconst esc = function (s) { return String(s == null ? '' : s).split('|').join('\\\\|').split(NL).join(' '); };\nconst table = function (v, mark, headers) {\n  const rows = items.filter(function (x) { return x.verdict === v; }).map(function (x, i) {\n    return '| ' + mark + (i + 1) + ' | ' + esc(x.type) + ' | ' + esc(x.claim) + ' | ' + esc(x.evidence) + ' |';\n  });\n  const head = '| # | 类型 | 断言 | ' + headers + ' |' + NL + '|---|---|---|---|' + NL;\n  return head + (rows.length ? rows.join(NL) : '| - | - |（无）| - |');\n};\nlet md = '**核对 ' + (st.total != null ? st.total : items.length) + ' 条：一致 ' + (st.verified || 0) + ' / 有出入 ' + (st.deviated || 0) + ' / 素材未载 ' + (st.unverified || 0) + '。**' + NL + NL;\nconst dev = items.filter(function (x) { return x.verdict === 'deviated'; });\nconst unver = items.filter(function (x) { return x.verdict === 'unverified'; });\nconst ver = items.filter(function (x) { return x.verdict === 'verified'; });\nif (dev.length) md += '### ⚠️ 有出入（需修正）' + NL + NL + table('deviated', 'D', '素材依据/正确表述') + NL + NL;\nif (unver.length) md += '### ❓ 素材未载（请重点过目，可改稿或补口径）' + NL + NL + table('unverified', 'U', '建议') + NL + NL;\nmd += '### ✅ 与素材一致' + NL + NL + table('verified', 'V', '依据');\nconst finalText = String(inputs.final || '');\nconst payload = finalText + NL + NL + '---' + NL + NL + '## 📋 事实审核报告（模型逐条核对素材；有出入/未载条目请重点过目，可直接改稿后保存）' + NL + NL + md;\nreturn { payload: payload, report: md, stats: st };"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_start_digest_normal",
+        "sourceNodeId": "start",
+        "targetNodeId": "digest",
+        "kind": "normal"
+      },
+      {
+        "id": "e_digest_modePick_normal",
+        "sourceNodeId": "digest",
+        "targetNodeId": "modePick",
+        "kind": "normal"
+      },
+      {
+        "id": "e_modePick_cond_mode_normal",
+        "sourceNodeId": "modePick",
+        "targetNodeId": "cond_mode",
+        "kind": "normal"
+      },
+      {
+        "id": "e_cond_mode_revise1_branch",
+        "sourceNodeId": "cond_mode",
+        "targetNodeId": "revise1",
+        "kind": "branch",
+        "branchId": "revision"
+      },
+      {
+        "id": "e_cond_mode_angle_branch",
+        "sourceNodeId": "cond_mode",
+        "targetNodeId": "angle",
+        "kind": "branch",
+        "branchId": "normal"
+      },
+      {
+        "id": "e_angle_storyline_normal",
+        "sourceNodeId": "angle",
+        "targetNodeId": "storyline",
+        "kind": "normal"
+      },
+      {
+        "id": "e_storyline_outline_normal",
+        "sourceNodeId": "storyline",
+        "targetNodeId": "outline",
+        "kind": "normal"
+      },
+      {
+        "id": "e_outline_outlineReview_normal",
+        "sourceNodeId": "outline",
+        "targetNodeId": "outlineReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e_outlineReview_parseOutline_approve",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "parseOutline",
+        "kind": "approve"
+      },
+      {
+        "id": "e_outlineReview_planHint_reject",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "planHint",
+        "kind": "reject"
+      },
+      {
+        "id": "e_planHint_end_normal",
+        "sourceNodeId": "planHint",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "e_parseOutline_loop1_normal",
+        "sourceNodeId": "parseOutline",
+        "targetNodeId": "loop1",
+        "kind": "normal"
+      },
+      {
+        "id": "e_loop1_chapter_loop-body",
+        "sourceNodeId": "loop1",
+        "targetNodeId": "chapter",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e_chapter_loop1_loop-back",
+        "sourceNodeId": "chapter",
+        "targetNodeId": "loop1",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e_loop1_concat1_loop-done",
+        "sourceNodeId": "loop1",
+        "targetNodeId": "concat1",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e_concat1_factCheck_normal",
+        "sourceNodeId": "concat1",
+        "targetNodeId": "factCheck",
+        "kind": "normal"
+      },
+      {
+        "id": "e_factCheck_applyFix_normal",
+        "sourceNodeId": "factCheck",
+        "targetNodeId": "applyFix",
+        "kind": "normal"
+      },
+      {
+        "id": "e_applyFix_editLoop_normal",
+        "sourceNodeId": "applyFix",
+        "targetNodeId": "editLoop",
+        "kind": "normal"
+      },
+      {
+        "id": "e_editLoop_editEval_loop-body",
+        "sourceNodeId": "editLoop",
+        "targetNodeId": "editEval",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e_editEval_editFix_normal",
+        "sourceNodeId": "editEval",
+        "targetNodeId": "editFix",
+        "kind": "normal"
+      },
+      {
+        "id": "e_editFix_editPack_normal",
+        "sourceNodeId": "editFix",
+        "targetNodeId": "editPack",
+        "kind": "normal"
+      },
+      {
+        "id": "e_editPack_editLoop_loop-back",
+        "sourceNodeId": "editPack",
+        "targetNodeId": "editLoop",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e_editLoop_titles_loop-done",
+        "sourceNodeId": "editLoop",
+        "targetNodeId": "titles",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e_titles_finalPack_normal",
+        "sourceNodeId": "titles",
+        "targetNodeId": "finalPack",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalPack_mergePick_normal",
+        "sourceNodeId": "finalPack",
+        "targetNodeId": "mergePick",
+        "kind": "normal"
+      },
+      {
+        "id": "e_revise1_mergePick_normal",
+        "sourceNodeId": "revise1",
+        "targetNodeId": "mergePick",
+        "kind": "normal"
+      },
+      {
+        "id": "e_mergePick_libai_normal",
+        "sourceNodeId": "mergePick",
+        "targetNodeId": "libai",
+        "kind": "normal"
+      },
+      {
+        "id": "e_libai_pack_normal",
+        "sourceNodeId": "libai",
+        "targetNodeId": "pack",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalReview_finalPick_approve",
+        "sourceNodeId": "finalReview",
+        "targetNodeId": "finalPick",
+        "kind": "approve"
+      },
+      {
+        "id": "e_finalReview_reviseHint_reject",
+        "sourceNodeId": "finalReview",
+        "targetNodeId": "reviseHint",
+        "kind": "reject"
+      },
+      {
+        "id": "e_reviseHint_end_normal",
+        "sourceNodeId": "reviseHint",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalPick_cond1_normal",
+        "sourceNodeId": "finalPick",
+        "targetNodeId": "cond1",
+        "kind": "normal"
+      },
+      {
+        "id": "e_cond1_saveKb1_branch",
+        "sourceNodeId": "cond1",
+        "targetNodeId": "saveKb1",
+        "kind": "branch",
+        "branchId": "hasKb"
+      },
+      {
+        "id": "e_cond1_save1_branch",
+        "sourceNodeId": "cond1",
+        "targetNodeId": "save1",
+        "kind": "branch",
+        "branchId": "noKb"
+      },
+      {
+        "id": "e_saveKb1_save1_normal",
+        "sourceNodeId": "saveKb1",
+        "targetNodeId": "save1",
+        "kind": "normal"
+      },
+      {
+        "id": "e_save1_end_normal",
+        "sourceNodeId": "save1",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "e_pack_finalAudit_normal",
+        "sourceNodeId": "pack",
+        "targetNodeId": "finalAudit",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalAudit_auditMd_normal",
+        "sourceNodeId": "finalAudit",
+        "targetNodeId": "auditMd",
+        "kind": "normal"
+      },
+      {
+        "id": "e_auditMd_finalReview_normal",
+        "sourceNodeId": "auditMd",
+        "targetNodeId": "finalReview",
+        "kind": "normal"
+      }
+    ]
+  },
+  "triggers": [],
+  "settings": {
+    "multiTurn": true,
+    "maxOutputChars": 1000000,
+    "maxDurationMs": 7200000
+  }
+}

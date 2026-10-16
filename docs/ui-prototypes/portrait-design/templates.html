@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人像设计 · 模板库</title>
+  <link rel="stylesheet" href="portrait.css?v=20260724">
+  <style>
+    .tpl-sidebar { width: 200px; flex-shrink: 0; }
+    .tpl-cat { padding: 8px 12px; border-radius: var(--r-sm); cursor: pointer; font-size: 13px; color: var(--c-text-2); display:flex; align-items:center; justify-content:space-between; transition: all .15s; }
+    .tpl-cat:hover { background: var(--c-bg-2); color: var(--c-text); }
+    .tpl-cat.active { background: var(--c-accent-soft); color: var(--c-accent); font-weight: 600; }
+    .tpl-cat .num { font-size: 11px; color: var(--c-text-3); }
+    .tpl-cat.active .num { color: var(--c-accent); }
+    .tpl-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:16px; flex:1; }
+    .tpl-card { background: var(--c-surface); border:1px solid var(--c-border); border-radius: var(--r-lg); padding:16px; box-shadow: var(--shadow-xs); transition: all .18s; display:flex; flex-direction:column; }
+    .tpl-card:hover { border-color: var(--c-accent-tint); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .tpl-card .tpl-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:8px; }
+    .tpl-card .tpl-name { font-weight: 650; font-size: 14.5px; letter-spacing:-0.01em; }
+    .tpl-card .tpl-sub { font-size: 11.5px; color: var(--c-text-3); margin-top: 3px; }
+    .tpl-card .tpl-body { font-size: 12px; line-height: 1.7; color: var(--c-text-2); background: var(--c-bg-2); border-radius: var(--r-sm); padding: 10px 12px; height: 112px; overflow: hidden; flex:1; }
+    .tpl-card .tpl-foot { display:flex; gap:6px; margin-top:12px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="app-sidebar">
+    <div class="app-logo"><div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span>The Bot</span></div>
+    <nav class="app-nav">
+      <div class="nav-group-label">工作台</div>
+      <div class="nav-item"><span class="ico">💬</span><span>对话</span></div>
+      <div class="nav-item"><span class="ico">📝</span><span>长文写作</span></div>
+      <div class="nav-item"><span class="ico">🎬</span><span>剧集制作</span></div>
+      <div class="nav-group-label">创作</div>
+      <div class="nav-item active"><span class="ico">👤</span><span>人像设计</span></div>
+      <div class="nav-item"><span class="ico">🖼️</span><span>图像生成</span></div>
+      <div class="nav-item"><span class="ico">🎙️</span><span>语音</span></div>
+      <div class="nav-group-label">工具</div>
+      <div class="nav-item"><span class="ico">🌐</span><span>翻译</span></div>
+      <div class="nav-item"><span class="ico">📚</span><span>知识库</span></div>
+      <div class="nav-item"><span class="ico">📖</span><span>日记</span></div>
+    </nav>
+    <div class="app-sidebar-footer"><div class="avatar">羽</div><div><div class="u-name">羽毛</div><div class="u-plan">个人版</div></div></div>
+  </aside>
+
+  <main class="app-content">
+    <div class="page">
+      <div class="page-header">
+        <div class="breadcrumb">
+          <a href="projects.html">人像设计</a><span class="sep">/</span>
+          <span class="current">提示词模板库</span>
+        </div>
+        <div class="page-header-actions">
+          <input class="input" placeholder="搜索模板..." style="width:200px;">
+          <button class="btn btn-primary">＋ 新建模板</button>
+        </div>
+      </div>
+
+      <div class="page-body" style="display:flex; gap:20px;">
+
+        <!-- 分类侧栏 -->
+        <div class="tpl-sidebar">
+          <div class="panel" style="padding:12px;">
+            <div style="font-size:10.5px;color:var(--c-text-3);padding:6px 12px 8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;">分类</div>
+            <div class="tpl-cat active">全部 <span class="num">12</span></div>
+            <div class="tpl-cat">😀 面部 <span class="num">4</span></div>
+            <div class="tpl-cat">🧍 全身比例 <span class="num">3</span></div>
+            <div class="tpl-cat">👔 发型+服装 <span class="num">3</span></div>
+            <div class="tpl-cat">🏞️ 背景 <span class="num">2</span></div>
+            <div style="font-size:10.5px;color:var(--c-text-3);padding:16px 12px 8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;">来源</div>
+            <div class="tpl-cat">⭐ 内置 <span class="num">9</span></div>
+            <div class="tpl-cat">👤 我的 <span class="num">3</span></div>
+          </div>
+        </div>
+
+        <!-- 模板网格 -->
+        <div class="tpl-grid">
+
+          <div class="tpl-card">
+            <div class="tpl-head"><div><div class="tpl-name">少年清爽风 · 面部</div><div class="tpl-sub">😀 面部 · ⭐ 内置</div></div><span class="tag tag-accent">推荐</span></div>
+            <div class="tpl-body">三庭五眼基本均衡，中庭轻微偏短；骨相偏弱线条柔和，颧骨平缓内收，下颌转折圆润；浅淡平眉，标准圆杏眼，眼神清澈干净；鼻梁细直...</div>
+            <div class="tpl-foot"><button class="btn btn-sm">👁 预览</button><button class="btn btn-sm">📋 复制</button><button class="btn btn-sm btn-primary" style="margin-left:auto;">套用</button></div>
+          </div>
+
+          <div class="tpl-card">
+            <div class="tpl-head"><div><div class="tpl-name">成熟硬朗风 · 面部</div><div class="tpl-sub">😀 面部 · ⭐ 内置</div></div></div>
+            <div class="tpl-body">三庭比例端正，下颌角明确有力；眉骨突出，浓眉剑眉；目光深邃坚毅，鼻梁高挺，颧骨立体，下颌线条硬朗，凸显成熟男性气场...</div>
+            <div class="tpl-foot"><button class="btn btn-sm">👁 预览</button><button class="btn btn-sm">📋 复制</button><button class="btn btn-sm btn-primary" style="margin-left:auto;">套用</button></div>
+          </div>
+
+          <div class="tpl-card">
+            <div class="tpl-head"><div><div class="tpl-name">温婉柔美风 · 面部</div><div class="tpl-sub">😀 面部 · ⭐ 内置</div></div></div>
+            <div class="tpl-body">面部线条柔和圆润，三庭均衡；柳叶眉，桃花眼，眼神温润含情；鼻型秀气，唇形饱满柔润，下颌小巧尖圆，凸显女性温婉气质...</div>
+            <div class="tpl-foot"><button class="btn btn-sm">👁 预览</button><button class="btn btn-sm">📋 复制</button><button class="btn btn-sm btn-primary" style="margin-left:auto;">套用</button></div>
+          </div>
+
+          <div class="tpl-card">
+            <div class="tpl-head"><div><div class="tpl-name">少年清爽风 · 8 头身全身</div><div class="tpl-sub">🧍 全身 · ⭐ 内置</div></div><span class="tag tag-accent">推荐</span></div>
+            <div class="tpl-body">8 头身，头身比例均衡轻盈；躯干舒展干净，四肢修长；胸廓平整单薄，肩颈纤细挺拔；腰胯过渡平缓，肌肉体量轻薄，体态清爽温润...</div>
+            <div class="tpl-foot"><button class="btn btn-sm">👁 预览</button><button class="btn btn-sm">📋 复制</button><button class="btn btn-sm btn-primary" style="margin-left:auto;">套用</button></div>
+          </div>
+
+          <div class="tpl-card">
+            <div class="tpl-head"><div><div class="tpl-name">韩式清爽碎盖 + 日系少年</div><div class="tpl-sub">👔 发型+服装 · ⭐ 内置</div></div></div>
+            <div class="tpl-body">黑发，韩式清爽碎盖、微分碎盖、轻柔短发，发丝轻薄蓬松；日系少年清新风，浅蓝牛仔衬衫、纯白宽松 T 恤、休闲直筒裤、浅色运动鞋...</div>
+            <div class="tpl-foot"><button class="btn btn-sm">👁 预览</button><button class="btn btn-sm">📋 复制</button><button class="btn btn-sm btn-primary" style="margin-left:auto;">套用</button></div>
+          </div>
+
+          <div class="tpl-card" style="border-style:dashed;">
+            <div class="tpl-head"><div><div class="tpl-name">我的古装侠客 · 全身</div><div class="tpl-sub">🧍 全身 · 👤 我的</div></div><span class="tag">自定义</span></div>
+            <div class="tpl-body">{name}，{gender}，玄色长袍玉冠，腰佩长剑，剑眉星目，短发墨色，眸色深褐；身形挺拔修长，气宇轩昂，国风工笔画风格...</div>
+            <div class="tpl-foot"><button class="btn btn-sm">✏ 编辑</button><button class="btn btn-sm">📋 复制</button><button class="btn btn-sm btn-danger" style="margin-left:auto;">🗑</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-nav">
+  <a href="projects.html">项目</a>
+  <a href="characters.html">角色</a>
+  <a href="workbench-new.html">生成</a>
+  <a href="workbench.html">工作台</a>
+  <a href="edit-face.html">修改面部</a>
+  <a href="templates.html" class="active">模板库</a>
+</div>
+</body>
+</html>

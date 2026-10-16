@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>领域学习空间 · 完整原型（重设计）</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f13; --shell:#12151b; --panel:#161a22; --panel2:#1c2029; --panel3:#222732;
+  --line:#262c37; --line2:#333a47;
+  --tx:#e8ebf1; --tx2:#a8b1c0; --tx3:#6f7889; --tx4:#4e5666;
+  --acc:#5b8dff; --accD:#3d6fe0; --accS:rgba(91,141,255,.13);
+  --ok:#38c172; --okS:rgba(56,193,114,.13);
+  --warn:#e8a33d; --warnS:rgba(232,163,61,.13);
+  --bad:#f0606d; --badS:rgba(240,96,109,.13);
+  --purple:#a67cf5; --r:9px; --r2:13px;
+  --shadow:0 4px 20px rgba(0,0,0,.4);
+}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--tx);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  overflow:hidden;display:flex;flex-direction:column;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2b323e;border-radius:5px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#3a4351;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ============ 顶栏 ============ */
+.topbar{
+  display:flex;align-items:center;gap:14px;padding:0 16px;height:52px;
+  background:var(--shell);border-bottom:1px solid var(--line);flex:none;z-index:30;
+}
+.tb-back{
+  display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:7px;
+  color:var(--tx2);font-size:13px;transition:.15s;
+}
+.tb-back:hover{background:var(--panel2);color:var(--tx)}
+.tb-title{display:flex;align-items:center;gap:9px;min-width:0}
+.tb-title h1{font-size:15px;font-weight:620;letter-spacing:-.01em;white-space:nowrap}
+.pill{
+  font-size:11.5px;padding:2px 8px;border-radius:100px;border:1px solid var(--line2);
+  color:var(--tx3);white-space:nowrap;
+}
+.pill.ok{color:var(--ok);border-color:rgba(56,193,114,.35);background:var(--okS)}
+.pill.warn{color:var(--warn);border-color:rgba(232,163,61,.35);background:var(--warnS)}
+.tb-spacer{flex:1}
+.tb-actions{display:flex;align-items:center;gap:8px}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:7px;
+  font-size:13px;font-weight:520;transition:.15s;white-space:nowrap
+}
+.btn.primary{background:var(--acc);color:#fff}
+.btn.primary:hover{background:var(--accD)}
+.btn.ghost{border:1px solid var(--line2);color:var(--tx2)}
+.btn.ghost:hover{background:var(--panel2);color:var(--tx);border-color:#3d4655}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn.icon{padding:7px;width:32px;height:32px;justify-content:center}
+
+/* ============ 掌握度环 ============ */
+.ring{display:flex;align-items:center;gap:9px}
+.ring svg{transform:rotate(-90deg)}
+.ring-txt{font-size:11.5px;color:var(--tx3);line-height:1.35}
+.ring-txt b{display:block;color:var(--tx);font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+
+/* ============ 主体三栏 ============ */
+.main{flex:1;display:grid;grid-template-columns:268px 1fr 330px;min-height:0;overflow:hidden}
+.col{display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.col.mid{background:var(--bg);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.col-head{
+  display:flex;align-items:center;gap:8px;padding:0 12px;height:42px;flex:none;
+  border-bottom:1px solid var(--line);background:var(--panel);
+}
+.col-head h2{font-size:12px;font-weight:640;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
+.col-head .sp{flex:1}
+.col-body{flex:1;overflow-y:auto;overflow-x:hidden}
+
+/* ============ 左栏：地图 ============ */
+.map-tools{display:flex;gap:6px;padding:10px 12px 8px;flex:none;align-items:center}
+.search{
+  flex:1;display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:7px;
+  background:var(--panel2);border:1px solid transparent;transition:.15s
+}
+.search:focus-within{border-color:var(--acc)}
+.search input{flex:1;background:none;border:none;outline:none;color:var(--tx);font-size:13px;min-width:0}
+.search input::placeholder{color:var(--tx4)}
+.icon-btn{
+  width:30px;height:30px;border-radius:7px;display:grid;place-items:center;
+  color:var(--tx3);border:1px solid var(--line2);transition:.15s;flex:none
+}
+.icon-btn:hover{background:var(--panel2);color:var(--tx);border-color:#3d4655}
+.icon-btn.hi{color:var(--acc);border-color:rgba(91,141,255,.4)}
+
+.coverage{
+  margin:0 12px 10px;padding:9px 11px;border-radius:8px;background:var(--panel2);
+  font-size:12px;color:var(--tx3);display:flex;align-items:center;gap:8px;cursor:pointer;
+  border:1px solid transparent;transition:.15s
+}
+.coverage:hover{border-color:var(--line2)}
+.coverage b{color:var(--warn);font-variant-numeric:tabular-nums}
+.cov-bar{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.cov-bar i{display:block;height:100%;background:var(--warn);border-radius:2px}
+
+.tree{padding:0 8px 20px}
+.branch{margin-bottom:2px}
+.branch-h{
+  display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:7px;cursor:pointer;
+  transition:.13s;font-size:13px;font-weight:560;color:var(--tx2)
+}
+.branch-h:hover{background:var(--panel2);color:var(--tx)}
+.caret{width:12px;color:var(--tx4);transition:transform .18s;flex:none;font-size:9px}
+.branch.open .caret{transform:rotate(90deg)}
+.branch-h .cnt{margin-left:auto;font-size:11px;color:var(--tx4);font-variant-numeric:tabular-nums}
+.nodes{overflow:hidden;max-height:0;transition:max-height .25s ease}
+.branch.open .nodes{max-height:900px}
+.node{
+  display:flex;align-items:center;gap:9px;padding:6px 8px 6px 26px;border-radius:6px;
+  cursor:pointer;transition:.13s;position:relative
+}
+.node:hover{background:var(--panel2)}
+.node.active{background:var(--accS)}
+.node.active::before{
+  content:'';position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  width:3px;height:15px;border-radius:2px;background:var(--acc)
+}
+.mdot{
+  width:9px;height:9px;border-radius:50%;flex:none;border:1.5px solid var(--tx4);
+  transition:.15s
+}
+.mdot.learning{border-color:var(--warn);background:var(--warnS)}
+.mdot.mastered{border-color:var(--ok);background:var(--ok)}
+.mdot.review{border-color:var(--purple);background:rgba(166,124,245,.15)}
+.node.active .mdot{box-shadow:0 0 0 3px var(--accS)}
+.node-name{
+  font-size:13px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1
+}
+.node.active .node-name{color:var(--tx);font-weight:560}
+.node .locked{font-size:10px;color:var(--tx4);flex:none}
+
+.legend{display:flex;flex-wrap:wrap;gap:11px;padding:10px 14px;border-top:1px solid var(--line);flex:none}
+.lg{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--tx4)}
+
+/* ============ 中栏：讲义 ============ */
+.lesson{max-width:760px;margin:0 auto;padding:26px 32px 90px}
+.l-head{margin-bottom:20px}
+.l-head h2{font-size:25px;font-weight:660;letter-spacing:-.02em;margin-bottom:10px}
+.l-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:16px}
+.tag{font-size:11.5px;padding:3px 9px;border-radius:6px;background:var(--panel2);color:var(--tx3);border:1px solid var(--line)}
+.tag.ok{color:var(--ok);border-color:rgba(56,193,114,.3);background:var(--okS)}
+.tag.warn{color:var(--warn);border-color:rgba(232,163,61,.3);background:var(--warnS)}
+.tag.acc{color:var(--acc);border-color:rgba(91,141,255,.3);background:var(--accS)}
+
+/* 进度条 */
+.lesson-prog{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.lp-bar{flex:1;height:3px;background:var(--panel3);border-radius:2px;overflow:hidden}
+.lp-bar i{display:block;height:100%;width:35%;background:linear-gradient(90deg,var(--acc),#7ba5ff);border-radius:2px}
+.lp-txt{font-size:11.5px;color:var(--tx4);white-space:nowrap}
+
+/* 前置 */
+.prereq{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:20px;font-size:12px}
+.prereq .lbl{color:var(--tx4)}
+.chip{
+  padding:3px 9px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);
+  color:var(--tx2);font-size:12px;cursor:pointer;transition:.14s
+}
+.chip:hover{border-color:var(--acc);color:var(--acc)}
+.chip.done{color:var(--ok);border-color:rgba(56,193,114,.3);background:var(--okS)}
+
+/* 正文 */
+.sec{margin-bottom:24px}
+.sec-h{
+  display:flex;align-items:center;gap:9px;margin-bottom:11px;font-size:11.5px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--tx4);font-weight:620
+}
+.sec-h::before{content:'';width:3px;height:12px;border-radius:2px;background:var(--acc);flex:none}
+.sec p{color:#ccd3e0;margin-bottom:11px}
+.sec p:last-child{margin-bottom:0}
+.sec b{color:#fff;font-weight:600}
+.hl{color:var(--warn);font-weight:600}
+
+/* 结论条 */
+.takeaway{
+  margin:14px 0 0;padding:12px 15px;border-radius:0 8px 8px 0;border-left:3px solid var(--warn);
+  background:var(--warnS);font-size:13.5px;color:#ecdcbe
+}
+.takeaway::before{content:'→ ';color:var(--warn);font-weight:700}
+
+/* ============ 交互块 ============ */
+.ix{
+  border:1px solid var(--line2);border-radius:var(--r2);background:var(--panel);
+  overflow:hidden;margin:18px 0;box-shadow:var(--shadow)
+}
+.ix-h{
+  display:flex;align-items:center;gap:9px;padding:10px 14px;background:var(--panel2);
+  border-bottom:1px solid var(--line)
+}
+.ix-kind{
+  font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  padding:3px 8px;border-radius:5px
+}
+.k-predict{background:var(--warnS);color:var(--warn)}
+.k-explore{background:var(--accS);color:var(--acc)}
+.k-structure{background:var(--okS);color:var(--ok)}
+.ix-h .t{font-size:13px;color:var(--tx2)}
+.ix-h .hint{margin-left:auto;font-size:11.5px;color:var(--tx4)}
+.ix-b{padding:17px 15px}
+.ix-q{font-size:15px;font-weight:560;margin-bottom:15px;line-height:1.55}
+
+.opts{display:grid;gap:11px}
+.opts.two{grid-template-columns:1fr 1fr}
+@media(max-width:900px){.opts.two{grid-template-columns:1fr}}
+.opt{
+  border:1.5px solid var(--line2);border-radius:10px;background:var(--panel2);padding:12px;
+  cursor:pointer;transition:.16s;text-align:left;color:inherit;width:100%
+}
+.opt:hover:not(.locked){border-color:#46506380;background:var(--panel3);transform:translateY(-1px)}
+.opt.picked{border-color:var(--acc);background:var(--accS)}
+.opt.correct{border-color:var(--ok);background:var(--okS)}
+.opt.wrong{border-color:var(--bad);background:var(--badS)}
+.opt.locked{cursor:default}
+.opt-cap{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:560;margin-bottom:9px}
+.dot{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--tx4);flex:none;transition:.18s}
+.opt.correct .dot{border-color:var(--ok);box-shadow:inset 0 0 0 4px var(--ok)}
+.opt.wrong .dot{border-color:var(--bad);box-shadow:inset 0 0 0 4px var(--bad)}
+.opt svg{display:block;width:100%;height:auto}
+
+.reveal{
+  margin-top:15px;padding:13px 15px;border-radius:0 9px 9px 0;border-left:3px solid var(--acc);
+  background:var(--accS);font-size:13.5px;animation:pop .3s ease
+}
+.reveal.good{border-left-color:var(--ok);background:var(--okS)}
+.reveal.bad{border-left-color:var(--bad);background:var(--badS)}
+.reveal .v{font-weight:660;display:block;margin-bottom:6px;font-size:14px}
+.reveal .num{margin-top:10px;font-size:13px;color:var(--tx2);line-height:1.9}
+.reveal .num b{color:var(--tx);font-variant-numeric:tabular-nums}
+@keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+/* 滑块 */
+.sliders{display:grid;gap:13px;margin-bottom:15px}
+.sl{display:grid;grid-template-columns:88px 1fr 70px;gap:12px;align-items:center}
+.sl label{font-size:13px;color:var(--tx2)}
+.sl output{font-size:13px;font-weight:640;color:var(--acc);text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;background:var(--line2);border-radius:3px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:17px;height:17px;border-radius:50%;background:var(--acc);
+  border:2.5px solid var(--panel);box-shadow:0 0 0 1px var(--acc);cursor:grab
+}
+input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.1)}
+input[type=range]::-moz-range-thumb{width:17px;height:17px;border-radius:50%;background:var(--acc);border:2.5px solid var(--panel);cursor:grab}
+
+.readout{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+.rchip{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12.5px;color:var(--tx3)}
+.rchip b{color:var(--tx);font-variant-numeric:tabular-nums;font-weight:640}
+
+/* 排序 */
+.steps{display:grid;gap:8px}
+.step{
+  display:flex;align-items:center;gap:11px;padding:11px 13px;border:1.5px solid var(--line2);
+  border-radius:9px;background:var(--panel2);cursor:grab;font-size:13.5px;user-select:none;
+  transition:border-color .14s,background .14s,transform .14s
+}
+.step:active{cursor:grabbing}
+.step.dragging{opacity:.32}
+.step.over{border-color:var(--acc);background:var(--accS)}
+.step.correct{border-color:var(--ok);background:var(--okS)}
+.step.wrong{border-color:var(--bad);background:var(--badS)}
+.step .grip{color:var(--tx4);flex:none;letter-spacing:-1px}
+.step .idx{
+  width:22px;height:22px;border-radius:50%;background:var(--panel3);color:var(--tx3);
+  font-size:11.5px;font-weight:660;display:grid;place-items:center;flex:none;font-variant-numeric:tabular-nums
+}
+.btn-main{
+  margin-top:13px;padding:9px 19px;border-radius:8px;background:var(--acc);color:#fff;
+  font-size:13.5px;font-weight:560;transition:.15s
+}
+.btn-main:hover{background:var(--accD)}
+.btn-main:disabled{opacity:.4;cursor:default;background:var(--panel3);color:var(--tx4)}
+
+/* 概念操作条 */
+.l-ops{
+  display:flex;align-items:center;gap:8px;padding:14px 0 0;margin-top:22px;
+  border-top:1px solid var(--line);flex-wrap:wrap
+}
+.op{
+  display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;
+  border:1px solid var(--line2);color:var(--tx2);font-size:13px;font-weight:520;transition:.15s
+}
+.op:hover{background:var(--panel2);color:var(--tx);border-color:#3d4655}
+.op.yes:hover{border-color:var(--ok);color:var(--ok);background:var(--okS)}
+.op.no:hover{border-color:var(--warn);color:var(--warn);background:var(--warnS)}
+.op.acc:hover{border-color:var(--acc);color:var(--acc);background:var(--accS)}
+.op.spacer{margin-left:auto;border-color:transparent}
+.op.spacer:hover{border-color:transparent;background:none;color:var(--tx3)}
+
+/* ============ 右栏：追问 ============ */
+.qa{padding:14px 13px 20px;display:flex;flex-direction:column;gap:13px}
+.qa-card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px}
+.qa-card .who{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx4);margin-bottom:8px}
+.qa-card .who .av{
+  width:18px;height:18px;border-radius:50%;background:var(--accS);color:var(--acc);
+  display:grid;place-items:center;font-size:10px;font-weight:700
+}
+.qa-card .who .av.u{background:var(--panel3);color:var(--tx3)}
+.qa-card .txt{font-size:13px;color:#ccd3e0}
+.qa-card .cite{
+  margin-top:9px;padding-top:9px;border-top:1px dashed var(--line2);
+  font-size:11.5px;color:var(--tx4);display:flex;align-items:center;gap:6px
+}
+.qa-card .cite span{color:var(--acc);cursor:pointer}
+.qa-acts{display:flex;gap:6px;margin-top:10px}
+.qa-acts button{
+  font-size:11.5px;color:var(--tx4);padding:3px 8px;border-radius:5px;border:1px solid var(--line);
+  transition:.14s
+}
+.qa-acts button:hover{color:var(--tx2);border-color:var(--line2)}
+
+.sugg{padding:0 13px 10px}
+.sugg .lbl{font-size:11px;color:var(--tx4);margin-bottom:7px}
+.sugg-btn{
+  display:block;width:100%;text-align:left;padding:8px 11px;border-radius:8px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--tx2);font-size:12.5px;
+  margin-bottom:6px;transition:.14s
+}
+.sugg-btn:hover{border-color:var(--acc);color:var(--acc);background:var(--accS)}
+
+.qa-input{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:11px 13px;flex:none}
+.qa-box{
+  display:flex;align-items:flex-end;gap:8px;background:var(--panel2);border:1px solid var(--line2);
+  border-radius:10px;padding:8px 10px;transition:.15s
+}
+.qa-box:focus-within{border-color:var(--acc)}
+.qa-box textarea{
+  flex:1;background:none;border:none;outline:none;color:var(--tx);font:inherit;font-size:13px;
+  resize:none;max-height:110px;min-height:22px;line-height:1.5
+}
+.qa-box textarea::placeholder{color:var(--tx4)}
+.qa-send{
+  width:30px;height:30px;border-radius:8px;background:var(--acc);color:#fff;
+  display:grid;place-items:center;flex:none;transition:.15s
+}
+.qa-send:hover{background:var(--accD)}
+.qa-mode{display:flex;gap:6px;margin-bottom:8px;font-size:11px;color:var(--tx4)}
+.qa-mode .m{padding:2px 7px;border-radius:5px;border:1px solid var(--line)}
+.qa-mode .m.on{border-color:var(--acc);color:var(--acc);background:var(--accS)}
+
+/* ============ 底部复习条（新设计：从设置里提出来） ============ */
+.review-bar{
+  display:flex;align-items:center;gap:13px;padding:0 16px;height:46px;flex:none;
+  background:linear-gradient(90deg,rgba(166,124,245,.13),rgba(166,124,245,.04));
+  border-top:1px solid rgba(166,124,245,.28)
+}
+.rb-ic{width:26px;height:26px;border-radius:7px;background:rgba(166,124,245,.18);display:grid;place-items:center;flex:none}
+.rb-txt{font-size:13px;color:#d5c8f5}
+.rb-txt b{color:#fff;font-variant-numeric:tabular-nums}
+.rb-sp{flex:1}
+.rb-streak{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx3)}
+.rb-dots{display:flex;gap:3px}
+.rb-dots i{width:15px;height:5px;border-radius:3px;background:var(--panel3)}
+.rb-dots i.on{background:var(--warn)}
+
+/* ============ 弹层 ============ */
+.modal{
+  position:fixed;inset:0;background:rgba(6,8,11,.72);backdrop-filter:blur(3px);
+  display:none;place-items:center;z-index:100;padding:24px
+}
+.modal.show{display:grid}
+.modal-box{
+  background:var(--panel);border:1px solid var(--line2);border-radius:14px;
+  width:min(620px,100%);max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.55)
+}
+.modal-h{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.modal-h h3{font-size:15px;font-weight:620;flex:1}
+.modal-b{padding:18px;overflow-y:auto}
+.modal-f{display:flex;gap:9px;justify-content:flex-end;padding:13px 18px;border-top:1px solid var(--line)}
+
+/* 设置项 */
+.set-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.set-row:last-child{border-bottom:none}
+.set-row .info{flex:1}
+.set-row .info .t{font-size:13.5px;margin-bottom:3px}
+.set-row .info .d{font-size:12px;color:var(--tx4);line-height:1.5}
+.sw{width:38px;height:21px;border-radius:11px;background:var(--panel3);position:relative;flex:none;transition:.2s;cursor:pointer}
+.sw::after{content:'';position:absolute;top:2.5px;left:2.5px;width:16px;height:16px;border-radius:50%;background:var(--tx3);transition:.2s}
+.sw.on{background:var(--acc)}
+.sw.on::after{left:19.5px;background:#fff}
+
+/* toast */
+.toast{
+  position:fixed;bottom:74px;left:50%;transform:translateX(-50%) translateY(12px);
+  background:var(--panel2);border:1px solid var(--line2);border-radius:10px;
+  padding:11px 18px;font-size:13px;color:var(--tx);box-shadow:var(--shadow);
+  opacity:0;pointer-events:none;transition:.25s;z-index:200;max-width:80vw;text-align:center
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 大纲/全景按钮组 */
+.viewtabs{display:flex;gap:2px;background:var(--panel2);padding:3px;border-radius:8px}
+.vtab{padding:5px 11px;border-radius:6px;font-size:12.5px;color:var(--tx3);transition:.14s}
+.vtab.on{background:var(--panel3);color:var(--tx)}
+</style>
+</head>
+<body>
+
+<!-- ================= 顶栏 ================= -->
+<div class="topbar">
+  <button class="tb-back" onclick="goHome()">← 主题列表</button>
+  <div class="tb-title">
+    <h1>复利效应与长期主义</h1>
+    <span class="pill">金融入门</span>
+    <span class="pill ok">目标：能向别人讲清复利</span>
+  </div>
+  <div class="tb-spacer"></div>
+  <div class="viewtabs">
+    <button class="vtab on" onclick="switchView(this,'learn')">学习</button>
+    <button class="vtab" onclick="switchView(this,'atlas')">知识全景</button>
+  </div>
+  <div class="tb-actions">
+    <div class="ring" title="已理解 3 / 共 12 个知识点">
+      <svg width="34" height="34" viewBox="0 0 34 34">
+        <circle cx="17" cy="17" r="14" fill="none" stroke="#262c37" stroke-width="3.5"/>
+        <circle cx="17" cy="17" r="14" fill="none" stroke="#38c172" stroke-width="3.5"
+                stroke-linecap="round" stroke-dasharray="88" stroke-dashoffset="66"/>
+      </svg>
+      <div class="ring-txt"><b>3/12</b>已理解</div>
+    </div>
+    <button class="btn ghost icon" title="空间设置" onclick="openSettings()">⚙</button>
+  </div>
+</div>
+
+<!-- ================= 三栏主体 ================= -->
+<div class="main">
+
+  <!-- ---------- 左栏：知识地图 ---------- -->
+  <div class="col left">
+    <div class="col-head">
+      <h2>知识地图</h2><div class="sp"></div>
+      <span class="pill" style="font-size:11px">12 个知识点</span>
+    </div>
+    <div class="map-tools">
+      <div class="search">
+        <span style="color:var(--tx4);font-size:12px">🔍</span>
+        <input placeholder="搜索知识点…" oninput="filterTree(this.value)">
+      </div>
+      <button class="icon-btn hi" title="AI 补全知识地图" onclick="aiFill()">✨</button>
+      <button class="icon-btn" title="追加知识点" onclick="toast('打开「新增知识点」——输入名称与定义')">＋</button>
+    </div>
+    <div class="coverage" onclick="toast('缺口清单：① 通货膨胀 ② 72法则 ③ 定投策略\n可一键让 AI 研究补全')">
+      <span>体系完整度</span><b>68%</b>
+      <span class="cov-bar"><i style="width:68%"></i></span>
+      <span style="color:var(--tx4)">3 处缺口</span>
+    </div>
+    <div class="col-body">
+      <div class="tree" id="tree"></div>
+    </div>
+    <div class="legend">
+      <span class="lg"><i class="mdot"></i>未开始</span>
+      <span class="lg"><i class="mdot learning"></i>学习中</span>
+      <span class="lg"><i class="mdot mastered"></i>已理解</span>
+      <span class="lg"><i class="mdot review"></i>待复习</span>
+    </div>
+  </div>
+
+  <!-- ---------- 中栏：讲义 ---------- -->
+  <div class="col mid">
+    <div class="col-head">
+      <h2>讲义</h2>
+      <div class="sp"></div>
+      <span class="pill ok" id="verifyPill">✓ 已核验</span>
+      <button class="icon-btn" title="版本历史" onclick="toast('版本历史：v3（当前）· v2 · v1，可对比与回滚')">⟲</button>
+      <button class="icon-btn" title="导出" onclick="toast('导出：Markdown / PDF / 长图')">⤓</button>
+    </div>
+
+    <div class="col-body">
+      <div class="lesson">
+        <div class="l-head">
+          <h2>复利效应</h2>
+          <div class="l-meta">
+            <span class="tag acc">K-concept</span>
+            <span class="tag">约 4 分钟</span>
+            <span class="tag warn">学习中</span>
+          </div>
+        </div>
+
+        <div class="lesson-prog">
+          <span class="lp-txt">进度</span>
+          <span class="lp-bar"><i></i></span>
+          <span class="lp-txt">还剩约 2 分钟</span>
+        </div>
+
+        <div class="prereq">
+          <span class="lbl">前置：</span>
+          <span class="chip done" onclick="toast('跳转到「利息与利率」')">✓ 利息与利率</span>
+          <span class="chip done" onclick="toast('跳转到「百分比」')">✓ 百分比</span>
+        </div>
+
+        <!-- 钩子 -->
+        <div class="sec">
+          <p>假设有两个人：<b>小明</b> 从 20 岁开始，每年存 1 万元，存到 30 岁就停手，之后一分不再存；<b>小红</b> 从 30 岁才开始，每年存 1 万元，一直存到 60 岁。</p>
+          <p>两人都按年化 <b>7%</b> 计算。到 60 岁时，谁的钱更多？</p>
+        </div>
+
+        <!-- 交互 1 -->
+        <div class="ix">
+          <div class="ix-h">
+            <span class="ix-kind k-predict">预测</span>
+            <span class="t">先猜，再揭晓</span>
+            <span class="hint">自己的判断先落地，落差才成立</span>
+          </div>
+          <div class="ix-b">
+            <div class="ix-q">你的直觉是哪一种？</div>
+            <div class="opts two" id="opts">
+              <button class="opt" data-pick="a">
+                <span class="opt-cap"><span class="dot"></span>小红更多</span>
+                <svg viewBox="0 0 220 118">
+                  <line x1="30" y1="100" x2="200" y2="100" stroke="#262c37"/>
+                  <line x1="30" y1="100" x2="30" y2="14" stroke="#262c37"/>
+                  <path d="M30 98 L85 96 L130 88 L175 72" stroke="#6f7889" stroke-width="2" fill="none"/>
+                  <path d="M85 96 L120 88 L160 62 L198 26" stroke="#38c172" stroke-width="2.5" fill="none"/>
+                  <text x="196" y="113" fill="#6f7889" font-size="10" text-anchor="end">年龄 20→60</text>
+                  <text x="138" y="52" fill="#38c172" font-size="10">小红</text>
+                  <text x="130" y="84" fill="#6f7889" font-size="10">小明</text>
+                </svg>
+              </button>
+              <button class="opt" data-pick="b">
+                <span class="opt-cap"><span class="dot"></span>小明更多</span>
+                <svg viewBox="0 0 220 118">
+                  <line x1="30" y1="100" x2="200" y2="100" stroke="#262c37"/>
+                  <line x1="30" y1="100" x2="30" y2="14" stroke="#262c37"/>
+                  <path d="M30 98 L60 96 L100 90 L140 78 L175 58" stroke="#5b8dff" stroke-width="2.5" fill="none"/>
+                  <path d="M85 96 L120 92 L160 82 L198 66" stroke="#6f7889" stroke-width="2" fill="none"/>
+                  <text x="196" y="113" fill="#6f7889" font-size="10" text-anchor="end">年龄 20→60</text>
+                  <text x="138" y="52" fill="#5b8dff" font-size="10">小明</text>
+                  <text x="148" y="92" fill="#6f7889" font-size="10">小红</text>
+                </svg>
+              </button>
+            </div>
+            <div id="rev1"></div>
+          </div>
+        </div>
+
+        <!-- 正文：原理 -->
+        <div class="sec">
+          <div class="sec-h">原理</div>
+          <p>单利的本金永远不变，利息是<span class="hl">线性</span>的；复利则把每一期的利息滚进本金，于是增长不是"加法"而是"<span class="hl">乘法</span>"。</p>
+          <p>两者的差距随期数呈指数级拉开——这就是下面那条曲线后段陡峭的原因。</p>
+        </div>
+
+        <!-- 交互 2 -->
+        <div class="ix">
+          <div class="ix-h">
+            <span class="ix-kind k-explore">探索</span>
+            <span class="t">拖动看变化</span>
+            <span class="hint">这张图是算出来的，不是画好的</span>
+          </div>
+          <div class="ix-b">
+            <div class="sliders">
+              <div class="sl">
+                <label for="rate">年化收益</label>
+                <input type="range" id="rate" min="0" max="15" step="0.5" value="7">
+                <output id="rateV">7.0%</output>
+              </div>
+              <div class="sl">
+                <label for="years">投资年限</label>
+                <input type="range" id="years" min="5" max="60" step="1" value="40">
+                <output id="yearsV">40 年</output>
+              </div>
+            </div>
+            <svg id="chart" viewBox="0 0 660 250" style="width:100%;height:auto"></svg>
+            <div class="readout">
+              <div class="rchip">本金合计 <b id="principal">—</b></div>
+              <div class="rchip">最终金额 <b id="final">—</b></div>
+              <div class="rchip">其中利息 <b id="interest">—</b></div>
+              <div class="rchip">利息占比 <b id="ratio">—</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="takeaway">复利的"爆炸"不是因为它涨得快，而是因为<b>利息也在生利息</b>。时间越长、利率越高，"利息生的利息"占比就越夸张——所以 20 岁存的那 10 年，比 30 岁后的 30 年更值钱。</div>
+
+        <!-- 交互 3 -->
+        <div class="ix">
+          <div class="ix-h">
+            <span class="ix-kind k-structure">排序</span>
+            <span class="t">拖拽排好顺序</span>
+            <span class="hint">检查你是否真的理解流程</span>
+          </div>
+          <div class="ix-b">
+            <div class="ix-q">把"复利计算"的四个步骤排成正确顺序：</div>
+            <div class="steps" id="steps"></div>
+            <button class="btn-main" id="checkSteps">检查顺序</button>
+            <div id="rev3"></div>
+          </div>
+        </div>
+
+        <!-- 概念操作条 -->
+        <div class="l-ops">
+          <button class="op yes" onclick="markMastered()">✓ 懂了</button>
+          <button class="op no" onclick="markConfused()">◐ 没懂</button>
+          <button class="op acc" onclick="toast('把「复利效应」拆成两个更小的概念——AI 会先出提案')">✂ 拆细</button>
+          <button class="op" onclick="openSlides()">▤ 演示</button>
+          <button class="op spacer" onclick="toast('已把本概念的要点复制为笔记')">做笔记</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 右栏：追问 ---------- -->
+  <div class="col right">
+    <div class="col-head">
+      <h2>追问 · 答疑</h2><div class="sp"></div>
+      <span class="pill" style="font-size:11px">2 条待答</span>
+    </div>
+    <div class="col-body">
+      <div class="qa">
+        <div class="qa-card">
+          <div class="who"><span class="av">我</span>你 · 3 分钟前</div>
+          <div class="txt">为什么 20 岁存的那 10 年，比 30 岁后存 30 年还值钱？</div>
+        </div>
+
+        <div class="qa-card">
+          <div class="who"><span class="av">AI</span>Gauth Agent · 刚刚</div>
+          <div class="txt">
+            关键在于<b>时间</b>，而不是<b>金额</b>。<br><br>
+            20 岁那 10 万，到 60 岁前要经历 30 次"利息滚进本金"；而 30 岁存的钱，最早的一笔也只有 30 次，最晚的一笔只有 1 次。<br><br>
+            复利是按<span style="color:var(--warn)">期数</span>放大，不是按投入放大——这就是"早开始"比"多投入"更重要的原因。
+          </div>
+          <div class="cite">📎 引证：本讲义「原理」区 · <span onclick="toast('定位到讲义原文')">回看原文</span></div>
+          <div class="qa-acts">
+            <button onclick="toast('已收藏为笔记')">收藏笔记</button>
+            <button onclick="toast('已标记为「已理解」')">已理解</button>
+            <button onclick="toast('已提交为待补研究——将触发一轮研究补全讲义')">这里没讲清</button>
+          </div>
+        </div>
+
+        <div class="qa-card" style="border-style:dashed">
+          <div class="who"><span class="av">AI</span>Gauth Agent</div>
+          <div class="txt" style="color:var(--tx3)">
+            有一个问题我暂时答不上——<b>「72 法则」在当前讲义里没有对应内容</b>。<br>
+            已记为待补充，你可以：
+          </div>
+          <div class="qa-acts">
+            <button onclick="toast('已触发研究轮，将为「72法则」生成一份讲义')">就此补研究</button>
+            <button onclick="toast('已记录你的补充说明')">我来补充</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sugg">
+      <div class="lbl">试试这样问</div>
+      <button class="sugg-btn" onclick="toast('已发送：用一句话解释复利')">用一句话解释复利</button>
+      <button class="sugg-btn" onclick="toast('已发送：举个真实例子')">举个真实例子</button>
+      <button class="sugg-btn" onclick="toast('已发送：复利有什么风险')">复利有什么风险</button>
+    </div>
+    <div class="qa-input">
+      <div class="qa-mode">
+        <span class="m on">答疑</span><span class="m" onclick="toast('切换到任务模式：可下指令改讲义/补地图')">任务</span>
+      </div>
+      <div class="qa-box">
+        <textarea id="qaText" rows="1" placeholder="追问这个概念…（Enter 发送）"
+          oninput="autoGrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQa()}"></textarea>
+        <button class="qa-send" onclick="sendQa()">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 底部复习条（重设计：从设置里提出来） ================= -->
+<div class="review-bar">
+  <div class="rb-ic">🔁</div>
+  <div class="rb-txt"><b>3 个</b>知识点到了复习时间 · 约 5 分钟</div>
+  <button class="btn primary sm" onclick="startReview()">开始复习</button>
+  <button class="btn ghost sm" onclick="toast('已把复习推迟到明天')">稍后</button>
+  <div class="rb-sp"></div>
+  <div class="rb-streak">
+    <span>连续学习</span><div class="rb-dots">
+      <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i>
+    </div><span><b style="color:var(--warn)">5</b> 天</span>
+  </div>
+</div>
+
+<!-- ================= 设置弹层 ================= -->
+<div class="modal" id="setModal">
+  <div class="modal-box">
+    <div class="modal-h"><h3>空间设置</h3><button class="icon-btn" onclick="closeSettings()">✕</button></div>
+    <div class="modal-b">
+      <div class="set-row">
+        <div class="info">
+          <div class="t">间隔复习</div>
+          <div class="d">按遗忘曲线安排复习，到期在主界面提醒（不再藏在设置里）</div>
+        </div>
+        <div class="sw on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="set-row">
+        <div class="info">
+          <div class="t">自动推进</div>
+          <div class="d">后台持续研究未完成的知识点，生成讲义草稿等你确认</div>
+        </div>
+        <div class="sw" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="set-row">
+        <div class="info">
+          <div class="t">每日目标</div>
+          <div class="d">最小有效学习量：2 个知识点 + 1 次小测</div>
+        </div>
+        <div class="sw on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="set-row">
+        <div class="info">
+          <div class="t">领域画像</div>
+          <div class="d">金融 · 应用导向 · 零基础起步（影响讲义写法与选题）</div>
+        </div>
+        <button class="btn ghost sm" onclick="toast('编辑领域画像')">编辑</button>
+      </div>
+      <div class="set-row">
+        <div class="info">
+          <div class="t">绑定知识库</div>
+          <div class="d">已绑定：个人金融笔记（12 篇）</div>
+        </div>
+        <button class="btn ghost sm" onclick="toast('更换绑定的知识库')">更换</button>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" onclick="closeSettings()">取消</button>
+      <button class="btn primary" onclick="closeSettings();toast('设置已保存')">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 幻灯弹层 ================= -->
+<div class="modal" id="slideModal">
+  <div class="modal-box" style="width:min(720px,100%)">
+    <div class="modal-h"><h3>演示 · 复利效应</h3><button class="icon-btn" onclick="closeSlides()">✕</button></div>
+    <div class="modal-b" style="text-align:center;padding:36px 24px">
+      <div style="font-size:13px;color:var(--tx4);margin-bottom:14px">第 1 / 6 页</div>
+      <div style="font-size:22px;font-weight:640;margin-bottom:12px">复利：让利息替你工作</div>
+      <div style="color:var(--tx2);max-width:440px;margin:0 auto">
+        本金产生的利息，在下一期变成新的本金——这个循环重复的次数，决定了最终差距。
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" onclick="toast('上一页')">← 上一页</button>
+      <button class="btn primary" onclick="toast('下一页')">下一页 →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================================
+   数据（原型用；真实实现来自 dl:* IPC）
+   ===================================================================== */
+const TREE = [
+  { id:'b1', name:'基础概念', open:true, nodes:[
+      {id:'n1', name:'百分比',       m:'mastered'},
+      {id:'n2', name:'利息与利率',   m:'mastered'},
+      {id:'n3', name:'复利效应',     m:'learning', cur:true},
+      {id:'n4', name:'单利 vs 复利', m:'untouched'}
+  ]},
+  { id:'b2', name:'计算与应用', open:false, nodes:[
+      {id:'n5', name:'复利公式',     m:'untouched', lock:true},
+      {id:'n6', name:'72 法则',      m:'untouched', lock:true},
+      {id:'n7', name:'定投策略',     m:'untouched', lock:true}
+  ]},
+  { id:'b3', name:'现实与风险', open:false, nodes:[
+      {id:'n8', name:'通货膨胀',     m:'untouched'},
+      {id:'n9', name:'实际收益率',   m:'untouched'},
+      {id:'n10',name:'杠杆风险',     m:'untouched'}
+  ]},
+  { id:'b4', name:'进阶', open:false, nodes:[
+      {id:'n11',name:'连续复利',     m:'review'},
+      {id:'n12',name:'现值与终值',   m:'untouched'}
+  ]}
+];
+
+/* ---------- 渲染地图 ---------- */
+function renderTree(filter){
+  const box = document.getElementById('tree');
+  const f = (filter||'').trim().toLowerCase();
+  box.innerHTML = TREE.map(b=>{
+    const nodes = b.nodes.filter(n=>!f || n.name.toLowerCase().includes(f));
+    if(!nodes.length) return '';
+    const open = f ? true : b.open;
+    return '<div class="branch'+(open?' open':'')+'">'+
+      '<div class="branch-h" onclick="toggleBranch(this)">'+
+        '<span class="caret">▶</span><span>'+b.name+'</span>'+
+        '<span class="cnt">'+b.nodes.filter(n=>n.m==='mastered').length+'/'+b.nodes.length+'</span>'+
+      '</div><div class="nodes">'+
+      nodes.map(n=>'<div class="node'+(n.cur?' active':'')+'" onclick="pickNode(\''+n.id+'\',\''+n.name+'\')">'+
+        '<i class="mdot '+n.m+'"></i>'+
+        '<span class="node-name">'+n.name+'</span>'+
+        (n.lock?'<span class="locked">🔒</span>':'')+
+      '</div>').join('')+
+      '</div></div>';
+  }).join('');
+}
+function toggleBranch(el){
+  el.parentElement.classList.toggle('open');
+}
+function filterTree(v){ renderTree(v); }
+function pickNode(id,name){
+  document.querySelectorAll('.node').forEach(n=>n.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  toast('切换到知识点：'+name);
+}
+
+/* ---------- 视图切换 ---------- */
+function switchView(btn, v){
+  document.querySelectorAll('.vtab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  toast(v==='atlas' ? '打开「知识全景」：力导向图 + 时间线/流程/矩阵视图（原型从略）' : '回到学习视图');
+}
+
+/* ---------- 交互 1：预测 ---------- */
+const SPEC_PREDICT = {
+  answer:'b',
+  revealCorrect:'对，是<b>小明</b>。只存了 10 年，却比存 30 年的人多——这正是复利最反直觉的地方。',
+  revealWrong:'很多人会选小红，但答案是<b>小明</b>。他只存了 10 年，小红存了 30 年，小明的钱反而更多。'
+};
+(function(){
+  const box=document.getElementById('opts'), rev=document.getElementById('rev1');
+  let done=false;
+  box.addEventListener('click',e=>{
+    const btn=e.target.closest('.opt'); if(!btn||done) return; done=true;
+    const right = btn.dataset.pick===SPEC_PREDICT.answer;
+    box.querySelectorAll('.opt').forEach(el=>{
+      el.classList.add('locked');
+      if(el.dataset.pick===SPEC_PREDICT.answer) el.classList.add('correct');
+      else if(el===btn) el.classList.add('wrong');
+    });
+    rev.innerHTML='<div class="reveal '+(right?'good':'bad')+'">'+
+      '<span class="v">'+(right?'✓ 直觉很准':'✗ 这里有个反直觉的地方')+'</span>'+
+      (right?SPEC_PREDICT.revealCorrect:SPEC_PREDICT.revealWrong)+
+      '<div class="num">小明：20–30 岁每年 1 万，共投入 <b>10 万</b> → 60 岁约 <b>112.5 万</b><br>'+
+      '小红：30–60 岁每年 1 万，共投入 <b>30 万</b> → 60 岁约 <b>101.1 万</b></div></div>';
+    toast(right?'✓ 已记录：预测正确':'已记录：预测错误 —— 这个落差就是学习发生的地方');
+  });
+})();
+
+/* ---------- 交互 2：参数探索 ---------- */
+(function(){
+  const rateEl=document.getElementById('rate'), yearsEl=document.getElementById('years');
+  const rateV=document.getElementById('rateV'), yearsV=document.getElementById('yearsV');
+  const svg=document.getElementById('chart');
+  const W=660,H=250,PAD={l:56,r:16,t:16,b:28};
+  const fmt=n=>n>=10000?(n/10000).toFixed(1)+' 万':Math.round(n).toLocaleString('zh-CN');
+
+  function calc(rate,years){
+    const r=rate/100,y=1,pts=[]; let principal=0,compound=0;
+    for(let i=1;i<=years;i++){ principal+=y; compound=(compound+y)*(1+r); pts.push({i,principal,compound}); }
+    let sp=0,si=0;
+    for(let i=1;i<=years;i++){ sp+=y; si+=y*r*(years-i+1); }
+    return {pts,principalTotal:sp,simpleTotal:sp+si,compoundTotal:compound};
+  }
+  function draw(){
+    const rate=parseFloat(rateEl.value), years=parseInt(yearsEl.value,10);
+    rateV.textContent=rate.toFixed(1)+'%'; yearsV.textContent=years+' 年';
+    const d=calc(rate,years), maxV=Math.max(d.compoundTotal,1);
+    const X=i=>PAD.l+(i/years)*(W-PAD.l-PAD.r), Y=v=>H-PAD.b-(v/maxV)*(H-PAD.t-PAD.b);
+
+    let grid='';
+    for(let g=0;g<=4;g++){
+      const v=maxV/4*g, yy=Y(v);
+      grid+='<line x1="'+PAD.l+'" y1="'+yy+'" x2="'+(W-PAD.r)+'" y2="'+yy+'" stroke="#1e232d"/>'+
+            '<text x="'+(PAD.l-8)+'" y="'+(yy+4)+'" fill="#4e5666" font-size="10.5" text-anchor="end">'+fmt(v)+'</text>';
+    }
+    let xt='';
+    [1,Math.round(years/2),years].filter((v,i,a)=>a.indexOf(v)===i).forEach(t=>{
+      xt+='<text x="'+X(t)+'" y="'+(H-8)+'" fill="#4e5666" font-size="10.5" text-anchor="middle">'+t+'年</text>';
+    });
+
+    const top=d.pts.map((p,i)=>(i?'L':'M')+X(p.i)+' '+Y(p.compound)).join(' ');
+    const bot=[];
+    for(let i=d.pts.length-1;i>=0;i--){
+      const p=d.pts[i], ratio=p.i/years;
+      const sAt=ratio+(d.simpleTotal-d.principalTotal)*ratio;
+      bot.push('L'+X(p.i)+' '+Y(Math.min(sAt,p.compound)));
+    }
+    const lineC=d.pts.map((p,i)=>(i?'L':'M')+X(p.i)+' '+Y(p.compound)).join(' ');
+    const lineP=d.pts.map((p,i)=>(i?'L':'M')+X(p.i)+' '+Y(p.principal)).join(' ');
+    const lineS='M'+X(1)+' '+Y(1)+' L'+X(years)+' '+Y(d.simpleTotal);
+
+    svg.innerHTML='<defs><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0%" stop-color="#38c172" stop-opacity=".3"/>'+
+      '<stop offset="100%" stop-color="#38c172" stop-opacity=".03"/></linearGradient></defs>'+
+      grid+xt+
+      '<path d="'+top+bot.join(' ')+' Z" fill="url(#gg)"/>'+
+      '<path d="'+lineP+'" stroke="#4e5666" stroke-width="2" fill="none" stroke-dasharray="4 3"/>'+
+      '<path d="'+lineS+'" stroke="#e8a33d" stroke-width="2" fill="none"/>'+
+      '<path d="'+lineC+'" stroke="#5b8dff" stroke-width="2.6" fill="none"/>'+
+      '<text x="'+(X(years)-4)+'" y="'+(Y(d.compoundTotal)-8)+'" fill="#5b8dff" font-size="11.5" text-anchor="end">复利</text>'+
+      '<text x="'+(X(years)-4)+'" y="'+(Y(d.simpleTotal)+15)+'" fill="#e8a33d" font-size="11.5" text-anchor="end">单利</text>'+
+      '<text x="'+(X(years)-4)+'" y="'+(Y(d.principalTotal)+15)+'" fill="#4e5666" font-size="11.5" text-anchor="end">本金</text>';
+
+    const interest=d.compoundTotal-d.principalTotal;
+    document.getElementById('principal').textContent=fmt(d.principalTotal);
+    document.getElementById('final').textContent=fmt(d.compoundTotal);
+    document.getElementById('interest').textContent=fmt(interest);
+    document.getElementById('ratio').textContent=Math.round(interest/d.compoundTotal*100)+'%';
+  }
+  rateEl.addEventListener('input',draw); yearsEl.addEventListener('input',draw);
+  draw();
+})();
+
+/* ---------- 交互 3：排序 ---------- */
+const SPEC_STRUCT={
+  items:[
+    {id:'s2',text:'把这一期的利息加回本金'},
+    {id:'s4',text:'用新的本金重复下一期'},
+    {id:'s1',text:'用当前本金乘以利率，算出本期利息'},
+    {id:'s3',text:'记录这一期结束后的总额'}
+  ],
+  answer:['s1','s2','s3','s4']
+};
+(function(){
+  const box=document.getElementById('steps'), btn=document.getElementById('checkSteps'), rev=document.getElementById('rev3');
+  let order=SPEC_STRUCT.items.map(i=>i.id), dragId=null, checked=false;
+
+  function render(){
+    box.innerHTML=order.map((id,i)=>{
+      const it=SPEC_STRUCT.items.find(x=>x.id===id);
+      return '<div class="step" draggable="'+(!checked)+'" data-id="'+id+'">'+
+        '<span class="grip">⠿</span><span class="idx">'+(i+1)+'</span><span>'+it.text+'</span></div>';
+    }).join('');
+  }
+  box.addEventListener('dragstart',e=>{const el=e.target.closest('.step');if(!el||checked)return;dragId=el.dataset.id;el.classList.add('dragging')});
+  box.addEventListener('dragend',e=>{const el=e.target.closest('.step');if(el)el.classList.remove('dragging')});
+  box.addEventListener('dragover',e=>{e.preventDefault();const el=e.target.closest('.step');if(!el||el.dataset.id===dragId)return;
+    box.querySelectorAll('.step').forEach(s=>s.classList.remove('over'));el.classList.add('over')});
+  box.addEventListener('drop',e=>{e.preventDefault();const el=e.target.closest('.step');if(!el||!dragId)return;
+    el.classList.remove('over');
+    const f=order.indexOf(dragId),t=order.indexOf(el.dataset.id);
+    order.splice(f,1);order.splice(t,0,dragId);dragId=null;render()});
+  box.addEventListener('click',e=>{
+    if(checked)return;const el=e.target.closest('.step');if(!el)return;
+    const id=el.dataset.id;
+    if(!dragId){dragId=id;el.classList.add('over');return}
+    if(dragId===id){dragId=null;box.querySelectorAll('.step').forEach(s=>s.classList.remove('over'));return}
+    const f=order.indexOf(dragId),t=order.indexOf(id);
+    order.splice(f,1);order.splice(t,0,dragId);dragId=null;render();
+  });
+
+  btn.addEventListener('click',()=>{
+    checked=true; let all=true;
+    box.querySelectorAll('.step').forEach((el,i)=>{
+      const ok=order[i]===SPEC_STRUCT.answer[i]; if(!ok)all=false;
+      el.classList.add(ok?'correct':'wrong'); el.setAttribute('draggable','false');
+    });
+    const co=SPEC_STRUCT.answer.map((id,i)=>(i+1)+'. '+SPEC_STRUCT.items.find(x=>x.id===id).text).join('<br>');
+    rev.innerHTML='<div class="reveal '+(all?'good':'bad')+'">'+
+      '<span class="v">'+(all?'✓ 顺序完全正确':'✗ 有几处顺序不对')+'</span>'+
+      '正确顺序是：<div style="margin-top:8px;font-size:13px;line-height:2">'+co+'</div></div>';
+    btn.disabled=true; btn.textContent='已检查';
+    toast(all?'✓ 排序正确 —— 本区已完成，可点「懂了」':'排序有误，正确顺序已给出');
+  });
+  render();
+})();
+
+/* ---------- 概念操作 ---------- */
+function markMastered(){
+  document.querySelector('#verifyPill').textContent='✓ 已理解';
+  toast('✓ 已标记「复利效应」为已理解 —— 掌握度已更新，解锁后续知识点');
+}
+function markConfused(){
+  toast('◐ 已记录困惑 —— 连续两次「没懂」将自动生成拆解提案');
+}
+
+/* ---------- 复习 ---------- */
+function startReview(){
+  toast('开始复习会话：3 个到期知识点，约 5 分钟；答对才算完成');
+}
+
+/* ---------- 弹层 ---------- */
+function openSettings(){document.getElementById('setModal').classList.add('show')}
+function closeSettings(){document.getElementById('setModal').classList.remove('show')}
+function openSlides(){document.getElementById('slideModal').classList.add('show')}
+function closeSlides(){document.getElementById('slideModal').classList.remove('show')}
+document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
+
+/* ---------- AI 补全 ---------- */
+function aiFill(){
+  toast('AI 正在补全知识地图：检测到 3 处缺口（通货膨胀 / 72法则 / 定投策略）');
+}
+
+/* ---------- 追问 ---------- */
+function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
+function sendQa(){
+  const el=document.getElementById('qaText'); const v=el.value.trim(); if(!v)return;
+  el.value=''; el.style.height='22px';
+  toast('已发送：「'+v.slice(0,20)+(v.length>20?'…':'')+'」（原型不发起真实请求）');
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600);
+}
+function goHome(){ toast('返回主题列表（原型从略）') }
+
+/* ---------- init ---------- */
+renderTree('');
+</script>
+</body>
+</html>

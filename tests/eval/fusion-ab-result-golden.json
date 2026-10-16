@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-09-11T15:18:33.140Z",
+  "dataset": "golden",
+  "total": 32,
+  "vectorOnly": null,
+  "hybridW08": null,
+  "hybridW07": null,
+  "hybridW05": null,
+  "hybridRrf": null,
+  "autoRoute": {
+    "recall1": 0.96875,
+    "recall3": 1,
+    "recall5": 1,
+    "recall10": 1,
+    "ndcg10": 0.988466554799108,
+    "mrr": 0.984375
+  },
+  "diff": []
+}

@@ -1,0 +1,12 @@
+{
+  "keyCount": 0,
+  "totalBytes": 0,
+  "keys": [],
+  "samples": [
+    {
+      "label": "parse-biggest",
+      "ms": 0,
+      "size": 0
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 文章润色改写",
+  "description": "先诊断原文问题（结构/逻辑/冗余/语病）→ 按所选维度润色 → 审核修改 → 原文 vs 润色对比报告",
+  "category": "writing",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "text", "label": "原文", "type": "textarea", "required": true },
+            { "key": "dimensions", "label": "润色维度", "type": "select", "multi": true, "required": true, "options": [
+              { "label": "逻辑结构", "value": "logic" },
+              { "label": "表达流畅", "value": "fluency" },
+              { "label": "精简压缩", "value": "concise" },
+              { "label": "扩写充实", "value": "expand" },
+              { "label": "风格迁移", "value": "style" }
+            ] },
+            { "key": "style", "label": "目标风格（风格迁移时必选）", "type": "select", "defaultValue": "formal", "options": [
+              { "label": "正式", "value": "formal" },
+              { "label": "简洁", "value": "concise_style" },
+              { "label": "生动", "value": "vivid" },
+              { "label": "学术", "value": "academic" },
+              { "label": "口语", "value": "colloquial" }
+            ] },
+            { "key": "tone", "label": "语气强度", "type": "select", "defaultValue": "balanced", "options": [
+              { "label": "保守", "value": "conservative" },
+              { "label": "平衡", "value": "balanced" },
+              { "label": "大胆", "value": "bold" }
+            ] },
+            { "key": "request", "label": "效果描述", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "diag1",
+        "type": "llm-chat",
+        "name": "原文诊断",
+        "position": { "x": 340, "y": 200 },
+        "config": {
+          "systemPrompt": "你是文字编辑。诊断原文在结构/逻辑/冗余/语病/风格方面的问题。只输出 JSON 对象：{issues: [{type, detail}]}，type 取值 logic|structure|redundancy|grammar|style。",
+          "prompt": "请诊断以下原文（润色维度：{{start.dimensions}}）：\n\n{{start.text}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "polish1",
+        "type": "llm-chat",
+        "name": "润色改写",
+        "position": { "x": 580, "y": 200 },
+        "config": {
+          "systemPrompt": "你是文字编辑。按所选维度与诊断结果润色，输出 JSON 对象：{rewritten: 润色后全文, changeNotes: [逐条修改说明]}。",
+          "prompt": "润色维度：{{start.dimensions}}\n目标风格：{{start.style}}\n语气强度：{{start.tone}}\n诊断问题：{{diag1.parsed}}\n用户效果要求：{{start.request}}\n\n原文：\n{{start.text}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "审核修改",
+        "position": { "x": 820, "y": 200 },
+        "config": {
+          "payload": "{{polish1.parsed.rewritten}}",
+          "interaction": "input",
+          "editableFields": [{ "key": "output_result", "label": "润色结果", "type": "string" }]
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "对比报告",
+        "position": { "x": 1060, "y": 200 },
+        "config": { "title": "文章润色报告", "template": "# 文章润色报告\n\n## 诊断问题\n{{diag1.parsed.issues}}\n\n## 修改说明\n{{polish1.parsed.changeNotes}}\n\n## 原文\n\n{{start.text}}\n\n## 润色后\n\n{{review1.output_result}}", "format": "markdown" }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存润色稿",
+        "position": { "x": 1300, "y": 200 },
+        "config": { "content": "{{review1.output_result}}", "kind": "text", "category": "text", "subCategory": "润色稿", "name": "润色稿", "tags": "润色" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1540, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "diag1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "diag1", "targetNodeId": "polish1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "polish1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "review1", "targetNodeId": "report1", "kind": "approve" },
+      { "id": "e5", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e6", "sourceNodeId": "report1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}
