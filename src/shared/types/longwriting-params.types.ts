@@ -29,6 +29,8 @@ export interface LongwritingWritingParams {
   sectionTargetWords: number
   /** 上章结尾注入字数 */
   previousChapterEndingChars: number
+  /** 前文状态摘要链注入章数（W2.2：写作带最近 N 章的结束状态摘要；1=仅上一章，旧行为） */
+  stateSummaryChainLimit: number
   /** 重要记忆注入条数 */
   normalMemoryLimit: number
   /** 次要记忆注入条数 */
@@ -75,6 +77,7 @@ export const LONGWRITING_DEFAULTS: LongwritingRuntimeParams = {
     chapterTargetWords: 3_000, // 同文件 `opts.targetWords || outline.estimatedWords || 3000`
     sectionTargetWords: 500, // generateSection 的 `targetWords || outline.estimatedWords || 500`
     previousChapterEndingChars: 550, // extractEndingContentByParagraph 的 `targetChars = 550`
+    stateSummaryChainLimit: 3, // W2.2：写作带最近 3 章结束状态摘要（1=旧行为仅上一章）
     normalMemoryLimit: 10, // getMemoryContext 的 `normalMemories.slice(0, 10)`
     worldContextMaxTokens: 2_000, // 世界观库 pinned 条目直注入预算（0=关闭）
     minorMemoryLimit: 5, // 同函数 `minorMemories.slice(-5)`
@@ -101,6 +104,7 @@ export const LONGWRITING_LIMITS: LongwritingRuntimeParams = {
     chapterTargetWords: 30_000,
     sectionTargetWords: 20_000,
     previousChapterEndingChars: 5_000,
+    stateSummaryChainLimit: 10,
     normalMemoryLimit: 50,
     minorMemoryLimit: 30,
     worldContextMaxTokens: 12_000,

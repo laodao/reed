@@ -11,6 +11,7 @@ import type {
   ChapterPromptParts,
 } from './longwriting/chapter-context'
 import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
+import { buildStateSummaryChainContext } from './longwriting/state-summary-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
 import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type ChapterCardData } from './longwriting/chapter-card'
 import { buildChapterCardDesignSystemPrompt, CHAPTER_CARD_REVIEW_SYSTEM_PROMPT, buildChapterCardReviewPrompt } from '@core/packs/longwriting/skills/chapter-writing'
@@ -3749,7 +3750,8 @@ ${previousInfo}
 
   /**
    * 获取章节生成时的状态摘要上下文
-   * 用于将上一章的结束状态传递给当前章的写作
+   * W2.2 状态摘要链：注入最近 N 章的结束状态（N=参数 stateSummaryChainLimit，默认 3）——
+   * 更早章节压缩回顾一行一条，上一章保留原全量格式；单条时输出与旧行为逐字节一致。
    */
   async getChapterStateSummaryContext(
     projectId: string,
@@ -3757,36 +3759,13 @@ ${previousInfo}
   ): Promise<string> {
     const dbManager = getCoreDatabaseManager()
 
-    // 获取上一章的状态摘要
-    const previousSummary = await dbManager.lwChapterStateSummaries?.getLatestBeforeChapter(projectId, chapterNumber)
-
-    if (!previousSummary) {
+    const chainLimit = Math.max(1, longwritingParams().writing.stateSummaryChainLimit || 1)
+    const recent = await dbManager.lwChapterStateSummaries?.getRecentBeforeChapter?.(projectId, chapterNumber, chainLimit)
+    if (!recent || recent.length === 0) {
       return ''
     }
 
-    // 构建状态摘要上下文
-    let context = '\n\n【重要：前文状态】请确保与上一章结束状态保持一致：\n'
-    context += `\n【故事时间】${previousSummary.storyTime}\n`
-    context += `\n【当前地点】${previousSummary.currentLocation || '未指定'}\n`
-
-    if (previousSummary.characterStates) {
-      context += `\n【角色状态】\n${previousSummary.characterStates}\n`
-    }
-
-    if (previousSummary.pendingEvents) {
-      context += `\n【待处理事件/伏笔】\n${previousSummary.pendingEvents}\n`
-    }
-
-    if (previousSummary.keyChanges) {
-      context += `\n【上一章关键变化】\n${previousSummary.keyChanges}\n`
-    }
-
-    context += '\n【注意事项】\n'
-    context += '1. 时间线要连续，本章开始时间应从上一章结束时间之后开始\n'
-    context += '2. 角色状态要与上一章结束状态一致\n'
-    context += '3. 待处理事件可在本章继续发展或解决\n'
-
-    return context
+    return buildStateSummaryChainContext(recent, chapterNumber, chainLimit)
   }
 
   // ==================== 章节事件提取（图谱：故事内已发生的事实） ====================

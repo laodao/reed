@@ -70,6 +70,23 @@ export class LwChapterStateSummaryRepository extends BaseRepository<
     return row ? this.toDto(row) : null
   }
 
+  /** W2.2 状态摘要链：当前章之前最近 limit 条（返回按 chapterNumber 升序） */
+  async getRecentBeforeChapter(
+    projectId: string,
+    chapterNumber: number,
+    limit: number,
+  ): Promise<ChapterStateSummary[]> {
+    const capped = Math.max(1, Math.floor(limit || 1))
+    const rows = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .andWhere('s.chapter_number < :cn', { cn: chapterNumber })
+      .orderBy('s.chapter_number', 'DESC')
+      .take(capped)
+      .getMany()
+    return this.toDtoList(rows).sort((a, b) => a.chapterNumber - b.chapterNumber)
+  }
+
   async getLatest(projectId: string): Promise<ChapterStateSummary | null> {
     const row = await this.repo
       .createQueryBuilder('s')
