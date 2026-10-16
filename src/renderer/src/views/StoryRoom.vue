@@ -455,6 +455,7 @@ import {
 import { useStoryRoom } from '@/composables/useStoryRoom'
 import type { ArtifactCard, BibleGroupWire, ConsensusEntry, RoomEvent } from '@shared/types/story-room.types'
 import { conflictLocLine, buildConflictFixMessage } from '@/utils/conflict-fix'
+import { resolveInitialModelSelection, type StageModelCfg } from '@/utils/resolve-initial-model'
 
 defineOptions({ name: 'StoryRoom' })
 
@@ -486,7 +487,10 @@ function chatScore(m: { id?: string; name?: string }): number {
   return KNOWN_CHAT_RE.test(`${m.id || ''} ${m.name || ''}`) ? 1 : 0
 }
 
-const modelOptions = computed(() => {
+/** W1.5：stage 配置的列表外模型合成为选项注入（provider 启用时尊重显式配置） */
+const extraModelOptions = ref<Array<{ value: string; label: string }>>([])
+
+const baseModelOptions = computed(() => {
   const out: Array<{ value: string; label: string }> = []
   for (const c of providerConfigs.value) {
     for (const m of Array.isArray(c.models) ? c.models : []) {
@@ -499,6 +503,7 @@ const modelOptions = computed(() => {
     .sort((a, b) => (b._s ?? 0) - (a._s ?? 0))
     .map(({ value, label }) => ({ value, label }))
 })
+const modelOptions = computed(() => [...baseModelOptions.value, ...extraModelOptions.value])
 const modelLabel = computed(() => {
   const hit = modelOptions.value.find((o) => o.value === modelSel.value)
   if (hit) return hit.label.split(' / ')[1] || hit.label
@@ -525,19 +530,25 @@ async function loadModels(): Promise<void> {
       window.electronAPI.longwriting.getStageModelConfigs(projectId.value),
       window.electronAPI.providerConfig.list(),
     ])
+    const allProviders = listRes.success && Array.isArray(listRes.data) ? (listRes.data as Array<Record<string, any>>) : []
     if (listRes.success && listRes.data) {
-      providerConfigs.value = (listRes.data as Array<Record<string, any>>).filter((c) => c.runtimeUsable ?? c.isEnabled)
+      providerConfigs.value = allProviders.filter((c) => c.runtimeUsable ?? c.isEnabled)
     }
-    // 兜底链：story-room 专属配置 → 复用既有写作阶段配置（overview/chapter——用户配过的
-    // 一定是可用对话模型）→ 第一个过滤后的模型
+    // provider 查找表：合成项 label 与启用校验共用
+    const providerLookup = new Map(
+      allProviders.map((c) => [String(c.id), { name: String(c.name || c.id), enabled: !!(c.runtimeUsable ?? c.isEnabled) }]),
+    )
+    // W1.5 stage 权威：story-room → overview → chapter 依次取配置；命中列表直接用，
+    // 列表外但 provider 启用 → 注入合成项（不再静默覆盖用户显式配置落到无关模型）
     if (cfgRes.success && Array.isArray(cfgRes.data)) {
-      const cfgs = cfgRes.data as Array<Record<string, any>>
-      const pick = (stage: string) => {
-        const hit = cfgs.find((c) => c.stage === stage)
-        const v = hit ? `${hit.providerConfigId}|${hit.modelId}` : ''
-        return modelOptions.value.some((o) => o.value === v) ? v : ''
-      }
-      modelSel.value = pick('story-room') || pick('overview') || pick('chapter') || ''
+      const cfgs = (cfgRes.data as Array<Record<string, any>>).map((c) => ({
+        stage: String(c.stage ?? ''),
+        providerConfigId: c.providerConfigId != null ? String(c.providerConfigId) : undefined,
+        modelId: c.modelId != null ? String(c.modelId) : undefined,
+      })) as StageModelCfg[]
+      const resolved = resolveInitialModelSelection(cfgs, baseModelOptions.value, providerLookup)
+      extraModelOptions.value = resolved.syntheticLabel ? [{ value: resolved.value, label: resolved.syntheticLabel }] : []
+      modelSel.value = resolved.value || (modelOptions.value[0]?.value ?? '')
     }
     if (!modelSel.value && modelOptions.value.length > 0) {
       modelSel.value = modelOptions.value[0].value
