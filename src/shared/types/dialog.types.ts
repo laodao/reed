@@ -55,6 +55,8 @@ export interface CreateDialogRequest {
   roleId?: string
   systemPrompt?: string
   contextConfig?: ContextConfig
+  /** Agent 会话（独立功能）：创建即标记，不走 chat 界面（对话列表会过滤 agentEnabled 对话） */
+  agentEnabled?: boolean
 }
 
 /**

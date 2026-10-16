@@ -66,13 +66,13 @@ export function useChat() {
   const currentDialog = computed(() => dialogStore.currentDialog)
 
   /**
-   * 当前角色的对话列表
+   * 当前角色的对话列表（Agent 会话是独立功能，始终排除）
    */
   const currentRoleDialogs = computed(() => {
     if (!selectedRole.value) {
-      return dialogStore.dialogs.filter(d => !d.roleId)
+      return dialogStore.dialogs.filter(d => !d.roleId && !d.agentEnabled)
     }
-    return dialogStore.dialogs.filter(d => d.roleId === selectedRole.value?.id)
+    return dialogStore.dialogs.filter(d => d.roleId === selectedRole.value?.id && !d.agentEnabled)
   })
 
   /**

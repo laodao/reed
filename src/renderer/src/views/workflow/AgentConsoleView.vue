@@ -38,6 +38,26 @@
             <span class="cv-label">{{ selected.label }}</span>
             <el-tag v-if="selected.running || streamState.isStreaming" type="success" size="small" effect="dark">运行中</el-tag>
             <div class="cv-actions">
+              <!-- 模型选择：独立功能后从聊天页迁入（当前会话持久化到 dialog） -->
+              <el-select
+                v-model="selectedModelKey"
+                size="small"
+                class="cv-model-select"
+                placeholder="选择模型"
+                filterable
+                :filter-method="filterModels"
+                @change="onModelChange"
+              >
+                <el-option-group v-for="p in filteredProviderOptions" :key="p.id" :label="p.name">
+                  <el-option
+                    v-for="m in p.models"
+                    :key="`${p.id}:${m.id}`"
+                    :label="`${p.shortId}/${m.name}`"
+                    :value="`${p.id}:${m.id}`"
+                  />
+                </el-option-group>
+              </el-select>
+              <el-button size="small" text @click="openSettings">设置</el-button>
               <el-button v-if="selected.running || streamState.isStreaming" text type="danger" size="small" @click="stopRun">停止</el-button>
             </div>
           </div>
@@ -251,6 +271,31 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 会话设置（模型之外的上下文管理：标题 + 对话设定人设） -->
+    <el-dialog v-model="settingsVisible" title="会话设置" width="480px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="会话标题">
+          <el-input v-model="settingsForm.title" maxlength="50" show-word-limit placeholder="Agent 会话" />
+        </el-form-item>
+        <el-form-item label="对话设定">
+          <el-input
+            v-model="settingsForm.systemPrompt"
+            type="textarea"
+            :rows="4"
+            placeholder="自定义人设/要求（可选），将拼入 Agent 系统提示词末尾"
+          />
+        </el-form-item>
+      </el-form>
+      <div class="settings-hint">
+        上下文由 Agent 会话存储自动管理：多轮记忆与工具调用中间态完整保留，无需设置条数限制；
+        「查看上下文」可检查模型实际看到的提示词与消息历史。执行过程（轨迹/任务树/工作流）随会话保留。
+      </div>
+      <template #footer>
+        <el-button @click="settingsVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveSettings">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -605,18 +650,27 @@ async function loadSessions(): Promise<void> {
 
 async function createSession(): Promise<void> {
   const resp = await window.electronAPI.providerConfig.list()
-  const cfg = resp.success && resp.data ? resp.data.find((c) => c.runtimeUsable ?? c.isEnabled) : undefined
-  const modelId = cfg?.models?.[0]?.id
-  if (!cfg || !modelId) {
-    ElMessage.error('未配置可用的 AI 提供商——请先到设置中添加')
+  // 只挑文本/多模态模型（同聊天页口径）：embedding/image/video 模型收到对话请求必报错
+  // （曾选到「阿里百炼」的 models[0]=qwen3.7-text-embedding，每轮发送都 400 Bad Request）
+  const isTextModelType = (type?: string): boolean => type === undefined || type === 'text' || type === 'multimodal'
+  let chosen: { providerConfigId: string; modelId: string } | null = null
+  for (const cfg of (resp.success && resp.data ? resp.data : []).filter((c) => c.runtimeUsable ?? c.isEnabled)) {
+    const model = (cfg.models ?? []).find((m: { type?: string }) => isTextModelType(m.type))
+    if (model) {
+      chosen = { providerConfigId: cfg.id, modelId: model.id }
+      break
+    }
+  }
+  if (!chosen) {
+    ElMessage.error('未配置可用的对话模型——请先到设置中添加提供商并选择文本模型')
     return
   }
-  const dialog = await store.createDialog({ title: 'Agent 会话', modelId, providerConfigId: cfg.id })
+  // 创建即标记 agentEnabled：agent 会话不进 chat 对话列表（对话列表按 agentEnabled 过滤）
+  const dialog = await store.createDialog({ title: 'Agent 会话', modelId: chosen.modelId, providerConfigId: chosen.providerConfigId, agentEnabled: true })
   if (!dialog) {
     ElMessage.error('创建会话失败')
     return
   }
-  await store.updateDialog(dialog.id, { agentEnabled: true })
   // 新对话零消息时 agent_sessions 尚无行——直接合成会话项选中
   const synthetic: AgentConsoleSession = {
     scopeKey: `dialog:${dialog.id}`,
@@ -649,6 +703,8 @@ async function select(s: AgentConsoleSession): Promise<void> {
   // 轨迹与会话消息并行加载，两者都落定后再装配右栏——refs 读的是当前会话的消息
   await Promise.all([loadTrajectory(s.scopeKey, req), loadSessionDialog(s, req)])
   if (req !== selectReqId) return
+  // 模型选择器跟随当前会话（新建会话场景 store.currentDialog 已是同一 id，watcher 不再触发）
+  syncModelFromDialog()
   await loadInspectorData(req)
 }
 
@@ -709,6 +765,140 @@ function stopRun(): void {
     else if (resp.success) ElMessage.warning('该会话当前没有可停止的运行')
     else ElMessage.error(resp.error ?? '停止失败')
   })()
+}
+
+// ============ 会话管理（模型 / 对话设定）：独立功能后从聊天页迁入 ============
+
+interface ProviderModelOption {
+  id: string
+  name: string
+  type?: string
+}
+interface ProviderOption {
+  id: string
+  name: string
+  shortId: string
+  models: ProviderModelOption[]
+}
+
+/** 只挑文本/多模态模型：embedding/image/video 模型收到对话请求必报错（同新建会话口径） */
+function isTextModelType(type?: string): boolean {
+  return type === undefined || type === 'text' || type === 'multimodal'
+}
+
+const providerOptions = ref<ProviderOption[]>([])
+const modelSearchKeyword = ref('')
+const selectedModelKey = ref('')
+
+const filteredProviderOptions = computed<ProviderOption[]>(() => {
+  const kw = modelSearchKeyword.value.trim().toLowerCase()
+  if (!kw) return providerOptions.value
+  const out: ProviderOption[] = []
+  for (const p of providerOptions.value) {
+    const models = p.models.filter(
+      (m) => m.name.toLowerCase().includes(kw) || m.id.toLowerCase().includes(kw) || p.name.toLowerCase().includes(kw),
+    )
+    if (models.length > 0) out.push({ ...p, models })
+  }
+  return out
+})
+
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
+
+async function loadProviderOptions(): Promise<void> {
+  try {
+    const [cfgResp, tplResp] = await Promise.all([
+      window.electronAPI.providerConfig.list(),
+      window.electronAPI.providerTemplate.list(),
+    ])
+    const templates = tplResp.success && tplResp.templates ? tplResp.templates : []
+    const out: ProviderOption[] = []
+    for (const cfg of (cfgResp.success && cfgResp.data ? cfgResp.data : []).filter((c: { runtimeUsable?: boolean; isEnabled?: boolean }) => c.runtimeUsable ?? c.isEnabled)) {
+      const models: ProviderModelOption[] = []
+      if (cfg.models && cfg.models.length > 0) {
+        for (const m of cfg.models) {
+          if (isTextModelType(m.type)) models.push({ id: m.id, name: m.name, type: m.type })
+        }
+      } else {
+        const tpl = templates.find((t: { id: string }) => t.id === cfg.templateId)
+        for (const m of tpl?.models ?? []) {
+          if (isTextModelType(m.type)) models.push({ id: m.id, name: m.name || m.id, type: m.type })
+        }
+      }
+      if (models.length > 0) out.push({ id: cfg.id, name: cfg.name, shortId: cfg.shortId || cfg.name, models })
+    }
+    providerOptions.value = out
+  } catch (e) {
+    console.error('加载提供商配置失败:', e)
+  }
+}
+
+/** 从当前会话 dialog 同步模型选中态（切换会话时跟随） */
+function syncModelFromDialog(): void {
+  const d = store.currentDialog
+  if (!d || selected.value?.kind !== 'chat') {
+    selectedModelKey.value = ''
+    return
+  }
+  let providerId = d.providerConfigId || ''
+  if (!providerId) {
+    for (const p of providerOptions.value) {
+      if (p.models.some((m) => m.id === d.modelId)) {
+        providerId = p.id
+        break
+      }
+    }
+  }
+  selectedModelKey.value = providerId && d.modelId ? `${providerId}:${d.modelId}` : ''
+}
+
+watch(
+  () => store.currentDialog?.id,
+  () => syncModelFromDialog(),
+)
+
+/** 切换当前会话模型：持久化到 dialog，下一轮生效 */
+function onModelChange(key: string): void {
+  const d = store.currentDialog
+  if (!d || !key) return
+  const sep = key.indexOf(':')
+  if (sep <= 0) return
+  const providerConfigId = key.slice(0, sep)
+  const modelId = key.slice(sep + 1)
+  void store.updateDialog(d.id, { modelId, providerConfigId })
+  ElMessage.success('模型已切换，下一轮生效')
+}
+
+// ---- 会话设置（标题 + 对话设定） ----
+
+const settingsVisible = ref(false)
+const settingsForm = reactive({ title: '', systemPrompt: '' })
+
+function openSettings(): void {
+  const d = store.currentDialog
+  if (!d || selected.value?.kind !== 'chat') return
+  settingsForm.title = d.title
+  settingsForm.systemPrompt = d.systemPrompt || ''
+  settingsVisible.value = true
+}
+
+async function saveSettings(): Promise<void> {
+  const d = store.currentDialog
+  if (!d) return
+  const title = settingsForm.title.trim() || 'Agent 会话'
+  const ok = await store.updateDialog(d.id, { title, systemPrompt: settingsForm.systemPrompt.trim() })
+  if (!ok) {
+    ElMessage.error('保存失败')
+    return
+  }
+  // 左侧列表与当前选中项的显示名同步（label 来自 dialog.title）
+  if (selected.value) selected.value.label = title
+  const inList = sessions.value.find((s) => s.scopeKey === selected.value?.scopeKey)
+  if (inList) inList.label = title
+  settingsVisible.value = false
+  ElMessage.success('会话设置已保存')
 }
 
 // ============ 事件与交互 ============
@@ -908,6 +1098,7 @@ watch(
 )
 
 onMounted(() => {
+  void loadProviderOptions()
   void (async () => {
     await loadSessions()
     const target = route.query.session
@@ -951,7 +1142,9 @@ onUnmounted(() => {
 .stream-pane-empty { border: none; }
 .stream-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .cv-label { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cv-actions { margin-left: auto; display: flex; gap: 4px; }
+.cv-actions { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.cv-model-select { width: 210px; }
+.settings-hint { margin: 0 8px; padding: 8px 12px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); background: var(--el-fill-color-lighter); border-radius: 6px; }
 
 .stream-body { flex: 1; overflow: auto; padding: 16px 18px; }
 
