@@ -22,6 +22,11 @@
         </div>
       </div>
 
+      <!-- W2.1：裁剪徽标——超预算时章法按价值阶梯自动裁剪的分区 -->
+      <div v-if="trimmedSections.length" class="trim-badge">
+        已自动裁剪：{{ trimmedSections.join(' → ') }}
+      </div>
+
       <!-- 分区条目（只读查看 + 占用） -->
       <div v-for="group in groups" :key="group.key" class="ctx-section">
         <div class="section-head">
@@ -84,6 +89,7 @@ const estimateTokens = ref(0)
 const windowTokens = ref(32_768)
 const previewVisible = ref(false)
 const previewText = ref('')
+const trimmedSections = ref<string[]>([])
 
 const SECTION_LABELS: Record<string, string> = {
   overview: '故事宏观背景',
@@ -122,7 +128,7 @@ const budgetLevel = computed(() => {
 interface ContextPreviewResp {
   success: boolean
   error?: string
-  data?: { items: ContextItem[]; promptText: string; estimateTokens: number; windowTokens: number }
+  data?: { items: ContextItem[]; promptText: string; estimateTokens: number; windowTokens: number; trimmedSections?: string[] }
 }
 
 async function refresh(): Promise<void> {
@@ -144,6 +150,7 @@ async function refresh(): Promise<void> {
       estimateTokens.value = resp.data.estimateTokens
       windowTokens.value = resp.data.windowTokens
       previewText.value = resp.data.promptText
+      trimmedSections.value = resp.data.trimmedSections ?? []
     } else {
       ElMessage.error(resp.error ?? '上下文预览失败')
     }
@@ -165,6 +172,7 @@ watch(() => props.outlineId, () => {
 .panel-actions { display: flex; gap: 2px; }
 .panel-body { flex: 1; overflow: auto; padding: 10px; }
 .panel-note { font-size: 11px; color: var(--text-secondary); background: var(--fill-color-light); border-radius: 4px; padding: 6px 8px; margin-bottom: 10px; line-height: 1.5; }
+.trim-badge { font-size: 11px; color: var(--color-warning); background: var(--fill-color-light); border-radius: 4px; padding: 6px 8px; margin-bottom: 10px; line-height: 1.5; }
 .budget { margin-bottom: 10px; }
 .budget-bar { height: 8px; border-radius: 4px; background: var(--fill-color); overflow: hidden; }
 .budget-fill { height: 100%; background: var(--color-primary); transition: width 0.3s; }

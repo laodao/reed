@@ -10,7 +10,7 @@ import type {
   ChapterContextResult,
   ChapterPromptParts,
 } from './longwriting/chapter-context'
-import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
+import { composeChapterPrompt, estimateContextTokens, trimChapterPartsToBudget } from './longwriting/chapter-context'
 import { buildStateSummaryChainContext } from './longwriting/state-summary-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
 import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type ChapterCardData } from './longwriting/chapter-card'
@@ -1849,6 +1849,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
         promptText,
         estimateTokens: opts.enabledItemIds ? estimateContextTokens(promptText) : asm.estimateTokens,
         windowTokens: asm.windowTokens,
+        trimmedSections: asm.trimmedSections,
       },
     }
   }
@@ -1876,6 +1877,8 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
         windowTokens: number
         items: ChapterContextItem[]
         parts: ChapterPromptParts
+        /** W2.1：超预算时被裁剪的分区（空=未触发裁剪） */
+        trimmedSections: string[]
         composeOpts: { targetWords: number; style?: string; extraPrompt?: string }
       }
   > {
@@ -2137,7 +2140,17 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     }
 
     const targetWordsFinal = opts.targetWords || outline.estimatedWords || chapterTargetWords
-    const prompt = composeChapterPrompt(parts, () => true, { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt })
+    // W2.1 预算硬裁剪：超窗口时按分区价值阶梯裁剪（低于预算零改动，prompt 不变）
+    const trimmed = trimChapterPartsToBudget(parts, systemPrompt, windowTokensParam, (p) =>
+      composeChapterPrompt(p, () => true, { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt }),
+    )
+    const effectiveParts = trimmed.steps.length > 0 ? trimmed.parts : parts
+    if (trimmed.steps.length > 0) {
+      logger.warn(
+        `[longwriting] 章节上下文超预算，已裁剪：${trimmed.steps.join(' → ')}（${trimmed.estimateTokens}/${windowTokensParam} tokens）`,
+      )
+    }
+    const prompt = composeChapterPrompt(effectiveParts, () => true, { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt })
     // 评审 P3-1：纪律注入后 systemPrompt 也有千字级体量，预算估算应包含它
     const estimateTokens = estimateContextTokens(prompt) + estimateContextTokens(systemPrompt)
     const windowTokens = windowTokensParam
@@ -2150,7 +2163,8 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       estimateTokens,
       windowTokens,
       items,
-      parts,
+      parts: effectiveParts,
+      trimmedSections: trimmed.steps,
       composeOpts: { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt },
     }
   }

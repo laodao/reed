@@ -50,6 +50,8 @@ export interface ChapterContextResult {
   promptText: string
   estimateTokens: number
   windowTokens: number
+  /** W2.1：超预算被裁剪的分区名（空/缺省=未触发裁剪） */
+  trimmedSections?: string[]
 }
 
 /** token 估算：UTF-8 字节 / 4（中文场景 ≈1.3 字/token 的粗口径，与 ContextManager 一致） */
@@ -145,4 +147,67 @@ ${opts.extraPrompt && parts.extraText ? `## 九、附加要求
 ${parts.extraText}` : ''}
 
 请根据以上所有信息，撰写章节正文内容。直接开始写作，不需要标题。`
+}
+
+// ==================== W2.1：上下文预算硬裁剪 ====================
+
+/** 单个裁剪阶梯：label 供面板徽标/日志，apply 原地修改 parts 副本 */
+interface TrimStep {
+  label: string
+  apply: (p: ChapterPromptParts) => void
+}
+
+/** 保头截断：卡片字段（姓名/性格等）集中在前部，截尾丢的是背景/弧光等低密度内容 */
+function clipHead(text: string, ratio: number): string {
+  if (!text) return text
+  const keep = Math.max(1, Math.ceil(text.length * ratio))
+  return text.length <= keep ? text : `${text.slice(0, keep)}\n（已截断以适配上下文预算）`
+}
+
+/** 保尾截断：衔接文本的价值在结尾（接到上一章末尾） */
+function clipTail(text: string, keepChars: number): string {
+  if (!text) return text
+  return text.length <= keepChars ? text : `（前文已截断）${text.slice(-keepChars)}`
+}
+
+/**
+ * 按分区价值阶梯裁剪组装原料至预算内（W2.1）。
+ * - 低于预算：原样返回（steps 为空）——小项目 prompt 逐字节不变（回归安全）
+ * - 裁剪顺序 = 价值从低到高：世界观库触发条目 → 地点卡 → 角色卡 → 世界观背景 →
+ *   图谱段 → 上章结尾 → 约束段；任务/设计卡/风格/附加要求永不裁
+ * @param buildPrompt 用（可能已裁剪的）parts 重组完整 prompt 的回调——与真实组装单一事实源
+ */
+export function trimChapterPartsToBudget(
+  parts: ChapterPromptParts,
+  systemPrompt: string,
+  windowTokens: number,
+  buildPrompt: (p: ChapterPromptParts) => string,
+): { parts: ChapterPromptParts; steps: string[]; estimateTokens: number } {
+  const measure = (p: ChapterPromptParts): number =>
+    estimateContextTokens(buildPrompt(p)) + estimateContextTokens(systemPrompt)
+
+  const estimate = measure(parts)
+  if (!(windowTokens > 0) || estimate <= windowTokens) {
+    return { parts, steps: [], estimateTokens: estimate }
+  }
+
+  const copy: ChapterPromptParts = { ...parts }
+  const steps: TrimStep[] = [
+    { label: '世界观库触发条目', apply: (p) => { p.worldLibraryText = '' } },
+    { label: '涉及地点卡截半', apply: (p) => { p.locationItems = p.locationItems.map((i) => ({ ...i, text: clipHead(i.text, 0.5) })) } },
+    { label: '涉及角色卡截半', apply: (p) => { p.characterItems = p.characterItems.map((i) => ({ ...i, text: clipHead(i.text, 0.5) })) } },
+    { label: '世界观背景摘要化', apply: (p) => { p.backgroundText = clipHead(p.backgroundText, 0.15) } },
+    { label: '图谱关系与事件段截前 60%', apply: (p) => { p.graphSection = clipHead(p.graphSection, 0.6) } },
+    { label: '上一章结尾截尾保留', apply: (p) => { p.prevEndingText = clipTail(p.prevEndingText, 250) } },
+    { label: '关键约束段（记忆/状态链）截前 60%', apply: (p) => { p.constraintsText = clipHead(p.constraintsText, 0.6) } },
+  ]
+
+  const fired: string[] = []
+  for (const step of steps) {
+    if (measure(copy) <= windowTokens) break
+    step.apply(copy)
+    fired.push(step.label)
+  }
+
+  return { parts: copy, steps: fired, estimateTokens: measure(copy) }
 }
