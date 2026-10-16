@@ -11,6 +11,10 @@
  *
  * 处置：容器字段不是关系语义——重建表去掉 FK（列/数据/索引保留，子表 lw_design_messages
  * 的 conversation_id 外键不受影响）。幂等；兼容 SQLite（rebuild）+ PG（DROP CONSTRAINT）。
+ * 真机二型：另一台机器存量库的 FK 子句为异形 DDL（具名 CONSTRAINT / 省略父列清单等），
+ * 剥除正则匹配不上 → "去 FK 失败"拒绝启动。处置：FK 正则补全 SQLite 外键语法全量 +
+ * 报错带出 DDL 尾部（异形 DDL 一次报错即定位）+ 换表前临时表 PRAGMA 终检（未知变体
+ * 拦在 DROP 原表之前）。
  * 行为变化提示：删除 lw_projects 不再级联删设计会话（孤儿行仅作历史占位，无引用方）。
  *
  * 注册点（双入口，防漏单端——PR checklist 必查）：
@@ -22,9 +26,17 @@ import type { DataSource } from 'typeorm'
 const TABLE = 'lw_design_conversations'
 const TMP_TABLE = 'lw_design_conversations__fkfix'
 
-/** 表级 FOREIGN KEY 子句（含可选 ON DELETE/UPDATE 动作）——列定义内不含 "FOREIGN KEY" 字样，惰性匹配安全 */
+/**
+ * 表级 FOREIGN KEY 子句（SQLite 外键语法全量）——列定义内不含 "FOREIGN KEY" 字样，惰性匹配安全。
+ * 须覆盖真机出现过的全部形态（漏一种就触发"去 FK 失败"拒绝启动）：
+ * - 可选 CONSTRAINT <name> 前缀（具名约束）
+ * - 父表列清单可省略（REFERENCES 父表 即引用其主键）
+ * - 引号风格不限："x" / [x] / `x` / 'x'，引号内可含 - 等特殊字符；裸名可含 .
+ * - 可选 MATCH <name> 与 [NOT] DEFERRABLE [INITIALLY DEFERRED|IMMEDIATE] 尾巴（残留会导致重建 SQL 语法错）
+ * 列级 REFERENCES（列定义内联，无 FOREIGN KEY 字样）无法由此剥除——由换表前 PRAGMA 终检兜底拒绝。
+ */
 const FK_CLAUSE_RE =
-  /,\s*FOREIGN\s+KEY\s*\([^)]*\)\s*REFERENCES\s+["'[\]\w.]+\s*\([^)]*\)((\s+ON\s+(DELETE|UPDATE)\s+(CASCADE|SET\s+NULL|SET\s+DEFAULT|NO\s+ACTION|RESTRICT))*)/gi
+  /,\s*(?:CONSTRAINT\s+(?:"[^"]+"|\[[^\]]+\]|`[^`]+`|'[^']*'|[\w$]+)\s+)?FOREIGN\s+KEY\s*\([^)]*\)\s*REFERENCES\s+(?:"[^"]+"|\[[^\]]+\]|`[^`]+`|'[^']*'|[\w$.]+)(?:\s*\([^)]*\))?(?:\s+MATCH\s+(?:"[^"]+"|\[[^\]]+\]|`[^`]+`|'[^']*'|[\w$]+))?((?:\s+ON\s+(?:DELETE|UPDATE)\s+(?:CASCADE|SET\s+NULL|SET\s+DEFAULT|NO\s+ACTION|RESTRICT))*)(?:\s+(?:NOT\s+)?DEFERRABLE(?:\s+INITIALLY\s+(?:DEFERRED|IMMEDIATE))?)?/gi
 
 export async function fixLwDesignConversationsProjectFk(ds: DataSource): Promise<void> {
   const isPg = ds.options.type === 'postgres'
@@ -67,8 +79,10 @@ export async function fixLwDesignConversationsProjectFk(ds: DataSource): Promise
   )
   const newSql = renamed.replace(FK_CLAUSE_RE, '')
   if (!newSql.includes(`"${TMP_TABLE}"`) || /FOREIGN\s+KEY/i.test(newSql)) {
+    // DDL 尾部随报错带出（JSON 序列化让 CRLF 等不可见字符现形）——真机异形 DDL 一次报错即可定位
     throw new Error(
-      `[fix-lw-design-conversations-project-fk] 无法安全改写 ${TABLE} 的建表语句（去 FK 失败），放弃重建`,
+      `[fix-lw-design-conversations-project-fk] 无法安全改写 ${TABLE} 的建表语句（去 FK 失败），放弃重建。` +
+        `DDL 尾部 200 字符：${JSON.stringify(createSql.slice(-200))}`,
     )
   }
 
@@ -115,6 +129,13 @@ export async function fixLwDesignConversationsProjectFk(ds: DataSource): Promise
       await ds.query(`ALTER TABLE "${TMP_TABLE}" ADD COLUMN "${col.name}" ${col.type}${col.notnull ? ' NOT NULL' : ''}${dflt}`)
     }
     const colList = origCols.map((c) => `"${c.name}"`).join(', ')
+    // 换表前终检：临时表外键必须已清空——把未预见的 DDL 变体拦在 DROP 原表之前（失败整体回滚，原表无损）
+    const tmpFks = (await ds.query(`PRAGMA foreign_key_list(${TMP_TABLE})`)) as unknown[]
+    if (tmpFks.length > 0) {
+      throw new Error(
+        `[fix-lw-design-conversations-project-fk] 临时表 ${TMP_TABLE} 仍存在外键（疑似列级 REFERENCES，正则不可达），放弃重建`,
+      )
+    }
     await ds.query(`INSERT INTO "${TMP_TABLE}" (${colList}) SELECT ${colList} FROM "${TABLE}"`)
     await ds.query(`DROP TABLE "${TABLE}"`)
     await ds.query(`ALTER TABLE "${TMP_TABLE}" RENAME TO "${TABLE}"`)
