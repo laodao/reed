@@ -1041,8 +1041,11 @@ async function createOneLevelOutline(suggestedOutline: any[]) {
 // 取消生成
 function cancelGeneration() {
   if (!currentEventId.value) return
+  // W1.2 真取消：中止后端流（此前仅清本地状态，后端继续烧 token）
+  const eventId = currentEventId.value
   generating.value = false
   currentEventId.value = null
+  window.electronAPI.longwriting.generateCancel(eventId).catch(() => {})
   ElMessage.info('已取消生成')
 }
 

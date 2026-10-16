@@ -1489,22 +1489,23 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.WRITE_CHAPTER_FULL,
     async (
       _event,
-      _eventId: string,
+      eventId: string,
       projectId: string,
       outlineId: string,
       opts?: { targetWords?: number; style?: string; extraPrompt?: string; overwrite?: boolean; providerConfigId?: string; modelId?: string }
     ) => {
       try {
         // W1.1 参数贯通：生成参数随 run 输入进工作流（不再被节点硬编码 2500 旁路）
+        // W1.2 真取消：UI eventId 穿透到节点——generateCancel(eventId) 可中止卡/正文生成流
         const outcome = await runChapterWorkflowSync(projectId, outlineId, opts?.overwrite === true, undefined, {
           targetWords: opts?.targetWords,
           style: opts?.style,
           extraPrompt: opts?.extraPrompt,
-        })
-        if (!outcome.ok) return { success: false, error: outcome.error, eventId: _eventId }
-        return { success: true, data: outcome.data, eventId: _eventId }
+        }, eventId || undefined)
+        if (!outcome.ok) return { success: false, error: outcome.error, eventId }
+        return { success: true, data: outcome.data, eventId }
       } catch (error: any) {
-        return { success: false, error: error.message, eventId: _eventId }
+        return { success: false, error: error.message, eventId }
       }
     }
   )

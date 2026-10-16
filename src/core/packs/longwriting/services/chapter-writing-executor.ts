@@ -95,6 +95,9 @@ export interface ChapterWritingMethodOptions {
   projectId: string
   outlineId: string
   overwrite?: boolean
+  /** 生成流事件 id 前缀（W1.2 真取消）：设计卡/正文流注册为 `${eventId}-card`/`${eventId}-write`，
+   *  UI 调 generateCancel(eventId) 即可中止当前流；空=自造 id（不可远程中止，兼容研讨室工具路径） */
+  eventId?: string
   targetWords?: number
   /** 写作风格（W1.1 参数贯通；空=默认文风） */
   style?: string
@@ -305,8 +308,10 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
 
   onProgress?.({ step: 'design', message: '生成章节设计卡（情节概要/开场钩子/爽点/章尾卡点/出场实体）' })
   const stageModel = await resolveStageModelOpts(projectId)
+  // W1.2 真取消：流 id 以调用方 eventId 为前缀，generateCancel(eventId) 可中止当前流
+  const cardEventId = opts.eventId ? `${opts.eventId}-card` : `wf-card-${Date.now()}`
   const cardResult = await ai.generateChapterCard(
-    `wf-card-${Date.now()}`,
+    cardEventId,
     projectId,
     outlineId,
     stageModel.providerConfigId,
@@ -344,7 +349,7 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
     : ''
   const mergedExtra = [consensusBlock, userExtra].filter(Boolean).join('\n\n') || undefined
   const writeResult = await ai.generateChapter(
-    `wf-write-${Date.now()}`,
+    opts.eventId ? `${opts.eventId}-write` : `wf-write-${Date.now()}`,
     projectId,
     outlineId,
     opts.targetWords,

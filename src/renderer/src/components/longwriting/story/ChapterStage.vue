@@ -551,6 +551,8 @@ const currentOutlineForAction = ref<StoryOutline | null>(null)
 // 生成状态映射
 const generatingMap = ref<Record<string, boolean>>({})
 const generatingEventIdMap = ref<Record<string, string | null>>({})
+// W1.2 真取消：用户已请求取消的章节——用于抑制后端中止后回流的「生成失败」误报
+const cancelRequestedMap = ref<Record<string, boolean>>({})
 
 // 保存状态映射
 const savingMap = ref<Record<string, boolean>>({})
@@ -1454,9 +1456,13 @@ async function runChapterWorkflow(outlineId: string, opts?: ChapterGenParams) {
     return
   }
   generatingMap.value[outlineId] = true
+  // W1.2 真取消：eventId 回存供 cancelGenerate 中止后端流；取消后抑制「失败」误报
+  const eventId = `wf-${outlineId}-${Date.now()}`
+  cancelRequestedMap.value[outlineId] = false
+  generatingEventIdMap.value[outlineId] = eventId
   try {
     const result = await window.electronAPI.longwriting.writeChapterFull(
-      `wf-${outlineId}-${Date.now()}`,
+      eventId,
       props.projectId,
       outlineId,
       {
@@ -1467,6 +1473,10 @@ async function runChapterWorkflow(outlineId: string, opts?: ChapterGenParams) {
       }
     )
     if (!result.success) {
+      if (cancelRequestedMap.value[outlineId]) {
+        ElMessage.info('已取消生成')
+        return
+      }
       const err = result.error || '生成失败'
       // 工作流门禁：该章已有正文需用户确认覆盖
       if (err.includes('已有正文') && !opts?.overwrite) {
@@ -1503,10 +1513,13 @@ async function runChapterWorkflow(outlineId: string, opts?: ChapterGenParams) {
     }
     updateProgress()
   } catch (e: any) {
-    ElMessage.error('章法工作流失败：' + (e?.message || e))
+    if (!cancelRequestedMap.value[outlineId]) {
+      ElMessage.error('章法工作流失败：' + (e?.message || e))
+    }
   } finally {
     generatingMap.value[outlineId] = false
     generatingEventIdMap.value[outlineId] = null
+    cancelRequestedMap.value[outlineId] = false
   }
 }
 
@@ -1527,8 +1540,11 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
 function cancelGenerate(outlineId: string) {
   const eventId = generatingEventIdMap.value[outlineId]
   if (eventId) {
+    // W1.2 真取消：中止后端生成流（设计卡/正文流注册在 eventId 前缀下）
+    cancelRequestedMap.value[outlineId] = true
     generatingMap.value[outlineId] = false
     generatingEventIdMap.value[outlineId] = null
+    window.electronAPI.longwriting.generateCancel(eventId).catch(() => {})
     ElMessage.info('已取消生成')
   }
 }

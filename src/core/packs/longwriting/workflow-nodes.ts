@@ -47,6 +47,7 @@ const chapterWritingNode: WorkflowNodeHandler = {
       projectId?: string
       outlineId?: string
       overwrite?: boolean
+      eventId?: string
       targetWords?: number | string
       style?: string
       extraPrompt?: string
@@ -57,6 +58,8 @@ const chapterWritingNode: WorkflowNodeHandler = {
     if (!outlineId) return { status: 'failed', error: '缺少 outlineId' }
     // 工作流模板传参是字符串（'true'/'false'）——不能直接真值判断
     const overwrite = cfg.overwrite === true || stringifyValue(cfg.overwrite ?? '') === 'true'
+    // W1.2 真取消：UI eventId 穿透（空=执行器回退自造 id，不可远程中止）
+    const eventId = stringifyValue(cfg.eventId ?? '').trim() || undefined
     // W1.1 参数贯通：目标字数经模板解析可能是 string/undefined——防御转数字；
     // 空 = 交由执行器回退大纲预估字数（显式参数 > estimatedWords > 默认）
     const numTarget = Number(cfg.targetWords)
@@ -74,6 +77,7 @@ const chapterWritingNode: WorkflowNodeHandler = {
         projectId,
         outlineId,
         overwrite,
+        eventId,
         targetWords,
         style,
         extraPrompt,

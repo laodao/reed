@@ -22,8 +22,10 @@ export interface ChapterWorkflowGenParams {
 }
 
 /**
- * 章法工作流图 v2（W1.1）：start 输入透传生成参数，节点不再硬编码 targetWords=2500。
- * 存量定义升级判据：start 输入是否含 targetWords（v1 图没有）——升级走 saveDraft+publish。
+ * 章法工作流图 v3（W1.1 参数贯通 + W1.2 真取消）：start 输入透传生成参数与 eventId，
+ * 节点不再硬编码 targetWords=2500；executor 以eventId 为前缀注册可中止的生成流。
+ * 存量定义升级判据：start 输入是否含 targetWords/eventId（v1/v2 图没有）——升级走
+ * saveDraft+publish（publish 复制 draftGraph 进 publishedGraph 并 version+1）。
  */
 function buildChapterWritingGraph() {
   return {
@@ -36,6 +38,7 @@ function buildChapterWritingGraph() {
             { key: 'projectId', label: '长文项目 ID', type: 'string', required: true },
             { key: 'outlineId', label: '章节大纲节点 ID', type: 'string', required: true },
             { key: 'overwrite', label: '覆盖已有正文', type: 'boolean' },
+            { key: 'eventId', label: '生成流事件 ID（取消锚点）', type: 'string', required: false },
             { key: 'targetWords', label: '目标字数（空=按大纲预估）', type: 'number', required: false },
             { key: 'style', label: '写作风格', type: 'string', required: false },
             { key: 'extraPrompt', label: '附加写作要求', type: 'string', required: false },
@@ -48,6 +51,7 @@ function buildChapterWritingGraph() {
           projectId: '{{start.projectId}}',
           outlineId: '{{start.outlineId}}',
           overwrite: '{{start.overwrite}}',
+          eventId: '{{start.eventId}}',
           targetWords: '{{start.targetWords}}',
           style: '{{start.style}}',
           extraPrompt: '{{start.extraPrompt}}',
@@ -72,8 +76,9 @@ export async function runChapterWorkflowSync(
   overwrite: boolean,
   onProgress?: (p: { step: string; message: string }) => void,
   gen?: ChapterWorkflowGenParams,
+  eventId?: string,
 ): Promise<{ ok: boolean; error?: string; data?: Record<string, any> }> {
-  const started = await ensureChapterWritingWorkflowRun(projectId, outlineId, overwrite, gen)
+  const started = await ensureChapterWritingWorkflowRun(projectId, outlineId, overwrite, gen, eventId)
   onProgress?.({ step: 'workflow', message: `章法工作流已启动（运行 ${started.runId}），工具内等待完成` })
   const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
   const sub = getWorkflowSubsystem()
@@ -114,6 +119,7 @@ export async function ensureChapterWritingWorkflowRun(
   outlineId: string,
   overwrite: boolean,
   gen?: ChapterWorkflowGenParams,
+  eventId?: string,
 ): Promise<{ runId: string; definitionId: string; status: string }> {
   const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
   const sub = getWorkflowSubsystem()
@@ -150,8 +156,10 @@ export async function ensureChapterWritingWorkflowRun(
       | { nodes?: Array<{ id?: string; config?: { inputs?: Array<{ key?: string }> } }> }
       | undefined
     const startInputs = draftGraph?.nodes?.find((n) => n.id === 'start')?.config?.inputs
-    const hasGenInput = Array.isArray(startInputs) && startInputs.some((i) => i?.key === 'targetWords')
-    if (!hasGenInput) {
+    const inputKeys = new Set((Array.isArray(startInputs) ? startInputs : []).map((i) => i?.key))
+    // v1 图缺 targetWords（W1.1 前）；v2 图缺 eventId（W1.2 前）——任一缺失即升级
+    const needsUpgrade = !inputKeys.has('targetWords') || !inputKeys.has('eventId')
+    if (needsUpgrade) {
       await sub.definitionService.saveDraft(definitionId, graph as never)
       const published = await sub.definitionService.publish(definitionId)
       if (!published.success) {
@@ -168,6 +176,8 @@ export async function ensureChapterWritingWorkflowRun(
       projectId,
       outlineId,
       overwrite,
+      // W1.2 真取消：UI 的 eventId 穿透到节点——executor 以其为前缀注册可中止的生成流
+      ...(eventId ? { eventId } : {}),
       ...(gen?.targetWords !== undefined ? { targetWords: gen.targetWords } : {}),
       ...(gen?.style ? { style: gen.style } : {}),
       ...(gen?.extraPrompt ? { extraPrompt: gen.extraPrompt } : {}),
