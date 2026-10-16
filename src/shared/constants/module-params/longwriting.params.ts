@@ -91,9 +91,8 @@ export const LONGWRITING_PARAMS: ModuleParamDefinition = {
         {
           kind: 'number',
           path: 'stateSummaryChainLimit',
-          label: '前文状态摘要链',
+          label: '前文状态摘要链（章）',
           hint: '写作时带最近 N 章的结束状态摘要（1=只带上一章）；调大能记住更早的剧情走向，更吃上下文',
-          unit: '章',
           default: D.writing.stateSummaryChainLimit,
           ceiling: L.writing.stateSummaryChainLimit,
           step: 1,
