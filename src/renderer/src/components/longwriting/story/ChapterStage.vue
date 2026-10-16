@@ -201,16 +201,14 @@
                 <el-empty v-else description="暂无内容，请在左侧选择具体的节进行编辑" />
               </div>
 
-              <!-- 章节工作台：上下文预览面板（38 号；布局修复：右侧栏，不再被纵向堆叠到底部） -->
+              <!-- 章节工作台：上下文预览面板（38 号；W1.4 转只读预览——生成走章法自动选择注入） -->
               <ChapterContextPanel
                 v-if="isEditableNode && activeOutlineId"
                 :project-id="projectId"
                 :outline-id="activeOutlineId"
-                :generating="!!generatingMap[activeOutlineId]"
                 :target-words="generateForm.targetWords"
                 :style="generateForm.style || undefined"
                 :extra-prompt="generateForm.extraPrompt || undefined"
-                @generate="handleGenerateWithContext"
               />
             </div>
           </div>
@@ -1522,19 +1520,8 @@ async function runChapterWorkflow(outlineId: string, opts?: ChapterGenParams) {
     cancelRequestedMap.value[outlineId] = false
   }
 }
-
-// 章节工作台（38 号）：按勾选上下文生成——流式/自动保存与 confirmGenerate 同链路
-async function handleGenerateWithContext(payload: { enabledItemIds: string[]; itemTextOverrides: Record<string, string> }) {
-  const outlineId = activeOutlineId.value
-  if (!outlineId) {
-    ElMessage.warning('请先选择章节')
-    return
-  }
-  // 2026-09-18 用户指令：正文写作只剩章法工作流入口。勾选的上下文条目/微调不再参与
-  // 直写——工作流内部按设计卡自选出场实体并注入前情；postCheck 报告在完成后弹出。
-  void payload
-  await runChapterWorkflow(outlineId)
-}
+// W1.4：原「按勾选上下文生成」入口随面板转只读预览一并移除——2026-09-18 用户指令
+// 正文只剩章法工作流入口，工作流内部按设计卡自选出场实体并注入前情。
 
 // 取消生成
 function cancelGenerate(outlineId: string) {
