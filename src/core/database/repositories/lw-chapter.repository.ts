@@ -6,7 +6,7 @@
  */
 
 import { In, type DataSource } from 'typeorm'
-import { StoryChapter, ChapterVersion } from '@shared/types/longwriting.types'
+import { StoryChapter, ChapterVersion, type VersionType } from '@shared/types/longwriting.types'
 import { LwChapterEntity } from '../entities/lw-chapter.entity'
 import { LwChapterVersionEntity } from '../entities/lw-chapter-version.entity'
 import { BaseRepository } from '../base-repository'
@@ -137,7 +137,7 @@ export class LwChapterRepository extends BaseRepository<
   async createVersion(
     chapterId: string,
     content: string,
-    versionType: 'generated' | 'manual',
+    versionType: VersionType,
   ): Promise<ChapterVersion> {
     const id = this.generateVersionId()
     const now = new Date()

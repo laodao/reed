@@ -2112,6 +2112,9 @@ const electronAPI = {
      *  W1.1：targetWords/style/extraPrompt 随 run 输入进工作流（空=按大纲预估字数/默认文风） */
     writeChapterFull: (eventId: string, projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string; overwrite?: boolean; providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:writeChapterFull', eventId, projectId, outlineId, opts),
+    /** W3.2 用量汇总：按用途聚合（calls/totalTokens/isEstimated） */
+    tokenUsageSummary: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:tokenUsageSummary', projectId),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>

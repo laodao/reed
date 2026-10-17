@@ -659,6 +659,9 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-lw-graph-tables'
   )
   await createLwGraphTables(ds)
+  // W3.2：token 用量表（幂等）
+  const { createLwTokenUsages } = await import('@core/database/migrations/create-lw-token-usages')
+  await createLwTokenUsages(ds)
 
   // 谓词受控词表 + 存量关系归一（2026-09-16 结构化设定方案 M0；必须在图谱表之后——归一扫描 lw_graph_edges）
   const { createLwPredicateRegistry } = await import(

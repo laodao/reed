@@ -212,6 +212,27 @@
         <WorldBindingPanel :project-id="projectId" />
       </el-tab-pane>
 
+      <!-- 用量（W3.2）：LLM 调用按用途聚合 -->
+      <el-tab-pane label="用量" name="usage" lazy>
+        <div class="usage-panel">
+          <div class="usage-header">
+            <span>LLM 调用按用途聚合（章法卡/正文等；流式调用为估算值）</span>
+            <el-button text size="small" :loading="usageLoading" @click="loadUsage">↺ 刷新</el-button>
+          </div>
+          <el-table v-if="usageRows.length" :data="usageRows" size="small" class="usage-table">
+            <el-table-column prop="purpose" label="用途" min-width="140" />
+            <el-table-column prop="calls" label="调用次数" width="100" />
+            <el-table-column label="总 Token" min-width="120">
+              <template #default="{ row }">
+                {{ Number(row.totalTokens).toLocaleString() }}
+                <el-tag v-if="Number(row.isEstimated) > 0" size="small" type="info">含估算</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else-if="!usageLoading" description="暂无记录——章法生成一章后这里会出现设计卡/正文用量" :image-size="60" />
+        </div>
+      </el-tab-pane>
+
       <!-- 模型设定 -->
       <el-tab-pane label="模型设定" name="models">
         <div class="model-config-container">
@@ -417,6 +438,28 @@ function onCoverUpdated(project: LongWritingProject) {
   coverPath.value = project.coverPath ?? null
   emit('cover-changed', project)
 }
+
+// ==================== 用量（W3.2） ====================
+interface UsageRow { purpose: string; calls: number; totalTokens: number; isEstimated: number }
+const usageRows = ref<UsageRow[]>([])
+const usageLoading = ref(false)
+
+async function loadUsage(): Promise<void> {
+  usageLoading.value = true
+  try {
+    const resp = await (window.electronAPI.longwriting as unknown as {
+      tokenUsageSummary?: (pid: string) => Promise<{ success: boolean; error?: string; data?: { byPurpose: UsageRow[] } }>
+    }).tokenUsageSummary?.(props.projectId)
+    if (!resp) return
+    if (resp.success && resp.data) usageRows.value = resp.data.byPurpose
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'usage') void loadUsage()
+})
 
 // ==================== 模型设定相关 ====================
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -894,6 +937,23 @@ onMounted(() => {
   border: 1px solid var(--border-color-light);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.usage-panel {
+  padding: 4px 0;
+}
+
+.usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.usage-table {
+  width: 100%;
 }
 
 .level-panel {

@@ -108,6 +108,7 @@ import { LwTempCharacterTemplateRepository } from '@core/database/repositories/l
 import { LwTempLocationTemplateRepository } from '@core/database/repositories/lw-temp-location-template.repository'
 import { LwProjectModelConfigRepository } from '@core/database/repositories/lw-project-model-config.repository'
 import { LwChapterStateSummaryRepository } from '@core/database/repositories/lw-chapter-state-summary.repository'
+import { LwTokenUsageRepository } from '@core/database/repositories/lw-token-usage.repository'
 import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-index.repository'
 import { WorkflowDefinitionRepository } from '@core/database/repositories/workflow-definition.repository'
 import { WorkflowRunRepository } from '@core/database/repositories/workflow-run.repository'
@@ -242,6 +243,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwMemories: LwMemoryRepository | null = null
   public lwEntityStates: LwEntityStateRepository | null = null
   public lwChapterStateSummaries: LwChapterStateSummaryRepository | null = null
+  public lwTokenUsages: LwTokenUsageRepository | null = null
   public lwVectorIndices: LwVectorIndexRepository | null = null
   public lwEvents: LwEventRepository | null = null
   public lwBibleKinds: LwBibleKindRepository | null = null
@@ -816,6 +818,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-lw-graph-tables'
     )
     await createLwGraphTables(this.dataSource)
+    // W3.2：token 用量表（幂等）
+    const { createLwTokenUsages } = await import(
+      '@core/database/migrations/create-lw-token-usages'
+    )
+    await createLwTokenUsages(this.dataSource)
 
     // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
     const { createWorkflowTables } = await import(
@@ -4746,6 +4753,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwMemories = new LwMemoryRepository(this.dataSource)
     this.lwEntityStates = new LwEntityStateRepository(this.dataSource)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.dataSource)
+    this.lwTokenUsages = new LwTokenUsageRepository(this.dataSource)
     this.lwVectorIndices = new LwVectorIndexRepository(this.dataSource)
     this.lwEvents = new LwEventRepository(this.dataSource)
     this.lwBibleKinds = new LwBibleKindRepository(this.dataSource)

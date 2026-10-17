@@ -82,6 +82,7 @@ import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge
 import { LwPredicateRegistryRepository } from '@core/database/repositories/lw-predicate-registry.repository'
 import { LwDesignDocumentRepository } from '@core/database/repositories/lw-design-document.repository'
 import { LwChapterStateSummaryRepository } from '@core/database/repositories/lw-chapter-state-summary.repository'
+import { LwTokenUsageRepository } from '@core/database/repositories/lw-token-usage.repository'
 import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-index.repository'
 import { WorkflowDefinitionRepository } from '@core/database/repositories/workflow-definition.repository'
 import { WorkflowRunRepository } from '@core/database/repositories/workflow-run.repository'
@@ -243,6 +244,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   lwMemories: LwMemoryRepository | null
   lwEntityStates: LwEntityStateRepository | null
   lwChapterStateSummaries: LwChapterStateSummaryRepository | null
+  lwTokenUsages?: LwTokenUsageRepository | null
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
   lwVectorIndices: LwVectorIndexRepository | null
   lwEvents: LwEventRepository | null
@@ -406,6 +408,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.lwMemories = new LwMemoryRepository(ds)
     this.lwEntityStates = new LwEntityStateRepository(ds)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(ds)
+    this.lwTokenUsages = new LwTokenUsageRepository(ds)
     this.lwProjectModelConfigs = new LwProjectModelConfigRepository(ds)
     this.lwVectorIndices = new LwVectorIndexRepository(ds)
     this.lwEvents = new LwEventRepository(ds)

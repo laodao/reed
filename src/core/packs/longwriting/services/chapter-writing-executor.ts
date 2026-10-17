@@ -365,7 +365,8 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   if (!content.trim()) return { ok: false, error: '正文生成为空' }
 
   onProgress?.({ step: 'save', message: '保存正文并提取图谱（事件/状态切片/伏笔）' })
-  const saved = await svc.saveChapter(outlineId, content)
+  // §9 版本来源标记：章法产物 version_type='workflow'，与编辑器手写区分（可审计）
+  const saved = await svc.saveChapter(outlineId, content, 'workflow')
   let newEntitiesNote = ''
   let chapterNo = 0
   try {

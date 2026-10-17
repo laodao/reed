@@ -1092,8 +1092,9 @@ export class LongWritingService {
 
   /**
    * 保存章节内容
+   * @param origin 版本来源（09-20 §9 审计）：'workflow'=章法产物 | 'manual'=编辑器手写（默认，兼容存量）
    */
-  async saveChapter(outlineId: string, content: string): Promise<StoryChapter> {
+  async saveChapter(outlineId: string, content: string, origin: 'workflow' | 'manual' = 'manual'): Promise<StoryChapter> {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
@@ -1106,7 +1107,7 @@ export class LongWritingService {
     }
 
     // 创建版本记录
-    await this.db.lwChapters.createVersion(chapter.id, content, 'manual')
+    await this.db.lwChapters.createVersion(chapter.id, content, origin)
 
     // 进度状态同步（天下捕快实跑修复）：写完正文的章节大纲仍停在 pending，
     // 进度视图永远"0 章已写"。pending → progressing（用户手标的 completed 不降级）。

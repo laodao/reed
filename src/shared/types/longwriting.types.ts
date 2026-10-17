@@ -874,7 +874,7 @@ export interface StoryChapter {
 /**
  * 版本类型
  */
-export type VersionType = 'generated' | 'manual'
+export type VersionType = 'generated' | 'manual' | 'workflow'
 
 /**
  * 章节版本

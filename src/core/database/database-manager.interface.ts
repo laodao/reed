@@ -66,6 +66,7 @@ import type { LocationBindingRepository } from './repositories/location-binding.
 import type { LwBackgroundRepository } from './repositories/lw-background.repository'
 import type { LwChapterRepository } from './repositories/lw-chapter.repository'
 import type { LwChapterStateSummaryRepository } from './repositories/lw-chapter-state-summary.repository'
+import type { LwTokenUsageRepository } from './repositories/lw-token-usage.repository'
 import type { LwCharacterRepository } from './repositories/lw-character.repository'
 import type { LwCharacterRelationRepository } from './repositories/lw-character-relation.repository'
 import type { LwDesignMessageRepository } from './repositories/lw-design-message.repository'
@@ -252,6 +253,8 @@ export interface ICoreDatabaseManager {
   lwMemories: LwMemoryRepository | null
   lwEntityStates: LwEntityStateRepository | null
   lwChapterStateSummaries: LwChapterStateSummaryRepository | null
+  /** W3.2：LLM 调用用量（每次一行；fail-soft 估算） */
+  lwTokenUsages?: LwTokenUsageRepository | null
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
   /** 长文向量索引记录（步骤0 新增：chunkId↔实体映射 + contentHash） */
   lwVectorIndices: LwVectorIndexRepository | null

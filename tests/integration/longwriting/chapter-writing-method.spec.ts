@@ -152,10 +152,10 @@ describe('章法全流程回归（§5）', () => {
     expect(outcome.data?.postCheck?.passed).toBe(true)
     expect(outcome.data?.storyCheck?.ran).toBe(true)
     expect(outcome.data?.storyCheck?.attractive).toBe(true)
-    // 存储：设计卡确认与正文保存各一次
+    // 存储：设计卡确认与正文保存各一次（§9：章法产物版本来源 'workflow'）
     expect(h2.svc.applyChapterCard).toHaveBeenCalledWith('p1', 'o1', expect.anything(), '# 设计卡')
     expect(h2.svc.confirmPrewrite).toHaveBeenCalledWith('o1')
-    expect(h2.svc.saveChapter).toHaveBeenCalledWith('o1', expect.stringContaining('第1章正文'))
+    expect(h2.svc.saveChapter).toHaveBeenCalledWith('o1', expect.stringContaining('第1章正文'), 'workflow')
     // §1 回归：审读走项目 chapters stage 模型
     expect(h.resolveModelCalls[0]).toEqual({ providerConfigId: 'pc_ds', modelId: 'deepseek-v4.1-flash' })
   })

@@ -172,6 +172,8 @@ const CHANNELS = {
   GENERATE_OUTLINE_COMMENT: 'longwriting:generateOutlineComment',
   /** 唯一正文写作入口：章法工作流（设计卡→自检→门禁→写→存→图谱→写后检查），无旁路 */
   WRITE_CHAPTER_FULL: 'longwriting:writeChapterFull',
+  // W3.2 用量
+  TOKEN_USAGE_SUMMARY: 'longwriting:tokenUsageSummary',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
@@ -1509,6 +1511,18 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       }
     }
   )
+
+  // W3.2 用量汇总：按用途聚合本项目 LLM 调用（次数/总 token/是否含估算）
+  ipcBridge.handle(CHANNELS.TOKEN_USAGE_SUMMARY, async (_event, projectId: string) => {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.lwTokenUsages) return { success: false, error: '当前环境不支持用量查询（缺少 lw_token_usages）' }
+      const byPurpose = await db.lwTokenUsages.summaryByPurpose(projectId)
+      return { success: true, data: { byPurpose } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
 
   // 54 号章法：生成章节设计卡（生成→LLM自检→落库未确认 prewrite→出场实体绑定大纲）
   ipcBridge.handle(

@@ -36,8 +36,13 @@ import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 import { longwritingParams } from '@shared/utils/longwriting-params'
 import { createLogger } from '@core/utils/logger'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 const logger = createLogger('longwriting-ai')
+
+/** W3.2 用量上下文：高层生成方法用 enterWith 挂载，callAI/callAIStream 记账时读取。
+ *  每个 IPC 调用链有独立异步上下文，并行章节互不串扰；未挂载（其余入口）不记行。 */
+const usageContextStorage = new AsyncLocalStorage<{ projectId: string; purpose: string; chapterId?: string }>()
 
 /** W1.3：生成失败自动重试次数（指数退避 1s/2s）。取消与 4xx 客户端错误不重试。 */
 const AI_RETRY_COUNT = 2
@@ -50,6 +55,12 @@ export function isRetryableAiError(e: unknown): boolean {
   if (typeof status === 'number' && status >= 400 && status < 500) return false
   if (/\b(400|401|403|404)\b/.test(msg) || /api key|unauthorized|forbidden|invalid request|invalid argument|bad request/i.test(msg)) return false
   return true
+}
+
+/** W3.2：token 粗估（UTF-8 字节/4，与章节工作台同口径）——provider 未返回 usage 时记账用 */
+function estimateTokensFromText(text: string): number {
+  if (!text) return 0
+  return Math.ceil(Buffer.byteLength(text, 'utf8') / 4)
 }
 
 /**
@@ -242,6 +253,44 @@ export class LongWritingAIService {
   }
 
   /**
+   * W3.2 用量记账（fail-soft）：挂在用量上下文的调用链才记账（章法卡/正文等高层入口）。
+   * provider 返回 usage 用原子数据；否则估算（UTF-8 字节/4）并置 is_estimated。
+   */
+  private async recordTokenUsage(params: {
+    prompt: string
+    completion?: string
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+    providerConfigId?: string
+    modelId?: string
+    durationMs: number
+  }): Promise<void> {
+    try {
+      const ctx = usageContextStorage.getStore()
+      if (!ctx) return
+      const db = getCoreDatabaseManager()
+      if (!db.lwTokenUsages) return
+      const isEstimated = !params.usage
+      const promptTokens = params.usage?.promptTokens ?? estimateTokensFromText(params.prompt)
+      const completionTokens = params.usage?.completionTokens ?? estimateTokensFromText(params.completion || '')
+      const totalTokens = params.usage?.totalTokens ?? promptTokens + completionTokens
+      await db.lwTokenUsages.create({
+        projectId: ctx.projectId,
+        chapterId: ctx.chapterId ?? null,
+        purpose: ctx.purpose,
+        providerConfigId: params.providerConfigId ?? null,
+        modelId: params.modelId ?? null,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        isEstimated,
+        durationMs: params.durationMs,
+      })
+    } catch {
+      // 计量绝不影响生成主链
+    }
+  }
+
+  /**
    * 调用 AI 生成
    */
   private async callAI(
@@ -292,12 +341,22 @@ export class LongWritingAIService {
         controller.signal.addEventListener('abort', () => reject(new Error('已取消')), { once: true })
       }) : null
       // W1.3：网络抖动/限流指数退避重试（取消与 4xx 不重试）
+      const startedAt = Date.now()
       for (let attempt = 0; ; attempt++) {
         try {
           const syncPromise = provider.chatSync(context, opts?.responseFormat ? { responseFormat: opts.responseFormat } : undefined)
           const result = aborted
             ? await Promise.race([syncPromise, aborted])
             : await syncPromise
+          // W3.2 用量记账（fail-soft，不阻塞返回）
+          void this.recordTokenUsage({
+            prompt,
+            completion: result.content || '',
+            usage: result.usage,
+            providerConfigId,
+            modelId,
+            durationMs: Date.now() - startedAt,
+          })
           return result.content || ''
         } catch (e) {
           if (attempt >= AI_RETRY_COUNT || !isRetryableAiError(e) || controller?.signal.aborted) throw e
@@ -366,12 +425,13 @@ export class LongWritingAIService {
     let fullContent = ''
     // W1.3 重试防重：一旦向事件流产出过 delta 就不再重试——重试会让前端重复拼接
     let emittedAnyDelta = false
+    const startedAt = Date.now()
     try {
       for (let attempt = 0; ; attempt++) {
         if (controller.signal.aborted) throw new Error('已取消')
         fullContent = ''
         try {
-          fullContent = await provider.chatStream(
+          const streamResp = await provider.chatStream(
             context,
             (event) => {
               // Provider 发送 delta 事件，转换为 content 事件发送给前端
@@ -393,6 +453,15 @@ export class LongWritingAIService {
               ...(opts?.responseFormat ? { responseFormat: opts.responseFormat } : {})
             }
           )
+          // W3.2 用量记账（fail-soft）：provider 流式返回带 usage 用原子数据，否则估算
+          void this.recordTokenUsage({
+            prompt,
+            completion: fullContent,
+            usage: (streamResp as any)?.usage ?? undefined,
+            providerConfigId,
+            modelId,
+            durationMs: Date.now() - startedAt,
+          })
           break
         } catch (e) {
           if (
@@ -1652,6 +1721,8 @@ ${plotInfo || '暂无相关情节'}
     consensusText?: string,
     opts?: { overwrite?: boolean }
   ): Promise<GenerateResponse> {
+    // W3.2：挂用量上下文（本章设计卡链路的所有 LLM 调用记入 'chapter-card'）
+    usageContextStorage.enterWith({ projectId, purpose: 'chapter-card' })
     const dbManager = getCoreDatabaseManager()
     const gateError = await this.checkBibleGate(projectId, '章节设计卡')
     if (gateError) return { success: false, error: gateError }
@@ -1801,6 +1872,8 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     // 2026-09-18 用户指令：章法卡门禁不再可跳过（删除 skipChapterCardGate 旁路）
     const cardGateErr = await this.checkChapterCardGate(projectId, outlineId)
     if (cardGateErr) return { success: false, error: cardGateErr }
+    // W3.2：正文链路用量上下文（分段/扩写流都记入 'chapter-body'；章节 id 落库前未知记 null）
+    usageContextStorage.enterWith({ projectId, purpose: 'chapter-body' })
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
     try {
