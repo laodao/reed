@@ -287,6 +287,21 @@ export class LongWritingService {
   /**
    * 更新故事概要
    */
+  /** 6.3 大纲同层排序：按给定顺序重写 orderIndex（仅同层 id 列表） */
+  async reorderOutlines(orderedIds: string[]): Promise<number> {
+    if (!this.db.lwOutlines) throw new Error('数据库未初始化')
+    let updated = 0
+    for (let i = 0; i < orderedIds.length; i++) {
+      const node = await this.db.lwOutlines.getById(orderedIds[i])
+      if (!node) continue
+      if (node.orderIndex === i) continue
+      // 走服务方法：复用结构变更的章号级联语义（同层重排时级联 diff 为空操作）
+      await this.updateOutline(orderedIds[i], { orderIndex: i })
+      updated++
+    }
+    return updated
+  }
+
   /** 6.1 项目字数统计：全部章节正文按统一口径（去空白字符数）汇总 */
   async getProjectWordStats(
     projectId: string

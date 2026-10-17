@@ -2115,6 +2115,9 @@ const electronAPI = {
     /** W3.2 用量汇总：按用途聚合（calls/totalTokens/isEstimated） */
     tokenUsageSummary: (projectId: string) =>
       ipcRenderer.invoke('longwriting:tokenUsageSummary', projectId),
+    /** 6.3 大纲同层排序（拖拽后按新顺序重写 orderIndex） */
+    reorderOutline: (projectId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke('longwriting:reorderOutline', projectId, orderedIds),
     /** 6.1 项目字数统计（统一口径：去空白字符数） */
     projectWordStats: (projectId: string) =>
       ipcRenderer.invoke('longwriting:projectWordStats', projectId),

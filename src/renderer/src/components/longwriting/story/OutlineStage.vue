@@ -20,6 +20,11 @@
             <div
               class="node-header"
               :class="{ expanded: expandedNodes.includes(node.id), clickable: hasChildren(node.id) }"
+              draggable="true"
+              @dragstart="onOutlineDragStart(node.id)"
+              @dragover.prevent
+              @drop="onOutlineDrop(node.id)"
+              @dragend="dragOutlineId = null"
               @click="hasChildren(node.id) && toggleExpand(node.id)"
             >
               <div class="node-expand" @click.stop="toggleExpand(node.id)">
@@ -73,6 +78,11 @@
                 <div
                   class="node-header"
                   :class="{ expanded: expandedNodes.includes(child.id), clickable: hasChildren(child.id) }"
+                  draggable="true"
+                  @dragstart="onOutlineDragStart(child.id)"
+                  @dragover.prevent
+                  @drop="onOutlineDrop(child.id)"
+                  @dragend="dragOutlineId = null"
                   @click="hasChildren(child.id) && toggleExpand(child.id)"
                 >
                   <div class="node-expand" @click.stop="toggleExpand(child.id)">
@@ -122,7 +132,14 @@
                 <!-- 第三层节点 -->
                 <div v-if="expandedNodes.includes(child.id)" class="node-children">
                   <div v-for="section in getChildren(child.id)" :key="section.id" class="outline-node" :class="section.nodeType + '-node'">
-                    <div class="node-header">
+                    <div
+                      class="node-header"
+                      draggable="true"
+                      @dragstart="onOutlineDragStart(section.id)"
+                      @dragover.prevent
+                      @drop="onOutlineDrop(section.id)"
+                      @dragend="dragOutlineId = null"
+                    >
                       <div class="node-expand"></div>
                       <div class="node-title">
                         <span class="node-type-tag">{{ getNodeTypeName(section.nodeType) }}</span>
@@ -1058,6 +1075,55 @@ function updateProgress() {
 }
 
 // 加载大纲树
+// ===== 6.3 同层拖拽排序（跨层移动牵扯章号语义，不做） =====
+const dragOutlineId = ref<string | null>(null)
+
+/** 在树中查找节点与其所在同级列表 */
+function findOutlineInTree(
+  nodes: any[],
+  id: string,
+  parentChildren: any[] | null = null
+): { node: any; siblings: any[] } | null {
+  for (const n of nodes) {
+    if (n.id === id) return { node: n, siblings: parentChildren ? [...parentChildren] : [...nodes] }
+    const kids = Array.isArray(n.children) ? n.children : []
+    const hit = findOutlineInTree(kids, id, kids)
+    if (hit) return hit
+  }
+  return null
+}
+
+function onOutlineDragStart(id: string) {
+  dragOutlineId.value = id
+}
+
+async function onOutlineDrop(targetId: string) {
+  const dragId = dragOutlineId.value
+  dragOutlineId.value = null
+  if (!dragId || dragId === targetId) return
+  const dragHit = findOutlineInTree(outlineNodes.value, dragId)
+  const targetHit = findOutlineInTree(outlineNodes.value, targetId)
+  if (!dragHit || !targetHit) return
+  // 同层校验：parent 不同（兄弟列表引用不同）即拒绝
+  if (dragHit.siblings === targetHit.siblings || dragHit.siblings.map((n) => n.id).join() === targetHit.siblings.map((n) => n.id).join()) {
+    const siblings = [...targetHit.siblings]
+    const from = siblings.findIndex((n) => n.id === dragId)
+    const to = siblings.findIndex((n) => n.id === targetId)
+    if (from === -1 || to === -1) return
+    siblings.splice(to, 0, siblings.splice(from, 1)[0])
+    const orderedIds = siblings.map((n) => n.id)
+    const result = await (window.electronAPI.longwriting as unknown as {
+      reorderOutline?: (pid: string, ids: string[]) => Promise<{ success: boolean; error?: string }>
+    }).reorderOutline?.(props.projectId, orderedIds)
+    if (result && !result.success) {
+      ElMessage.error(result.error || '排序失败')
+    }
+    await loadOutlineTree()
+  } else {
+    ElMessage.warning('仅支持同层内拖拽排序（跨层移动会牵动章节号语义）')
+  }
+}
+
 async function loadOutlineTree() {
   if (!props.projectId) return
   const result = await window.electronAPI.longwriting.getOutlineTree(props.projectId)

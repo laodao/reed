@@ -178,6 +178,8 @@ const CHANNELS = {
   REWRITE_SELECTION: 'longwriting:rewriteSelection',
   // 6.1 项目字数统计
   PROJECT_WORD_STATS: 'longwriting:projectWordStats',
+  // 6.3 大纲同层排序
+  REORDER_OUTLINE: 'longwriting:reorderOutline',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
@@ -1532,6 +1534,19 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   ipcBridge.handle(CHANNELS.PROJECT_WORD_STATS, async (_event, projectId: string) => {
     try {
       return { success: true, data: await service.getProjectWordStats(projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 6.3 大纲同层排序（拖拽后按新顺序重写 orderIndex）
+  ipcBridge.handle(CHANNELS.REORDER_OUTLINE, async (_event, orderedIds: string[]) => {
+    try {
+      if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+        return { success: false, error: 'orderedIds 不能为空' }
+      }
+      const updated = await service.reorderOutlines(orderedIds.map(String))
+      return { success: true, data: { updated } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

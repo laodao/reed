@@ -1077,6 +1077,11 @@ export interface UpdateOutlineRequest {
   involvedItems?: string[]
   status?: OutlineStatus
   estimatedWords?: number
+  /** 结构字段（父节点/节点类型）——updateOutline 内触发章号级联 */
+  parentId?: string
+  nodeType?: OutlineNodeType
+  /** W6.3：同层拖拽排序（按新顺序重写） */
+  orderIndex?: number
 }
 
 /**
