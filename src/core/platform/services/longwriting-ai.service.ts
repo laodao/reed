@@ -10,7 +10,7 @@ import type {
   ChapterContextResult,
   ChapterPromptParts,
 } from './longwriting/chapter-context'
-import { composeChapterPrompt, estimateContextTokens, trimChapterPartsToBudget } from './longwriting/chapter-context'
+import { composeChapterPrompt, estimateContextTokens, trimChapterPartsToBudget, buildChapterSegmentSection, CHAPTER_SEGMENT_THRESHOLD_WORDS, CHAPTER_SEGMENT_TARGET_WORDS, CHAPTER_SEGMENT_MAX_COUNT } from './longwriting/chapter-context'
 import { buildStateSummaryChainContext } from './longwriting/state-summary-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
 import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type ChapterCardData } from './longwriting/chapter-card'
@@ -1804,18 +1804,16 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
     try {
-      const result = await this.generateWithBrainTool(
-        eventId,
-        asm.prompt,
-        asm.systemPrompt,
-        asm.maxTokens,
-        providerConfigId,
-        modelId
-      )
+      const targetWordsFinal = asm.composeOpts.targetWords
+      // W3.1 长章分段：目标超阈值走场景段顺序生成（段间只做非空校验，R 门禁/写后检查整章一次——OQ-1 默认方案）
+      const draft =
+        targetWordsFinal > CHAPTER_SEGMENT_THRESHOLD_WORDS
+          ? await this.generateChapterSegmented(eventId, asm, targetWordsFinal, providerConfigId, modelId)
+          : await this.generateWithBrainTool(eventId, asm.prompt, asm.systemPrompt, asm.maxTokens, providerConfigId, modelId)
 
       // 49 号：字数质量门——欠字数扩写一次而非整章重生成（保留情节与文风）。
       // 评审 P2-1：扩写用独立 eventId 流（不进 UI 累加流），原通道只发进度提示
-      const gated = await applyChapterQualityGate(result, asm.composeOpts.targetWords, (expandPrompt) => {
+      const gated = await applyChapterQualityGate(draft, targetWordsFinal, (expandPrompt) => {
         getEventEmitter().emit(`longwriting:generate:${eventId}`, { type: 'progress', content: '初稿字数未达标，正在扩写…' })
         return this.callAIStream(eventId + '-expand', expandPrompt, asm.systemPrompt, asm.maxTokens, providerConfigId, modelId)
       })
@@ -1824,6 +1822,40 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     } catch (error: any) {
       return { success: false, error: error.message }
     }
+  }
+
+  /**
+   * W3.1 长章分段生成：按场景段顺序生成再拼接。
+   * - 段数 = ceil(目标/2500) 封顶 8；每段 prompt = 九分区上下文 + 本章已生成前文 + 段指令
+   * - 首段保留知识大脑工具位，后续段直调（同上下文重复检索是纯开销）
+   * - 每段生成流注册在同一 eventId 下——UI 取消中止当前段并立即上抛
+   */
+  private async generateChapterSegmented(
+    eventId: string,
+    asm: { prompt: string; systemPrompt: string; maxTokens: number; composeOpts: { targetWords: number } },
+    targetWords: number,
+    providerConfigId?: string,
+    modelId?: string,
+  ): Promise<string> {
+    const segCount = Math.min(CHAPTER_SEGMENT_MAX_COUNT, Math.ceil(targetWords / CHAPTER_SEGMENT_TARGET_WORDS))
+    const segTarget = Math.ceil(targetWords / segCount)
+    const segMaxTokens = Math.min(segTarget * 2, asm.maxTokens)
+    const segments: string[] = []
+    for (let i = 0; i < segCount; i++) {
+      getEventEmitter().emit(`longwriting:generate:${eventId}`, {
+        type: 'progress',
+        content: `长章分段生成：第 ${i + 1}/${segCount} 段（每段约 ${segTarget} 字）`,
+      } as GenerationStreamEvent)
+      const prior = segments.join('\n\n')
+      const segPrompt = asm.prompt + buildChapterSegmentSection(targetWords, segCount, i, segTarget, prior)
+      const seg =
+        i === 0
+          ? await this.generateWithBrainTool(eventId, segPrompt, asm.systemPrompt, segMaxTokens, providerConfigId, modelId)
+          : await this.callAIStream(eventId, segPrompt, asm.systemPrompt, segMaxTokens, providerConfigId, modelId)
+      if (!seg.trim()) throw new Error(`分段生成第 ${i + 1}/${segCount} 段产出为空`)
+      segments.push(seg.trim())
+    }
+    return segments.join('\n\n')
   }
 
   /**

@@ -149,6 +149,37 @@ ${parts.extraText}` : ''}
 请根据以上所有信息，撰写章节正文内容。直接开始写作，不需要标题。`
 }
 
+// ==================== W3.1：长章分段生成 ====================
+
+/** 分段阈值：目标字数超过它才走分段路径（W3.1） */
+export const CHAPTER_SEGMENT_THRESHOLD_WORDS = 5_000
+/** 单段目标字数（段数 = ceil(目标/此值)，封顶 CHAPTER_SEGMENT_MAX_COUNT） */
+export const CHAPTER_SEGMENT_TARGET_WORDS = 2_500
+/** 段数上限（封顶单章生成时长；30000 字按 8 段 ≈ 每段 3750 字） */
+export const CHAPTER_SEGMENT_MAX_COUNT = 8
+
+/**
+ * 构建分段续写指令（拼在九分区 prompt 之后）。
+ * OQ-1 默认方案：均分段（不解析设计卡节拍）；R 门禁与写后检查由调用方对整章执行一次。
+ */
+export function buildChapterSegmentSection(
+  targetWords: number,
+  segCount: number,
+  segIndex: number,
+  segTarget: number,
+  priorText: string,
+): string {
+  const isLast = segIndex + 1 >= segCount
+  return `
+
+## 分段续写指令（长章模式）
+
+本章目标约 ${targetWords} 字，超长正文按 ${segCount} 个场景段顺序生成，当前是第 ${segIndex + 1} 段（本段约 ${segTarget} 字）。
+${priorText ? `【本章已生成的前文】\n${priorText}\n\n请从上文结尾自然续写：禁止重复或改写已生成内容，保持人物状态、时间线与叙事视角连续。` : '这是本章的第一段：从正文开头写起。'}
+${isLast ? '本段是本章最后一段：按前文要求把情节推进到本章结尾的钩子/卡点上，完成收束。' : '本段结尾不要收束本章，停在情节推进处，为下一段留出接续空间。'}
+直接输出本段正文内容，不要任何说明或标题。`
+}
+
 // ==================== W2.1：上下文预算硬裁剪 ====================
 
 /** 单个裁剪阶梯：label 供面板徽标/日志，apply 原地修改 parts 副本 */
