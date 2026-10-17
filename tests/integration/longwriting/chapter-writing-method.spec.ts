@@ -53,13 +53,21 @@ const h2 = vi.hoisted(() => ({
   },
   graphProcess: vi.fn(async () => ({ newEntitiesNote: '测试实体入册' })),
   generateTextTexts: [] as string[],
+  generateChapterArgs: [] as unknown[],
+  generateChapterCardArgs: [] as unknown[],
 }))
 
 vi.mock('@core/platform/services/longwriting-ai.service', () => ({
   LongWritingAIService: {
     getInstance: () => ({
-      generateChapterCard: vi.fn(async () => h2.aiScript.card),
-      generateChapter: vi.fn(async () => h2.aiScript.chapter),
+      generateChapterCard: vi.fn(async (...args: unknown[]) => {
+        h2.generateChapterCardArgs = args
+        return h2.aiScript.card
+      }),
+      generateChapter: vi.fn(async (...args: unknown[]) => {
+        h2.generateChapterArgs = args
+        return h2.aiScript.chapter
+      }),
       checkChapterConflictGate: vi.fn(async () => h2.aiScript.gate),
     }),
   },
@@ -117,6 +125,8 @@ beforeEach(() => {
   h2.svc.confirmPrewrite.mockClear().mockResolvedValue(undefined)
   h2.svc.saveChapter.mockClear().mockImplementation(async (outlineId: string, content: string) => ({ id: 'chapter_mock_1', outlineId, content }))
   h2.graphProcess.mockClear().mockResolvedValue({ newEntitiesNote: '测试实体入册' })
+  h2.generateChapterArgs = []
+  h2.generateChapterCardArgs = []
   // 顺序：①写后一致性审读 {"issues":[]} ②故事性检查 OK_VERDICT（R10 无拍不调 LLM）
   ;(generateText as unknown as ReturnType<typeof vi.fn>)
     .mockClear()
@@ -186,5 +196,40 @@ describe('章法全流程回归（§5）', () => {
 
   it('parseStoryQualityCheck 纯函数仍在位（防回归引用）', () => {
     expect(parseStoryQualityCheck('{"attractive":true,"verdict":"ok","hooks":[],"highlights":[],"reasons":[],"suggestions":[]}').ran).toBe(true)
+  })
+
+  it('W1.1/W1.2 参数贯通：targetWords/style/extraPrompt/eventId 逐层到达 AI 调用', async () => {
+    const outcome = await runChapterWritingMethod({
+      projectId: 'p1',
+      outlineId: 'o1',
+      targetWords: 5000,
+      style: 'light',
+      extraPrompt: '多写雪景',
+      eventId: 'lw-o1-42',
+    })
+    expect(outcome.ok).toBe(true)
+    // 设计卡流以 eventId 为前缀（真取消锚点）
+    expect(h2.generateChapterCardArgs[0]).toBe('lw-o1-42-card')
+    // 正文调用签名：(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options)
+    expect(h2.generateChapterArgs[0]).toBe('lw-o1-42-write')
+    expect(h2.generateChapterArgs[1]).toBe('p1')
+    expect(h2.generateChapterArgs[2]).toBe('o1')
+    expect(h2.generateChapterArgs[3]).toBe(5000)
+    expect(h2.generateChapterArgs[4]).toBe('pc_ds')
+    expect(h2.generateChapterArgs[5]).toBe('deepseek-v4.1-flash')
+    expect(h2.generateChapterArgs[6]).toBe('light')
+    // 附加要求 = 共识账本（前置，优先级更高） + 用户附加要求
+    const extra = String(h2.generateChapterArgs[7])
+    expect(extra).toContain('【作者已拍板的共识与修正')
+    expect(extra).toContain('多写雪景')
+    expect(extra.indexOf('【作者已拍板的共识与修正')).toBeLessThan(extra.indexOf('多写雪景'))
+  })
+
+  it('W1.1 回归：不传生成参数时 targetWords/style/extraPrompt 为 undefined（回退大纲预估链）', async () => {
+    await runChapterWritingMethod({ projectId: 'p1', outlineId: 'o1' })
+    expect(h2.generateChapterArgs[3]).toBeUndefined()
+    expect(h2.generateChapterArgs[6]).toBeUndefined()
+    // 无用户附加要求时仅共识账本
+    expect(String(h2.generateChapterArgs[7])).toContain('【作者已拍板的共识与修正')
   })
 })
