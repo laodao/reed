@@ -32,6 +32,7 @@ export class LwItemRepository extends BaseRepository<LwItemEntity, StoryItem> {
       id: e.id,
       projectId: e.projectId,
       name: e.name,
+      aliases: (() => { try { const v = (e as any).aliases ? JSON.parse((e as any).aliases) : null; return Array.isArray(v) ? v : undefined } catch { return undefined } })(),
       type: e.type as ItemType,
       level: e.level as ItemLevel,
       importance: (e.importance as EntityImportance) || 'secondary',
@@ -72,6 +73,8 @@ export class LwItemRepository extends BaseRepository<LwItemEntity, StoryItem> {
     ownerId?: string
     sourceType?: EntitySourceType
     sourceEpisodeId?: string
+    /** W5.1：别名/称呼 */
+    aliases?: string[]
   }): Promise<StoryItem> {
     const id = this.generateId()
     const now = new Date()
@@ -86,6 +89,7 @@ export class LwItemRepository extends BaseRepository<LwItemEntity, StoryItem> {
       ownerId: data.ownerId ?? null,
       sourceType: data.sourceType || 'longwriting',
       sourceEpisodeId: data.sourceEpisodeId ?? null,
+      aliases: data.aliases ? JSON.stringify(data.aliases) : null,
       createdAt: now,
       updatedAt: now,
     })
@@ -109,6 +113,7 @@ export class LwItemRepository extends BaseRepository<LwItemEntity, StoryItem> {
     if (data.ownerId !== undefined) { existing.ownerId = data.ownerId ?? null; changed = true }
     if (data.sourceType !== undefined) { existing.sourceType = data.sourceType; changed = true }
     if (data.sourceEpisodeId !== undefined) { existing.sourceEpisodeId = data.sourceEpisodeId ?? null; changed = true }
+    if ((data as any).aliases !== undefined) { (existing as any).aliases = (data as any).aliases ? JSON.stringify((data as any).aliases) : null; changed = true }
 
     if (!changed) return this.toDto(existing)
 

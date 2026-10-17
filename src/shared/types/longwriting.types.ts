@@ -316,6 +316,8 @@ export interface StoryLocation {
   id: string
   projectId: string
   name: string
+  /** W5.1：别名/称呼 */
+  aliases?: string[]
   type: LocationType
   description: string
   importance: LocationImportance
@@ -807,6 +809,8 @@ export interface StoryItem {
   id: string
   projectId: string
   name: string
+  /** W5.1：别名/称呼 */
+  aliases?: string[]
   type: ItemType
   level: ItemLevel
   description: string

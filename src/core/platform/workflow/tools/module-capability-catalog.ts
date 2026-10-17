@@ -88,8 +88,8 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
       '正文局部修正与一致性疑点管理',
     ],
     invocation: [
-      { via: 'workflow', how: 'run_workflow 内置「长文写作」（model 必填，用用户当前模型或先问）' },
-      { via: 'ui', how: '/longwriting 建项目 → 故事研讨室深度共创（多轮研讨/章法逐章）' },
+      { via: 'workflow', how: 'run_workflow 内置「长文写作」（model 必填，用用户当前模型或先问）——注意：这是草稿机，无设计卡/一致性检查/图谱提取，产物落资产与知识库、不进长文项目库；正式创作或需要一致性的正文一律走下方 UI 章法' },
+      { via: 'ui', how: '/longwriting 建项目 → 故事研讨室深度共创（多轮研讨/章法逐章，有一致性门禁）' },
     ],
   },
   {

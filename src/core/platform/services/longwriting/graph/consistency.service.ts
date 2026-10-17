@@ -627,6 +627,13 @@ export class ConsistencyService {
     for (const it of rosterItems) {
       rosterNames.add(String(it.name || '').trim())
       rosterNames.add(core(String(it.name || '')))
+      // W5.1：别名称呼同属在册（状态切片里的别名提法不再误报黑户）
+      for (const a of (Array.isArray((it as any).aliases) ? (it as any).aliases : [])) {
+        const alias = String(a || '').trim()
+        if (!alias) continue
+        rosterNames.add(alias)
+        rosterNames.add(core(alias))
+      }
     }
     const firstSeen = new Map<string, number>()
     // 已知名判定与 graph.service findByName 同口径：exact/去括号核心 + 双向子串
@@ -791,10 +798,14 @@ export class ConsistencyService {
     try {
       const locs = (await m.lwLocations?.getByProjectId(projectId)) || []
       locationNames.push(...locs.map((l: any) => String(l.name || '')))
+      // W5.1：别名称呼同属地点排除集
+      locationNames.push(...locs.flatMap((l: any) => Array.isArray(l.aliases) ? l.aliases.map(String) : []))
     } catch { /* 地点读取失败不阻断 */ }
     try {
       const items = (await m.lwItems?.getByProjectId(projectId)) || []
       itemNames.push(...items.map((i: any) => String(i.name || '')))
+      // W5.1：别名同属物品排除集
+      itemNames.push(...items.flatMap((i: any) => Array.isArray(i.aliases) ? i.aliases.map(String) : []))
     } catch { /* 物品读取失败不阻断 */ }
     const isExcluded = (name: string): boolean => {
       if (!name) return true
@@ -817,7 +828,10 @@ export class ConsistencyService {
     // 告警必须消失，否则闭环走不通（E2E 实测：createCharacter 后 R9 仍拦）
     let rosterNames: string[] = []
     try {
-      rosterNames = ((await m.lwCharacters?.getByProjectId(projectId)) || []).map((c: any) => String(c.name || ''))
+      const charRows = (await m.lwCharacters?.getByProjectId(projectId)) || []
+      rosterNames = charRows.map((c: any) => String(c.name || ''))
+      // W5.1：人物别名同属名册（R9 不再对既定别称误报）
+      rosterNames.push(...charRows.flatMap((c: any) => Array.isArray(c.aliases) ? c.aliases.map(String) : []))
     } catch { /* 名册读取失败按无名册处理 */ }
     const isRosterKnown = (name: string): boolean => {
       const s = String(name || '').trim()

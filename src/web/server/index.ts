@@ -662,6 +662,9 @@ async function initDatabase(): Promise<void> {
   // W3.2：token 用量表（幂等）
   const { createLwTokenUsages } = await import('@core/database/migrations/create-lw-token-usages')
   await createLwTokenUsages(ds)
+  // W5.1：地点/物品别名列（幂等）
+  const { addLocationItemAliases } = await import('@core/database/migrations/add-location-item-aliases')
+  await addLocationItemAliases(ds)
 
   // 谓词受控词表 + 存量关系归一（2026-09-16 结构化设定方案 M0；必须在图谱表之后——归一扫描 lw_graph_edges）
   const { createLwPredicateRegistry } = await import(

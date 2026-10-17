@@ -823,6 +823,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-lw-token-usages'
     )
     await createLwTokenUsages(this.dataSource)
+    // W5.1：地点/物品别名列（幂等）
+    const { addLocationItemAliases } = await import(
+      '@core/database/migrations/add-location-item-aliases'
+    )
+    await addLocationItemAliases(this.dataSource)
 
     // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
     const { createWorkflowTables } = await import(

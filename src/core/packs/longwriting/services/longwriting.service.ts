@@ -444,7 +444,7 @@ export class LongWritingService {
   /**
    * 创建地点
    */
-  async createLocation(data: { projectId: string; name: string; type: string; importance: string; description: string; mapId?: string }): Promise<any> {
+  async createLocation(data: { projectId: string; name: string; type: string; importance: string; description: string; mapId?: string; aliases?: string[] }): Promise<any> {
     if (!this.db.lwLocations) {
       throw new Error('数据库未初始化')
     }
@@ -750,7 +750,7 @@ export class LongWritingService {
   /**
    * 创建物品
    */
-  async createItem(data: { projectId: string; name: string; type: string; level: string; description: string; ownerId?: string }): Promise<any> {
+  async createItem(data: { projectId: string; name: string; type: string; level: string; description: string; ownerId?: string; aliases?: string[] }): Promise<any> {
     if (!this.db.lwItems) {
       throw new Error('数据库未初始化')
     }

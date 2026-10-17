@@ -55,6 +55,10 @@ export class LwItemEntity {
   @Column({ name: 'library_version', type: 'integer', nullable: true })
   libraryVersion!: number | null
 
+  /** W5.1：别名/称呼（JSON 数组文本；R3 物品易主/R11 道具等名册匹配与触发注入用） */
+  @Column({ name: 'aliases', type: 'text', nullable: true })
+  aliases!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

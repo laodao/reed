@@ -36,6 +36,7 @@ export class LwLocationRepository extends BaseRepository<
       id: e.id,
       projectId: e.projectId,
       name: e.name,
+      aliases: (() => { try { const v = (e as any).aliases ? JSON.parse((e as any).aliases) : null; return Array.isArray(v) ? v : undefined } catch { return undefined } })(),
       type: e.type as LocationType,
       description: e.description ?? '',
       importance: e.importance as LocationImportance,
@@ -88,6 +89,8 @@ export class LwLocationRepository extends BaseRepository<
     mapId?: string
     sourceType?: EntitySourceType
     sourceEpisodeId?: string
+    /** W5.1：别名/称呼 */
+    aliases?: string[]
   }): Promise<StoryLocation> {
     const id = this.generateId()
     const now = new Date()
@@ -104,6 +107,7 @@ export class LwLocationRepository extends BaseRepository<
       mapId: data.mapId ?? null,
       sourceType: data.sourceType || 'longwriting',
       sourceEpisodeId: data.sourceEpisodeId ?? null,
+      aliases: data.aliases ? JSON.stringify(data.aliases) : null,
       createdAt: now,
       updatedAt: now,
     })
@@ -129,6 +133,7 @@ export class LwLocationRepository extends BaseRepository<
     if (data.mapId !== undefined) { existing.mapId = data.mapId ?? null; changed = true }
     if (data.sourceType !== undefined) { existing.sourceType = data.sourceType; changed = true }
     if (data.sourceEpisodeId !== undefined) { existing.sourceEpisodeId = data.sourceEpisodeId ?? null; changed = true }
+    if ((data as any).aliases !== undefined) { (existing as any).aliases = (data as any).aliases ? JSON.stringify((data as any).aliases) : null; changed = true }
 
     if (!changed) return this.toDto(existing)
 
