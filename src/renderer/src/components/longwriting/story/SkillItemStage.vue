@@ -420,7 +420,7 @@ const skills = ref<StorySkill[]>([])
 const items = ref<StoryItem[]>([])
 
 // Tab 切换前检查功能是否启用
-function handleTabLeave(activeName: string, oldActiveName: string): boolean {
+function handleTabLeave(activeName: string, _oldActiveName: string): boolean {
   if (activeName === 'types' && !isFeatureEnabled('skill') && !isFeatureEnabled('item')) {
     ElMessage.warning('类型设定功能未启用，请在故事概要中开启"技能"或"物品"选项')
     return false
@@ -1190,46 +1190,6 @@ async function parseItemsResult(content: string) {
   }
 }
 
-async function parseSkillsItemsResult(content: string) {
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      ElMessage.warning('AI 返回格式不正确，请重试')
-      return
-    }
-    const data = JSON.parse(jsonMatch[0])
-    const suggestedSkills: Partial<StorySkill>[] = data.skills || []
-    const suggestedItems: Partial<StoryItem>[] = data.items || []
-    if (suggestedSkills.length === 0 && suggestedItems.length === 0) {
-      ElMessage.warning('AI 未生成技能或物品建议')
-      return
-    }
-    ElMessageBox.confirm(
-      `AI 建议添加以下内容：\n\n技能：\n${suggestedSkills.map(s => `- ${s.name}`).join('\n') || '无'}\n\n物品：\n${suggestedItems.map(i => `- ${i.name}`).join('\n') || '无'}`,
-      'AI 生成建议',
-      { confirmButtonText: '全部添加', cancelButtonText: '取消', type: 'info' }
-    ).then(async () => {
-      for (const suggested of suggestedSkills) {
-        await window.electronAPI.longwriting.createSkill({
-          projectId: props.projectId,
-          ...suggested,
-          characterIds: []
-        })
-      }
-      for (const suggested of suggestedItems) {
-        await window.electronAPI.longwriting.createItem({
-          projectId: props.projectId,
-          ...suggested
-        })
-      }
-      await loadData()
-      ElMessage.success('技能和物品已添加')
-    }).catch(() => {})
-  } catch (error) {
-    ElMessage.error('解析 AI 响应失败')
-  }
-}
-
 function cancelGeneration() {
   if (!currentEventId.value) {
     generating.value = false
@@ -1279,15 +1239,6 @@ async function loadData() {
     loadItems()
   ])
   updateProgress()
-}
-
-// 初始化默认配置
-async function initDefaultConfigs() {
-  const result = await window.electronAPI.longwriting.initDefaultTypeConfigs(props.projectId)
-  if (result.success) {
-    await loadSkillTypes()
-    await loadItemTypes()
-  }
 }
 
 onMounted(async () => {

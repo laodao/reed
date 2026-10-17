@@ -252,9 +252,8 @@ const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
 
-// 从父组件获取选中的模型（是一个 ComputedRef 和一个 Ref）
+// 从父组件获取选中的模型 key（selectedModel 注入未使用，已删——2026-10-17 lint 专项）
 const selectedModelKey = inject<ReturnType<typeof ref<string>>>('selectedModelKey', ref(''))
-const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
 // 从父组件注入功能开关 ref（用于同步更新）
 const enabledFeaturesRef = inject<Ref<string[]>>('enabledFeatures', ref([]))
@@ -490,9 +489,8 @@ function parseOverviewResult(content: string) {
     }
 
     // 如果直接解析失败，尝试修复常见问题
-    // 1. 移除控制字符但保留换行（JSON字符串内可能有换行）
-    let cleanJson = jsonContent
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // 移除控制字符，但保留 \t \n \r
+    // 1. 移除控制字符但保留换行（JSON字符串内可能有换行；\t \n \r 属 Cc 但语义上要保留）
+    let cleanJson = jsonContent.replace(/\p{Cc}/gu, (ch) => ('\t\n\r'.includes(ch) ? ch : ''))
 
     // 2. 尝试修复未转义的引号和换行
     // 这个比较复杂，我们尝试逐步解析

@@ -898,13 +898,8 @@ export class LongWritingService {
     // 伴生数据（事件/快照/伏笔/边有效期/预写卡头）必须跟着搬，否则按章号
     // 键挂的检查从此系统性错位。变更前后各取一次文档序做 diff。
     const before = await this.docOrderSnapshot(data.projectId)
-    let created: StoryOutline
-    try {
-      created = await this.db.lwOutlines.create(data)
-    } catch (e) {
-      // 级联不背锅前先区分：建节点本身的失败原样抛
-      throw e
-    }
+    // 建节点本身的失败原样抛（级联不背锅）
+    const created: StoryOutline = await this.db.lwOutlines.create(data)
     // 级联失败不回滚建节点（节点已落库），但必须留全栈日志——章号错位是沉默毒药
     try {
       if (before) await this.cascadeChapterNumbers(before.projectId, before.order)

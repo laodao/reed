@@ -637,7 +637,7 @@ function isFeatureEnabled(feature: string): boolean {
 }
 
 // Tab 切换前检查功能是否启用
-function handleTabLeave(activeName: string, oldActiveName: string): boolean {
+function handleTabLeave(activeName: string, _oldActiveName: string): boolean {
   if (activeName === 'maps' && !isFeatureEnabled('map')) {
     ElMessage.warning('地图功能未启用，请在故事概要中开启"地图"选项')
     return false
@@ -769,8 +769,6 @@ const showMapImageDialog = ref(false)
 const generatingImageMap = ref<{ id: string; name: string } | null>(null)
 const generatingMapImage = ref(false)
 
-// 加载状态
-const loading = ref(false)
 // 保存状态
 const saveStatus = ref<'idle' | 'saving' | 'saved'>('idle')
 // 润色状态
