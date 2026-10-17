@@ -176,6 +176,8 @@ const CHANNELS = {
   TOKEN_USAGE_SUMMARY: 'longwriting:tokenUsageSummary',
   // W4 选区 AI 编辑
   REWRITE_SELECTION: 'longwriting:rewriteSelection',
+  // 6.1 项目字数统计
+  PROJECT_WORD_STATS: 'longwriting:projectWordStats',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
@@ -1521,6 +1523,15 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!db.lwTokenUsages) return { success: false, error: '当前环境不支持用量查询（缺少 lw_token_usages）' }
       const byPurpose = await db.lwTokenUsages.summaryByPurpose(projectId)
       return { success: true, data: { byPurpose } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 6.1 项目字数统计
+  ipcBridge.handle(CHANNELS.PROJECT_WORD_STATS, async (_event, projectId: string) => {
+    try {
+      return { success: true, data: await service.getProjectWordStats(projectId) }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

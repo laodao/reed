@@ -25,6 +25,8 @@
           返回
         </el-button>
         <span class="project-title">{{ project?.name || '加载中...' }}</span>
+        <!-- 6.1 项目字数统计（统一口径：去空白字符数） -->
+        <span v-if="wordStats" class="word-stat">{{ wordStats.completedCount }}/{{ wordStats.chapterCount }} 章 · {{ wordStats.totalWords.toLocaleString() }} 字</span>
       </div>
       <div class="header-center">
         <div class="stage-list">
@@ -430,10 +432,24 @@ function isStageCompleted(stage: string): boolean {
   return stageIndex < currentIndex
 }
 
-// 更新进度
+// 更新进度（6.1：落库——项目卡进度条由此取数；失败静默，进度非关键数据）
 function updateProgress(progress: number) {
-  // TODO: 更新项目进度
-  console.log('更新进度:', progress)
+  if (!Number.isFinite(progress)) return
+  window.electronAPI.longwriting
+    .updateProject(projectId.value, { progress: Math.max(0, Math.min(100, Math.round(progress))) })
+    .catch(() => undefined)
+  void loadWordStats()
+}
+
+// 6.1 项目字数统计
+const wordStats = ref<{ totalWords: number; chapterCount: number; completedCount: number } | null>(null)
+async function loadWordStats() {
+  try {
+    const resp = await (window.electronAPI.longwriting as unknown as {
+      projectWordStats?: (pid: string) => Promise<{ success: boolean; data?: { totalWords: number; chapterCount: number; completedCount: number } }>
+    }).projectWordStats?.(projectId.value)
+    if (resp?.success && resp.data) wordStats.value = resp.data
+  } catch { /* 统计失败静默 */ }
 }
 
 // 跳过大纲
@@ -461,6 +477,7 @@ async function loadProject() {
 }
 
 onMounted(() => {
+  void loadWordStats()
   loadProject()
   loadProviderConfigs().then(() => {
     loadStageModelConfigs()
@@ -505,6 +522,13 @@ onMounted(() => {
     text-overflow: ellipsis;
     max-width: 240px;
   }
+
+.word-stat {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 }
 
 .header-center {

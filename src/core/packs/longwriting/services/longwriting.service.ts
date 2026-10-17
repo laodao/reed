@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'fs'
+import { countChapterWords } from '@shared/utils/word-count'
 import * as path from 'path'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
@@ -286,6 +287,25 @@ export class LongWritingService {
   /**
    * 更新故事概要
    */
+  /** 6.1 项目字数统计：全部章节正文按统一口径（去空白字符数）汇总 */
+  async getProjectWordStats(
+    projectId: string
+  ): Promise<{ totalWords: number; chapterCount: number; completedCount: number }> {
+    const outlines = (await this.db.lwOutlines?.getByProjectId(projectId)) || []
+    const chapterNodes = outlines.filter((o: any) => o.nodeType === 'chapter' || o.nodeType === 'section')
+    let totalWords = 0
+    let completedCount = 0
+    for (const node of chapterNodes) {
+      try {
+        const ch = await this.db.lwChapters?.getByOutlineId(node.id)
+        if (!ch?.content) continue
+        totalWords += countChapterWords(ch.content)
+        completedCount += 1
+      } catch { /* 单章读取失败不影响汇总 */ }
+    }
+    return { totalWords, chapterCount: chapterNodes.length, completedCount }
+  }
+
   async updateStoryOverview(
     projectId: string,
     data: Partial<StoryOverview>

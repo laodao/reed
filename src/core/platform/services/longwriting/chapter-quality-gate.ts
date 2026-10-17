@@ -6,6 +6,8 @@
  * 保留既有情节与文风，只补足场面/对白/心理）。纯函数 + 依赖注入 AI 调用，便于单测。
  */
 
+import { countChapterWords } from '@shared/utils/word-count'
+
 /** 字数达标判定（下限从严：明显欠字数的章节读者体感"薄"，是"效果不好"的直接来源之一） */
 export const WORD_COUNT_FLOOR_RATIO = 0.7
 
@@ -17,7 +19,7 @@ export interface WordCountAssessment {
 }
 
 export function assessChapterWordCount(content: string, targetWords: number): WordCountAssessment {
-  const actual = (content || '').trim().length
+  const actual = countChapterWords(content)
   const target = Math.max(1, targetWords || 0)
   const ratio = actual / target
   return { actual, target, ratio, verdict: ratio < WORD_COUNT_FLOOR_RATIO ? 'too_short' : 'ok' }
@@ -25,7 +27,7 @@ export function assessChapterWordCount(content: string, targetWords: number): Wo
 
 /** 扩写指令：不改动既有情节，只补肉——保留原文全部内容直接输出扩写后全文 */
 export function buildExpandPrompt(content: string, targetWords: number): string {
-  return `以下是一章正文的草稿，目标约 ${targetWords} 字，当前只有 ${content.trim().length} 字。请在不新增情节转折、不重复已有内容、不改变叙事顺序与文风的前提下，把它扩写到约 ${targetWords} 字：补足场面调度、人物动作与神态细节、关键对白的展开、必要的心理描写。直接输出扩写后的完整正文（含原有内容），不要任何说明或标题。
+  return `以下是一章正文的草稿，目标约 ${targetWords} 字，当前只有 ${countChapterWords(content)} 字。请在不新增情节转折、不重复已有内容、不改变叙事顺序与文风的前提下，把它扩写到约 ${targetWords} 字：补足场面调度、人物动作与神态细节、关键对白的展开、必要的心理描写。直接输出扩写后的完整正文（含原有内容），不要任何说明或标题。
 
 【草稿开始】
 ${content.trim()}

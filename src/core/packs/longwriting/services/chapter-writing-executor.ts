@@ -15,6 +15,7 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createLogger } from '@core/utils/logger'
+import { countChapterWords } from '@shared/utils/word-count'
 import { generateText } from 'ai'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { getRoomState } from '@core/packs/longwriting/story-room/room-state'
@@ -506,7 +507,7 @@ ${content}
     data: {
       chapterId: saved?.id,
       content,
-      wordCount: content.replace(/\s/g, '').length,
+      wordCount: countChapterWords(content),
       designCard: markdown,
       review,
       postCheck: postCheck ?? null,

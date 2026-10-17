@@ -533,6 +533,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection, Warning, ArrowDown } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import ChapterContextPanel from './ChapterContextPanel.vue'
+import { countChapterWords } from '@shared/utils/word-count'
 import { notifyWarning } from '@/utils/notify'
 import ChapterConflictPanel from './ChapterConflictPanel.vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
@@ -950,7 +951,8 @@ function formatDate(timestamp: number): string {
 
 // 获取章节字数
 function getChapterWordCount(outlineId: string): number {
-  return chapterContentMap.value[outlineId]?.length || 0
+  // 6.1 统一口径：去空白字符数（与质量门/executor 同源）
+  return countChapterWords(chapterContentMap.value[outlineId] || '')
 }
 
 

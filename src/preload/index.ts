@@ -2115,6 +2115,9 @@ const electronAPI = {
     /** W3.2 用量汇总：按用途聚合（calls/totalTokens/isEstimated） */
     tokenUsageSummary: (projectId: string) =>
       ipcRenderer.invoke('longwriting:tokenUsageSummary', projectId),
+    /** 6.1 项目字数统计（统一口径：去空白字符数） */
+    projectWordStats: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:projectWordStats', projectId),
     /** W4 选区 AI 编辑：excerpt 级轻量通道（结果带 excerpt 复查 warning；OQ-2 红线内） */
     rewriteSelection: (input: { projectId: string; selection: string; action: 'rewrite' | 'expand' | 'shorten' | 'polish' | 'continue' | 'custom'; instruction?: string; contextBefore?: string; contextAfter?: string; providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:rewriteSelection', input),
