@@ -363,6 +363,17 @@
         <el-form-item label="地点名称" required>
           <el-input v-model="locationForm.name" placeholder="输入地点名称" />
         </el-form-item>
+        <el-form-item label="别名">
+          <el-select
+            v-model="locationForm.aliases"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="输入别名称呼后回车（可选；一致性检查与触发注入会识别）"
+            class="alias-select"
+          />
+        </el-form-item>
         <el-form-item label="地点类型">
           <el-select v-model="locationForm.type" placeholder="选择地点类型">
             <el-option label="城市" value="city" />
@@ -703,7 +714,8 @@ const locationForm = ref({
   type: 'city',
   importance: 'important',
   description: '',
-  mapId: ''
+  mapId: '',
+  aliases: [] as string[]
 })
 
 // 势力列表
@@ -1189,7 +1201,8 @@ function editLocation(location: any) {
     type: location.type,
     importance: location.importance,
     description: location.description,
-    mapId: location.mapId || ''
+    mapId: location.mapId || '',
+    aliases: Array.isArray((location as any).aliases) ? (location as any).aliases : []
   }
   showLocationDialog.value = true
 }
@@ -1235,6 +1248,7 @@ async function saveLocation() {
     type: 'city',
     importance: 'important',
     description: '',
+    aliases: [],
     mapId: ''
   }
   await loadLocations()

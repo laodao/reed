@@ -357,6 +357,17 @@
         <el-form-item label="物品名称" required>
           <el-input v-model="itemForm.name" placeholder="输入物品名称" />
         </el-form-item>
+        <el-form-item label="别名">
+          <el-select
+            v-model="itemForm.aliases"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="输入别名称呼后回车（可选；一致性检查会识别）"
+            class="alias-select"
+          />
+        </el-form-item>
         <el-form-item label="物品类型">
           <el-select v-model="itemForm.type" placeholder="选择物品类型" @change="onItemTypeChange">
             <el-option v-for="opt in itemTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -511,7 +522,8 @@ const itemForm = ref({
   type: '' as string,
   level: '' as string,
   description: '',
-  ownerId: ''
+  ownerId: '',
+  aliases: [] as string[]
 })
 
 const newSkillTypeForm = ref({ code: '', name: '' })
@@ -867,7 +879,8 @@ function editItem(item: StoryItem) {
     type: item.type,
     level: item.level,
     description: item.description,
-    ownerId: item.ownerId || ''
+    ownerId: item.ownerId || '',
+    aliases: Array.isArray((item as any).aliases) ? (item as any).aliases : []
   }
   showItemDialog.value = true
 }
@@ -920,7 +933,7 @@ async function saveItem() {
   }
   showItemDialog.value = false
   editingItem.value = null
-  itemForm.value = { name: '', type: '', level: '', description: '', ownerId: '' }
+  itemForm.value = { name: '', type: '', level: '', description: '', ownerId: '', aliases: [] }
   updateProgress()
 }
 
