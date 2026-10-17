@@ -51,6 +51,18 @@
           </el-select>
         </el-form-item>
 
+        <!-- W6.6 风格样章（few-shot）：粘贴 1-2 段自认可文，章节生成时注入供模型模仿文风 -->
+        <el-form-item label="风格样章">
+          <el-input
+            v-model="form.styleSample"
+            type="textarea"
+            :rows="4"
+            maxlength="2000"
+            show-word-limit
+            placeholder="可选：粘贴 1-2 段你最满意的正文。章节生成时会作为文风范例注入（模仿其句式与节奏，不抄内容）"
+          />
+        </el-form-item>
+
         <!-- 目标读者 -->
         <el-form-item label="目标读者">
           <el-select v-model="form.targetReader" placeholder="选择目标读者群体（可选）" clearable>
@@ -343,6 +355,7 @@ const form = ref({
   title: '',
   coreIdea: '',
   style: '',
+  styleSample: '',
   targetReader: '',
   estimatedLength: '',
   otherRequirements: '',
@@ -696,6 +709,7 @@ async function saveForm() {
     title: rawForm.title || undefined,
     coreIdea: rawForm.coreIdea,
     style: rawForm.style || undefined,
+    styleSample: rawForm.styleSample || undefined,
     targetReader: rawForm.targetReader || undefined,
     estimatedLength: rawForm.estimatedLength || undefined,
     otherRequirements: rawForm.otherRequirements || undefined,
@@ -764,6 +778,7 @@ async function confirmOverview() {
     storyType: rawForm.storyType,
     coreIdea: rawForm.coreIdea,
     style: rawForm.style || undefined,
+    styleSample: rawForm.styleSample || undefined,
     targetReader: rawForm.targetReader || undefined,
     estimatedLength: rawForm.estimatedLength || undefined,
     otherRequirements: rawForm.otherRequirements || undefined,
@@ -798,6 +813,7 @@ async function loadSavedOverview() {
       form.value.storyType = data.storyType || 'other'
       form.value.coreIdea = data.coreIdea || ''
       form.value.style = data.style || ''
+      form.value.styleSample = (data as any).styleSample || ''
       form.value.targetReader = data.targetReader || ''
       form.value.estimatedLength = data.estimatedLength || ''
       form.value.otherRequirements = data.otherRequirements || ''

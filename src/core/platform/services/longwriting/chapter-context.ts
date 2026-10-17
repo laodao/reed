@@ -139,7 +139,7 @@ ${prewriteSection}---
 ## 七、图谱关系与事件（时间线一致性）
 ${graphSection}
 ${recallSection}---
-${opts.style ? `## 八、写作风格要求
+${parts.styleText ? `## 八、写作风格要求
 
 ${parts.styleText}` : ''}
 ${opts.extraPrompt && parts.extraText ? `## 九、附加要求

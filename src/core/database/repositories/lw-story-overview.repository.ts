@@ -32,6 +32,7 @@ export class LwStoryOverviewRepository extends BaseRepository<
       title: e.title || '',
       coreIdea: e.coreIdea || '',
       style: e.style || undefined,
+      styleSample: e.styleSample || undefined,
       targetReader: e.targetReader || undefined,
       estimatedLength: e.estimatedLength || undefined,
       otherRequirements: e.otherRequirements || undefined,
@@ -71,6 +72,7 @@ export class LwStoryOverviewRepository extends BaseRepository<
       isLocked: 0,
       coreIdea: null,
       style: null,
+      styleSample: null,
       targetReader: null,
       estimatedLength: null,
       otherRequirements: null,
@@ -97,6 +99,7 @@ export class LwStoryOverviewRepository extends BaseRepository<
     if (data.title !== undefined) { existing.title = data.title ?? null; changed = true }
     if (data.coreIdea !== undefined) { existing.coreIdea = data.coreIdea ?? null; changed = true }
     if (data.style !== undefined) { existing.style = data.style ?? null; changed = true }
+    if (data.styleSample !== undefined) { existing.styleSample = data.styleSample ?? null; changed = true }
     if (data.targetReader !== undefined) { existing.targetReader = data.targetReader ?? null; changed = true }
     if (data.estimatedLength !== undefined) { existing.estimatedLength = data.estimatedLength ?? null; changed = true }
     if (data.otherRequirements !== undefined) { existing.otherRequirements = data.otherRequirements ?? null; changed = true }

@@ -2293,7 +2293,13 @@ ${after || '（无）'}
     const taskText = `**章节名称**：${outline.name}\n**章节概要**：${outline.summary}`
     const prevEndingText = previousChapterEnding || '这是开篇章节'
     const constraintsText = `${memoryContext}${entityStateContext}${chapterStateSummaryContext}`
-    const styleText = opts.style ? `本章要求以「${opts.style}」的风格写作。请贯彻到遣词造句、节奏与氛围中。` : ''
+    // W6.6 风格样章 few-shot：作者粘贴的自认可文注入 Style 分区（模仿文风，禁止照抄内容）
+    const overviewStyleSample = String((overview as any)?.styleSample || '').trim()
+    const styleText = [
+      opts.style ? `本章要求以「${opts.style}」的风格写作。请贯彻到遣词造句、节奏与氛围中。` : '',
+      overviewStyleSample ? `【风格样章（模仿其文风、句式节奏与叙事腔调；禁止照抄其内容、人物或具体情节）】
+${overviewStyleSample.slice(0, 1200)}` : '',
+    ].filter(Boolean).join('\n\n')
     const extraText = opts.extraPrompt && opts.extraPrompt.trim() ? opts.extraPrompt.trim() : ''
 
     const items: ChapterContextItem[] = [

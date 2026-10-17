@@ -828,6 +828,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-location-item-aliases'
     )
     await addLocationItemAliases(this.dataSource)
+    // W6.6：概要风格样章列（幂等）
+    const { addStyleSampleToOverview } = await import(
+      '@core/database/migrations/add-style-sample-to-overview'
+    )
+    await addStyleSampleToOverview(this.dataSource)
 
     // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
     const { createWorkflowTables } = await import(

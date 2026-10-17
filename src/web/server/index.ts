@@ -665,6 +665,9 @@ async function initDatabase(): Promise<void> {
   // W5.1：地点/物品别名列（幂等）
   const { addLocationItemAliases } = await import('@core/database/migrations/add-location-item-aliases')
   await addLocationItemAliases(ds)
+  // W6.6：概要风格样章列（幂等）
+  const { addStyleSampleToOverview } = await import('@core/database/migrations/add-style-sample-to-overview')
+  await addStyleSampleToOverview(ds)
 
   // 谓词受控词表 + 存量关系归一（2026-09-16 结构化设定方案 M0；必须在图谱表之后——归一扫描 lw_graph_edges）
   const { createLwPredicateRegistry } = await import(

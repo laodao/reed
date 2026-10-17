@@ -122,6 +122,8 @@ export interface StoryOverview {
   title: string
   coreIdea: string           // 核心构思
   style?: StoryStyle         // 故事风格
+  /** W6.6：风格样章（few-shot——模仿文风，不抄内容） */
+  styleSample?: string
   targetReader?: TargetReader // 目标读者
   estimatedLength?: EstimatedLength // 预估篇幅
   otherRequirements?: string // 其他要求

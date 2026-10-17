@@ -47,6 +47,10 @@ export class LwStoryOverviewEntity {
   @Column({ name: 'style', type: 'text', nullable: true })
   style!: string | null
 
+  /** W6.6：风格样章（few-shot） */
+  @Column({ name: 'style_sample', type: 'text', nullable: true })
+  styleSample!: string | null
+
   @Column({ name: 'target_reader', type: 'text', nullable: true })
   targetReader!: string | null
 
