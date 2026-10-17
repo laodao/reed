@@ -174,6 +174,8 @@ const CHANNELS = {
   WRITE_CHAPTER_FULL: 'longwriting:writeChapterFull',
   // W3.2 用量
   TOKEN_USAGE_SUMMARY: 'longwriting:tokenUsageSummary',
+  // W4 选区 AI 编辑
+  REWRITE_SELECTION: 'longwriting:rewriteSelection',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
@@ -1523,6 +1525,30 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       return { success: false, error: error.message }
     }
   })
+
+  // W4 选区 AI 编辑：excerpt 级轻量通道（OQ-2 红线：只处理选区文本，结果带复查 warning）
+  ipcBridge.handle(
+    CHANNELS.REWRITE_SELECTION,
+    async (
+      _event,
+      input: {
+        projectId: string
+        selection: string
+        action: 'rewrite' | 'expand' | 'shorten' | 'polish' | 'continue' | 'custom'
+        instruction?: string
+        contextBefore?: string
+        contextAfter?: string
+        providerConfigId?: string
+        modelId?: string
+      },
+    ) => {
+      try {
+        return await aiService.rewriteSelection(input)
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
 
   // 54 号章法：生成章节设计卡（生成→LLM自检→落库未确认 prewrite→出场实体绑定大纲）
   ipcBridge.handle(

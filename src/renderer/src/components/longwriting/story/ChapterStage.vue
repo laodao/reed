@@ -185,6 +185,14 @@
             <div class="chapter-body">
               <!-- 可编辑模式：Markdown 编辑器 -->
               <div v-if="isEditableNode && currentChapter" class="chapter-editor-wrapper">
+                <!-- W4 选区 AI 编辑动作条：作用于编辑器当前选区（excerpt 级轻量通道） -->
+                <div class="sel-toolbar">
+                  <span class="sel-toolbar-hint">选区 AI：</span>
+                  <el-button v-for="act in SEL_ACTIONS" :key="act.key" text size="small"
+                    :disabled="!!generatingMap[currentChapter.id]" @click="runSelectionAction(act.key, act.label)">
+                    {{ act.label }}
+                  </el-button>
+                </div>
                 <MarkdownEditor
                   ref="editorRef"
                   :key="currentChapter.id"
@@ -282,6 +290,37 @@
         <el-button @click="showGenerateDialog = false">取消</el-button>
         <el-button type="primary" @click="executeGeneration">
           开始生成
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- W4 选区 AI 结果：diff 预览 + 采纳/换一版/取消（OQ-2：只动选区文本，采纳走自动保存建版本） -->
+    <el-dialog v-model="selDialog.visible" title="选区 AI 结果" width="840px">
+      <el-alert v-if="selDialog.warnings.length" type="warning" :closable="false" class="sel-warn">
+        <div v-for="(w, i) in selDialog.warnings" :key="i">⚠ {{ w }}</div>
+      </el-alert>
+      <div class="sel-diff">
+        <div class="sel-pane">
+          <div class="sel-pane-head">原文</div>
+          <pre class="sel-pane-body">{{ selDialog.original || '（空——光标处续写）' }}</pre>
+        </div>
+        <div class="sel-pane">
+          <div class="sel-pane-head">AI 结果</div>
+          <pre class="sel-pane-body">{{ selDialog.result || (selDialog.busy ? '生成中…' : '（无）') }}</pre>
+        </div>
+      </div>
+      <el-input
+        v-model="selDialog.feedback"
+        type="textarea"
+        :rows="2"
+        class="sel-feedback"
+        placeholder="换一版时可给反馈（可选）：例如「节奏再快一点」「对白再口语化」"
+      />
+      <template #footer>
+        <el-button @click="selDialog.visible = false">取消</el-button>
+        <el-button :loading="selDialog.busy" @click="rerunSelection">换一版</el-button>
+        <el-button type="primary" :disabled="!selDialog.result || selDialog.busy" @click="applySelectionResult">
+          采纳替换选区
         </el-button>
       </template>
     </el-dialog>
@@ -1536,6 +1575,147 @@ function cancelGenerate(outlineId: string) {
   }
 }
 
+// ==================== W4 选区 AI 编辑（excerpt 级轻量通道） ====================
+const SEL_ACTIONS = [
+  { key: 'rewrite', label: '改写' },
+  { key: 'expand', label: '扩写' },
+  { key: 'shorten', label: '缩写' },
+  { key: 'polish', label: '润色' },
+  { key: 'continue', label: '续写一句' },
+  { key: 'custom', label: '指令…' },
+] as const
+
+type SelAction = (typeof SEL_ACTIONS)[number]['key']
+
+const selDialog = ref({
+  visible: false,
+  busy: false,
+  original: '',
+  result: '',
+  warnings: [] as string[],
+  action: 'rewrite' as SelAction,
+  instruction: '',
+  feedback: '',
+  selStart: 0,
+  selEnd: 0,
+})
+
+/** 当前选区/光标位置（CM5 优先，降级 fallback textarea） */
+function getSelRange(): { text: string; start: number; end: number } {
+  const doc = chapterContentMap.value[activeOutlineId.value] || ''
+  const cm = editorRef.value?.getCodemirror?.()
+  if (cm) {
+    if (cm.somethingSelected?.()) {
+      return {
+        text: cm.getSelection(),
+        start: cm.indexFromPos(cm.getCursor('from')),
+        end: cm.indexFromPos(cm.getCursor('to')),
+      }
+    }
+    const pos = cm.indexFromPos(cm.getCursor())
+    return { text: '', start: pos, end: pos }
+  }
+  const ta: HTMLTextAreaElement | null = editorRef.value?.getFallbackTextarea?.() ?? null
+  if (ta) return { text: doc.slice(ta.selectionStart, ta.selectionEnd), start: ta.selectionStart, end: ta.selectionEnd }
+  return { text: '', start: 0, end: 0 }
+}
+
+async function runSelectionAction(action: SelAction, instruction?: string) {
+  const outlineId = activeOutlineId.value
+  if (!outlineId) {
+    ElMessage.warning('请先选择章节')
+    return
+  }
+  if (action === 'custom' && !instruction) {
+    try {
+      // MessageBoxData 是 Action | { value } 联合——窄化取值（TS2339）
+      const res = await ElMessageBox.prompt('输入处理指令（例如「改成对白推进」「更有画面感」）', '选区 AI 指令', {
+        inputPlaceholder: '处理指令…',
+        confirmButtonText: '执行',
+        cancelButtonText: '取消',
+      })
+      const promptValue = typeof res === 'object' && res !== null && 'value' in res ? String(res.value ?? '') : ''
+      instruction = promptValue.trim()
+      if (!instruction) return
+    } catch { return }
+  }
+  const range = getSelRange()
+  const actLabel = SEL_ACTIONS.find((a) => a.key === action)?.label || '处理'
+  if (action !== 'continue' && !range.text.trim()) {
+    ElMessage.warning(`请先在正文中选中要${actLabel}的文字`)
+    return
+  }
+  const doc = chapterContentMap.value[outlineId] || ''
+  Object.assign(selDialog.value, {
+    visible: true,
+    busy: true,
+    original: range.text,
+    result: '',
+    warnings: [],
+    action,
+    instruction: instruction || '',
+    feedback: '',
+    selStart: range.start,
+    selEnd: range.end,
+  })
+  try {
+    const resp = await (window.electronAPI.longwriting as unknown as {
+      rewriteSelection?: (input: Record<string, unknown>) => Promise<{ success: boolean; error?: string; data?: { result: string; warnings: string[] } }>
+    }).rewriteSelection?.({
+      projectId: props.projectId,
+      selection: range.text,
+      action,
+      instruction: instruction || undefined,
+      contextBefore: doc.slice(0, range.start),
+      contextAfter: doc.slice(range.end),
+    })
+    if (!resp) {
+      selDialog.value.visible = false
+      ElMessage.warning('当前版本不支持选区 AI（需重启应用）')
+      return
+    }
+    if (!resp.success || !resp.data) {
+      selDialog.value.visible = false
+      ElMessage.error(resp.error || '选区 AI 失败')
+      return
+    }
+    selDialog.value.result = resp.data.result
+    selDialog.value.warnings = resp.data.warnings || []
+  } catch (e: any) {
+    selDialog.value.visible = false
+    ElMessage.error('选区 AI 失败：' + (e?.message || e))
+  } finally {
+    selDialog.value.busy = false
+  }
+}
+
+async function rerunSelection() {
+  const feedback = selDialog.value.feedback.trim()
+  await runSelectionAction(selDialog.value.action, feedback || selDialog.value.instruction || undefined)
+}
+
+/** 采纳：替换正文缓冲（锚点就近查找防漂移）；自动保存链路会建 manual 版本 */
+function applySelectionResult() {
+  const outlineId = activeOutlineId.value
+  if (!outlineId || !selDialog.value.result) return
+  const doc = chapterContentMap.value[outlineId] || ''
+  const orig = selDialog.value.original
+  let next: string
+  if (orig) {
+    const idx = doc.indexOf(orig, Math.max(0, selDialog.value.selStart - 200))
+    if (idx === -1) {
+      ElMessage.error('找不到原选区文本（正文可能已变化），请手动处理')
+      return
+    }
+    next = doc.slice(0, idx) + selDialog.value.result + doc.slice(idx + orig.length)
+  } else {
+    next = doc.slice(0, selDialog.value.selStart) + selDialog.value.result + doc.slice(selDialog.value.selEnd)
+  }
+  chapterContentMap.value[outlineId] = next
+  selDialog.value.visible = false
+  ElMessage.success('已替换选区（自动保存将记录版本）')
+}
+
 // 显示版本历史
 async function showVersions(outline: StoryOutline) {
   currentOutlineForAction.value = outline
@@ -2170,6 +2350,63 @@ onMounted(() => {
 }
 
 // 编辑器容器
+.sel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border-color-lighter);
+  background: var(--fill-color-lighter, var(--fill-color-light));
+  flex-shrink: 0;
+
+  .sel-toolbar-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-right: 2px;
+  }
+}
+
+.sel-warn {
+  margin-bottom: 10px;
+}
+
+.sel-diff {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sel-pane {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-color-light);
+  border-radius: 6px;
+  overflow: hidden;
+
+  .sel-pane-head {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--fill-color-light);
+    border-bottom: 1px solid var(--border-color-light);
+  }
+
+  .sel-pane-body {
+    margin: 0;
+    padding: 10px;
+    max-height: 45vh;
+    overflow: auto;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+.sel-feedback {
+  margin-top: 4px;
+}
+
 .chapter-editor-wrapper {
   flex: 1;
   min-width: 0;

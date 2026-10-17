@@ -12,6 +12,7 @@ import type {
 } from './longwriting/chapter-context'
 import { composeChapterPrompt, estimateContextTokens, trimChapterPartsToBudget, buildChapterSegmentSection, CHAPTER_SEGMENT_THRESHOLD_WORDS, CHAPTER_SEGMENT_TARGET_WORDS, CHAPTER_SEGMENT_MAX_COUNT } from './longwriting/chapter-context'
 import { buildStateSummaryChainContext } from './longwriting/state-summary-context'
+import { scanExcerptConflicts, type ExcerptCharacterInfo } from './longwriting/excerpt-review'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
 import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type ChapterCardData } from './longwriting/chapter-card'
 import { buildChapterCardDesignSystemPrompt, CHAPTER_CARD_REVIEW_SYSTEM_PROMPT, buildChapterCardReviewPrompt } from '@core/packs/longwriting/skills/chapter-writing'
@@ -1929,6 +1930,86 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       segments.push(seg.trim())
     }
     return segments.join('\n\n')
+  }
+
+  /**
+   * W4 选区 AI 编辑（excerpt 级轻量通道；OQ-2 默认方案下的章法收口豁免）：
+   * - 不走章法工作流/整章门禁——红线：只处理选区文本、结果过 excerpt 复查、
+   *   采纳经编辑器自动保存建版本（version_type='manual'）
+   * - 上下文 = 选区 + 前后文各一段（excerpt 级），不拼九分区与设计卡
+   * - 复查 warning 随结果返回（不阻断采纳），前端展示供人工判断
+   */
+  async rewriteSelection(input: {
+    projectId: string
+    selection: string
+    action: 'rewrite' | 'expand' | 'shorten' | 'polish' | 'continue' | 'custom'
+    instruction?: string
+    contextBefore?: string
+    contextAfter?: string
+    providerConfigId?: string
+    modelId?: string
+  }): Promise<{ success: boolean; error?: string; data?: { result: string; warnings: string[] } }> {
+    const { projectId, selection, action } = input
+    if (!selection?.trim() && action !== 'continue') {
+      return { success: false, error: '请先在正文中选中要处理的文字（「续写一句」可作用于光标处）' }
+    }
+    usageContextStorage.enterWith({ projectId, purpose: 'selection' })
+
+    const ACTION_LABELS: Record<string, string> = {
+      rewrite: '改写：保持原意与信息量，换一种更好的写法（句式/节奏/画面感）',
+      expand: '扩写：在不新增情节转折的前提下，补足场面调度、动作神态与关键对白的展开，篇幅变为约 1.5-2 倍',
+      shorten: '缩写：保留全部关键信息与情节功能，删掉冗余修饰，篇幅压缩到约一半',
+      polish: '润色：只修语病、错字与不通顺处，尽量保持原句结构与长度',
+      continue: '续写：从给定文字（或光标处）自然续写约一两句话，紧接其文风与节奏',
+      custom: input.instruction?.trim() || '按用户指令处理',
+    }
+    const label = ACTION_LABELS[action] || ACTION_LABELS.custom
+    const before = (input.contextBefore || '').slice(-300)
+    const after = (input.contextAfter || '').slice(0, 300)
+    const userPrompt = `【任务】${label}${input.instruction && action !== 'custom' ? `\n【补充要求】${input.instruction.trim()}` : ''}
+
+【选区前文（仅供理解上下文，不要输出）】
+${before || '（无）'}
+
+【处理对象：选区原文】
+${selection || '（空——从光标处续写）'}
+
+【选区后文（仅供理解上下文，不要输出）】
+${after || '（无）'}
+
+只输出处理后的正文文字，不要任何解释、引号或标题。`
+
+    const systemPrompt = '你是一位资深的小说编辑，对给定选区执行精确的文字操作：只输出处理后的正文文字，不复述任务说明，不添加任何解释。'
+    const maxTokens = Math.min(8192, Math.max(2048, estimateContextTokens(selection) * 4 + 1024))
+    try {
+      const result = await this.callAI(
+        userPrompt,
+        systemPrompt,
+        maxTokens,
+        input.providerConfigId,
+        input.modelId,
+      )
+      const cleaned = result.trim()
+      if (!cleaned) return { success: false, error: 'AI 返回为空' }
+
+      // W4 excerpt 复查（warning 性质）：死亡角色出场近似检查
+      const warnings: string[] = []
+      try {
+        const db = getCoreDatabaseManager()
+        const chars = (await db.lwCharacters?.getByProjectId(projectId)) || []
+        const limited = chars.slice(0, 60)
+        const withState: ExcerptCharacterInfo[] = []
+        for (const c of limited) {
+          const st = await db.lwEntityStates?.getLatestEntityState?.(projectId, 'character', c.id)
+          withState.push({ name: c.name, aliases: (c as any).aliases, stateSummary: st?.stateSummary || '' })
+        }
+        warnings.push(...scanExcerptConflicts(cleaned, withState))
+      } catch { /* 复查失败不阻断 */ }
+
+      return { success: true, data: { result: cleaned, warnings } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   }
 
   /**
