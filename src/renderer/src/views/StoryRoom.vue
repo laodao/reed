@@ -422,7 +422,12 @@
         </div>
         <div class="ap-content">
           <div class="ap-content-head">本章正文</div>
-          <div class="ap-content-text">{{ approvalContent || '（正文加载中…）' }}</div>
+          <!-- 09-20 §7：有正文→正文；读取成功但无正文→明确占位；读取失败→去写作台提示 -->
+          <div class="ap-content-text">
+            <template v-if="approvalContent">{{ approvalContent }}</template>
+            <template v-else-if="approvalLoadFailed">（正文读取失败，可去写作台查看）</template>
+            <template v-else>（该审批单暂无关联正文——正文尚未生成或已移除）</template>
+          </div>
         </div>
         <el-input v-model="approvalNote" type="textarea" :rows="2" placeholder="评审意见（可选；驳回时建议填写修改方向，将转给主编）" />
       </div>
@@ -1577,6 +1582,7 @@ async function openFeedback(card: ArtifactCard): Promise<void> {
 
 const approvalVisible = ref(false)
 const approvalContent = ref('')
+const approvalLoadFailed = ref(false)
 const approvalNote = ref('')
 const deciding = ref(false)
 
@@ -1590,14 +1596,17 @@ async function openApproval(id: string): Promise<void> {
   store.approvalOpen.value = ap
   approvalNote.value = ap.note || ''
   approvalContent.value = ''
+  approvalLoadFailed.value = false
   approvalVisible.value = true
   const oid = ap.payload?.outlineId
   if (oid) {
     try {
       const res = await window.electronAPI.longwriting.getChapter(oid)
       approvalContent.value = res?.data?.content || ''
+      // 09-20 §7：读取成功但无正文（尚未生成或已移除）≠ 加载中——占位文案要区分
+      if (!res?.success || !res?.data?.content) approvalLoadFailed.value = true
     } catch {
-      approvalContent.value = '（正文读取失败，可去写作台查看）'
+      approvalLoadFailed.value = true
     }
   }
 }
