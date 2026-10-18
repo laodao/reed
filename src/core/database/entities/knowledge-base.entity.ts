@@ -49,14 +49,6 @@ export class KnowledgeBaseEntity {
   @Column({ name: 'rerank_config', type: 'text', nullable: true })
   rerankConfig!: string | null
 
-  /** 知识大脑配置 JSON（KbBrainConfig）；null = 大脑关闭（一切入口早退） */
-  @Column({ name: 'brain_config', type: 'text', nullable: true })
-  brainConfig!: string | null
-
-  /** 知识大脑运行态 JSON（KbBrainState：重要性账户/品味侧写/上次提炼时间） */
-  @Column({ name: 'brain_state', type: 'text', nullable: true })
-  brainState!: string | null
-
   /** 所属目录 id（kb_folders；null = 未分类） */
   @Column({ name: 'folder_id', type: 'varchar', nullable: true })
   folderId!: string | null

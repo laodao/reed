@@ -37,9 +37,6 @@ export class KbDocumentRepository extends BaseRepository<
       progress: e.progress,
       chunkCount: e.chunkCount,
       errorMessage: e.errorMessage || undefined,
-      brainStatus: (e.brainStatus as KbDocument['brainStatus']) ?? undefined,
-      brainProgress: e.brainProgress ?? undefined,
-      brainError: e.brainError || undefined,
       metadata: (e.metadata as DocumentMetadata | null) ?? undefined,
       source: (e.sourceType && e.sourceId)
         ? { type: e.sourceType as DocumentSource['type'], id: e.sourceId }
@@ -146,18 +143,6 @@ export class KbDocumentRepository extends BaseRepository<
    * 知识大脑消化状态（与 status/progress 并列，不混用——处理流水线语义不受影响）。
    * 不 assertUpdated：文档可能已被删除（消化是异步尾随任务，竞态下静默即可）。
    */
-  async updateBrainStatus(
-    id: string,
-    patch: { status: 'pending' | 'digesting' | 'digested' | 'failed' | 'skipped'; progress?: number; error?: string | null },
-  ): Promise<void> {
-    await this.scoped.update({ id } as any, {
-      brainStatus: patch.status,
-      // undefined 不更新该列（typeorm 会跳过 undefined 属性；显式 null 才清空）
-      ...(patch.progress !== undefined ? { brainProgress: patch.progress } : {}),
-      brainError: patch.error ?? null,
-      updatedAt: new Date(),
-    })
-  }
 
   async markCompleted(id: string, chunkCount: number): Promise<void> {
     const res = await this.scoped.update({ id } as any, {

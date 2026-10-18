@@ -28,18 +28,7 @@ import { KbChunkRepository } from '@core/database/repositories/kb-chunk.reposito
 import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
-import { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
-import { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
-import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
 import { GraphEdgeRepository } from '@core/database/repositories/graph-edge.repository'
-import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
-import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
-import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
-import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
-import { KbDimensionRepository } from '@core/database/repositories/kb-dimension.repository'
-import { KbConsumptionLogRepository } from '@core/database/repositories/kb-consumption-log.repository'
-import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
-import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
@@ -182,19 +171,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbVectors: KbVectorRepository | null = null
   public kbQaPairs: KbQaPairRepository | null = null
   // 知识大脑（接口侧为可选属性；类侧声明补齐——此前仅赋值未声明，TS2339 存量错）
-  public kbAtoms: KbAtomRepository | null = null
-  public kbBrainEntities: KbEntityRepository | null = null
-  public kbKnowledgeEdges: KbKnowledgeEdgeRepository | null = null
   /** 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md） */
   public graphEdges: GraphEdgeRepository | null = null
-  public kbNotes: KbNoteRepository | null = null
-  public kbDigestPasses: KbDigestPassRepository | null = null
-  public kbNoteReviews: KbNoteReviewRepository | null = null
-  public kbEvents: KbEventRepository | null = null
-  public kbDimensions: KbDimensionRepository | null = null
-  public kbConsumptionLogs: KbConsumptionLogRepository | null = null
-  public kbQaLogs: KbQaLogRepository | null = null
-  public kbAutomationLogs: KbAutomationLogRepository | null = null
   public appDefinitions: AppRepository | null = null
   public appSessions: AppSessionRepository | null = null
   public appSessionMessages: AppSessionMessageRepository | null = null
@@ -992,45 +970,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-chapters'
     )
     await createKbChapters(this.dataSource)
-    // 知识大脑：kb_atoms/kb_entities/kb_knowledge_edges/kb_notes/kb_digest_passes/kb_note_reviews（幂等双语种）
-    const { createKbBrainTables } = await import(
-      '@core/database/migrations/create-kb-brain-tables'
-    )
-    await createKbBrainTables(this.dataSource)
-    // 知识大脑 v2 P0：场面事件原料表（故事轨，幂等双语种）
-    const { createKbBrainEvents } = await import(
-      '@core/database/migrations/create-kb-brain-events'
-    )
-    await createKbBrainEvents(this.dataSource)
-    // 知识大脑 v2 P3：实体作用域列（品类库跨书归并）
-    const { addKbEntityScope } = await import(
-      '@core/database/migrations/add-kb-entity-scope'
-    )
-    await addKbEntityScope(this.dataSource)
-    // 知识大脑 v3：论断知识/证据角色列（书内事实降证据，不进知识供给）
-    const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
-    await addKbAtomRole(this.dataSource)
-    // 知识大脑 v3：提炼维度库
-    const { createKbBrainDimensions } = await import(
-      '@core/database/migrations/create-kb-brain-dimensions'
-    )
-    await createKbBrainDimensions(this.dataSource)
-    // 知识大脑 v3 M2：体系树/阶段表载荷（实体 attrs、边章节区间、卡 structure_stages）
-    const { addKbBrainV3Structures } = await import(
-      '@core/database/migrations/add-kb-brain-v3-structures'
-    )
-    await addKbBrainV3Structures(this.dataSource)
-    // 知识大脑 v3 M3：消费记账表
-    const { createKbConsumptionLog } = await import(
-      '@core/database/migrations/create-kb-consumption-log'
-    )
-    await createKbConsumptionLog(this.dataSource)
-    // 知识大脑 v2 P4：质检日志 + 自动化动作日志
-    const { createKbBrainP4Tables } = await import(
-      '@core/database/migrations/create-kb-brain-p4-tables'
-    )
-    await createKbBrainP4Tables(this.dataSource)
-    // 统一知识池：kb_inverted_index 去过期 FK（伪 chunkId atom:/qa:/note: 入池被旧外键拒绝——真机根因）
+    // 知识大脑：kb_atoms/kb_entities/kb_knowledge_edges/kb_notes/kb_digest_passes/kb_note_reviews（幂等双语种）    // 知识大脑 v2 P0：场面事件原料表（故事轨，幂等双语种）    // 知识大脑 v2 P3：实体作用域列（品类库跨书归并）    // 知识大脑 v3：论断知识/证据角色列（书内事实降证据，不进知识供给）    // 知识大脑 v3：提炼维度库    // 知识大脑 v3 M2：体系树/阶段表载荷（实体 attrs、边章节区间、卡 structure_stages）    // 知识大脑 v3 M3：消费记账表    // 知识大脑 v2 P4：质检日志 + 自动化动作日志    // 统一知识池：kb_inverted_index 去过期 FK（伪 chunkId atom:/qa:/note: 入池被旧外键拒绝——真机根因）
     const { fixKbInvertedIndexFk } = await import(
       '@core/database/migrations/fix-kb-inverted-index-fk'
     )
@@ -4684,18 +4624,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(this.dataSource)
-    this.kbAtoms = new KbAtomRepository(this.dataSource)
-    this.kbBrainEntities = new KbEntityRepository(this.dataSource)
-    this.kbKnowledgeEdges = new KbKnowledgeEdgeRepository(this.dataSource)
     this.graphEdges = new GraphEdgeRepository(this.dataSource)
-    this.kbNotes = new KbNoteRepository(this.dataSource)
-    this.kbDigestPasses = new KbDigestPassRepository(this.dataSource)
-    this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)
-    this.kbEvents = new KbEventRepository(this.dataSource)
-    this.kbDimensions = new KbDimensionRepository(this.dataSource)
-    this.kbConsumptionLogs = new KbConsumptionLogRepository(this.dataSource)
-    this.kbQaLogs = new KbQaLogRepository(this.dataSource)
-    this.kbAutomationLogs = new KbAutomationLogRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)
     this.appSessions = new AppSessionRepository(this.dataSource)
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)

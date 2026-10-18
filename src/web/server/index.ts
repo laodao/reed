@@ -559,45 +559,7 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-kb-chapters'
   )
   await createKbChapters(ds)
-  // 知识大脑 6 表（与 Electron 端同构，幂等双语种）
-  const { createKbBrainTables } = await import(
-    '@core/database/migrations/create-kb-brain-tables'
-  )
-  await createKbBrainTables(ds)
-  // 知识大脑 v2 P0：场面事件原料表（故事轨，与 Electron 端同构）
-  const { createKbBrainEvents } = await import(
-    '@core/database/migrations/create-kb-brain-events'
-  )
-  await createKbBrainEvents(ds)
-  // 知识大脑 v2 P3：实体作用域列（与 Electron 端同构）
-  const { addKbEntityScope } = await import(
-    '@core/database/migrations/add-kb-entity-scope'
-  )
-  await addKbEntityScope(ds)
-  // 知识大脑 v3：论断知识/证据角色列（与 Electron 端同构）
-  const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
-  await addKbAtomRole(ds)
-  // 知识大脑 v3：提炼维度库（与 Electron 端同构）
-  const { createKbBrainDimensions } = await import(
-    '@core/database/migrations/create-kb-brain-dimensions'
-  )
-  await createKbBrainDimensions(ds)
-  // 知识大脑 v3 M2：体系树/阶段表载荷（与 Electron 端同构）
-  const { addKbBrainV3Structures } = await import(
-    '@core/database/migrations/add-kb-brain-v3-structures'
-  )
-  await addKbBrainV3Structures(ds)
-  // 知识大脑 v3 M3：消费记账表（与 Electron 端同构）
-  const { createKbConsumptionLog } = await import(
-    '@core/database/migrations/create-kb-consumption-log'
-  )
-  await createKbConsumptionLog(ds)
-  // 知识大脑 v2 P4：质检日志 + 自动化动作日志（与 Electron 端同构）
-  const { createKbBrainP4Tables } = await import(
-    '@core/database/migrations/create-kb-brain-p4-tables'
-  )
-  await createKbBrainP4Tables(ds)
-  // 统一知识池：kb_inverted_index 去过期 FK（与 Electron 端同构）
+  // 知识大脑 6 表（与 Electron 端同构，幂等双语种）  // 知识大脑 v2 P0：场面事件原料表（故事轨，与 Electron 端同构）  // 知识大脑 v2 P3：实体作用域列（与 Electron 端同构）  // 知识大脑 v3：论断知识/证据角色列（与 Electron 端同构）  // 知识大脑 v3：提炼维度库（与 Electron 端同构）  // 知识大脑 v3 M2：体系树/阶段表载荷（与 Electron 端同构）  // 知识大脑 v3 M3：消费记账表（与 Electron 端同构）  // 知识大脑 v2 P4：质检日志 + 自动化动作日志（与 Electron 端同构）  // 统一知识池：kb_inverted_index 去过期 FK（与 Electron 端同构）
   const { fixKbInvertedIndexFk } = await import(
     '@core/database/migrations/fix-kb-inverted-index-fk'
   )

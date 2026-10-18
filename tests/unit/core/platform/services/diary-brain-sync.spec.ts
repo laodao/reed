@@ -152,16 +152,9 @@ describe('syncEntryNow（守卫链）', () => {
     const svc = new DiaryBrainSyncService()
     const result = await svc.syncEntryNow('entry-1')
     expect(result.synced).toBe(true)
-    // 命中已存在库 → 绝不创建，但补写提议制红线配置
+    // 命中已存在库 → 绝不创建（知识大脑已移除，无红线配置补写）
     expect(mockKbService.createKnowledgeBase).not.toHaveBeenCalled()
-    expect(mockKbService.updateKnowledgeBase).toHaveBeenCalledTimes(1)
-
-    const cfgArg = mockKbService.updateKnowledgeBase.mock.calls[0][1].brainConfig as string
-    const cfg = JSON.parse(cfgArg)
-    expect(cfg.enabled).toBe(true)
-    expect(cfg.digestion.enabled).toBe(true)
-    expect(cfg.autoApproveThreshold).toBe(1) // 提议制：阈值取上界，全部人批
-    expect(cfg.learning.enabled).toBe(false)
+    expect(mockKbService.updateKnowledgeBase).not.toHaveBeenCalled()
 
     expect(mockKbService.addDocument).toHaveBeenCalledWith('kb-diary', expect.objectContaining({
       type: 'text',
