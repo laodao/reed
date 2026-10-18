@@ -466,19 +466,21 @@ export class KbBookPassesService {
       includeCard: true,
     })) as BookChapter[]
     if (chapters.length === 0) return
-    const fingerprint = createHash('sha1')
-      .update(
-        chapters
-          .map((c) => c.contentHash || c.id)
-          .sort()
-          .join('|') + `|${contentType}`
-      )
-      .digest('hex')
     const entries: CardEntry[] = []
     for (const c of chapters) {
       const card = parseCard(c.brainCard)
       if (card) entries.push({ card, chapterNo: c.ordering, chapterId: c.id, title: c.title, volume: c.parentTitle ?? null })
     }
+    // 指纹含卡覆盖率：存量书卡片分轮补齐时，漏斗产物随覆盖率提升自动重汇总演进
+    //（否则首轮流水线在 0 卡时跑完，指纹不变 → 名册/概要永远停在降级产物）
+    const fingerprint = createHash('sha1')
+      .update(
+        chapters
+          .map((c) => c.contentHash || c.id)
+          .sort()
+          .join('|') + `|${contentType}|cards:${entries.length}/${chapters.length}`
+      )
+      .digest('hex')
     const docName = (await repos.docs.findById(documentId))?.name ?? '本书'
     for (const p of passesForProfile(contentType)) {
       const stats: Record<string, number> = { calls: 0 }
@@ -1324,14 +1326,14 @@ export class KbBookPassesService {
             includeCard: true,
           })) as BookChapter[]
           if (chapters.length === 0) continue
-          const fingerprint = createHash('sha1')
-            .update(chapters.map((c) => c.contentHash || c.id).sort().join('|') + `|${contentType}`)
-            .digest('hex')
           const entries: CardEntry[] = []
           for (const c of chapters) {
             const card = parseCard(c.brainCard)
             if (card) entries.push({ card, chapterNo: c.ordering, chapterId: c.id, title: c.title, volume: c.parentTitle ?? null })
           }
+          const fingerprint = createHash('sha1')
+            .update(chapters.map((c) => c.contentHash || c.id).sort().join('|') + `|${contentType}|cards:${entries.length}/${chapters.length}`)
+            .digest('hex')
           const docName = (await repos.docs.findById(documentId))?.name ?? '本书'
           const stats: Record<string, number> = { calls: 0 }
           const ctx: RunContext = { kbId, documentId, docName, contentType, chapters, entries, fingerprint, repos, stats }

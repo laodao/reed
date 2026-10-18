@@ -186,6 +186,10 @@ const KIND_LABELS: Record<string, string> = {
   'foreshadow-ledger': '伏笔台账',
   'book-summary': '全书综述',
   'reading-review': '终审复核',
+  'roster': '名册',
+  'character-dossier': '人物档案',
+  'setting-dossier': '设定档案',
+  'style-profile': '文风画像',
 }
 
 const TAG_TYPES: Record<string, string> = {
@@ -197,6 +201,10 @@ const TAG_TYPES: Record<string, string> = {
   'setting-pattern': 'info',
   'structure-map': 'primary',
   'character-arc': 'success',
+  'roster': 'warning',
+  'character-dossier': 'success',
+  'setting-dossier': 'primary',
+  'style-profile': 'info',
 }
 
 /* ---------- 世界体系树 ---------- */
@@ -365,6 +373,7 @@ interface DocCard {
   title: string
   bodyHtml: string
   stages: Stage[]
+  status?: string
 }
 
 /** 展示标题清洗：去下载站后缀噪音与扩展名（卡片标题可读性） */
@@ -381,8 +390,13 @@ const toCard = (n: NoteRow): DocCard => {
   return {
     id: n.id,
     type: n.type,
-    kindLabel: isSysTree ? '设定体系树' : KIND_LABELS[n.type] ?? n.type,
+    kindLabel: isSysTree
+      ? '设定体系树'
+      : (n as { status?: string }).status === 'proposed'
+        ? `待审·${KIND_LABELS[n.type] ?? n.type}`
+        : KIND_LABELS[n.type] ?? n.type,
     tagType: TAG_TYPES[n.type] ?? 'info',
+    status: (n as { status?: string }).status,
     title: cleanTitle(n.title),
     bodyHtml: humanizeDocRefs(renderMarkdown(n.body ?? '')),
     stages: parseStages(n.structureStages),
@@ -420,7 +434,20 @@ const methodType = ref<string>('all')
 const filteredMethods = computed<DocCard[]>(() =>
   methodType.value === 'all' ? methodCards.value : methodCards.value.filter((c) => c.type === methodType.value)
 )
-const ARCHIVE_TYPES = ['book-outline', 'setting-index', 'character-roster', 'foreshadow-ledger', 'book-summary', 'reading-review', 'reading-memory']
+const ARCHIVE_TYPES = [
+  'book-outline',
+  'setting-index',
+  'character-roster',
+  'foreshadow-ledger',
+  'book-summary',
+  'reading-review',
+  'reading-memory',
+  // v4 整书结构化漏斗成品（名册/档案/文风——待审箱人审通过后在此可见）
+  'roster',
+  'character-dossier',
+  'setting-dossier',
+  'style-profile',
+]
 const archiveCards = computed<DocCard[]>(() =>
   notes.value.filter((n) => ARCHIVE_TYPES.includes(n.type)).map(toCard)
 )
@@ -437,8 +464,10 @@ async function load(): Promise<void> {
   loading.value = true
   try {
     const api = (window as unknown as { electronAPI: { knowledgeBase: { brain: BrainClient } } }).electronAPI.knowledgeBase.brain
-    const [notesRes, graphRes, healthRes] = await Promise.all([
+    const [notesRes, proposedRes, graphRes, healthRes] = await Promise.all([
       api.listNotes({ kbId: props.kbId, status: 'published', page: 1, pageSize: 100 }),
+      // v4：待审卡一并展示（名册/档案等新产物先落待审——kindLabel 带「待审」前缀可辨）
+      api.listNotes({ kbId: props.kbId, status: 'proposed', page: 1, pageSize: 100 }).catch(() => null),
       api.graphData({ kbId: props.kbId }),
       api.healthCheck({ kbId: props.kbId }).catch(() => null),
     ])
@@ -449,7 +478,10 @@ async function load(): Promise<void> {
       }
     }
     if (notesRes.success && notesRes.data) {
-      notes.value = notesRes.data.rows
+      const published = notesRes.data.rows
+      const proposed = proposedRes?.success && proposedRes.data ? proposedRes.data.rows : []
+      const seenIds = new Set(published.map((n) => n.id))
+      notes.value = [...published, ...proposed.filter((n) => !seenIds.has(n.id))]
     }
     if (graphRes.success && graphRes.data) {
       const d = graphRes.data as { nodes: GraphNode[]; edges: GraphEdge[] }

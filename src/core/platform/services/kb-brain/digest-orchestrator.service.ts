@@ -181,6 +181,7 @@ export function isNonNarrativeChapter(title: string | null, parentTitle?: string
     /^人物(剧照|简介|评析|介绍|赏析)$/,
     /^主要(人物|门派|法宝|地点|势力)$/,
     /^(封面|扉页|目录|插图)$/,
+    /^(制作|出版)(说明|信息|页)?$/,
     /^cove(r)?$/i
   ]
   // 父标题只认明确的附录容器——封面类容器（如本书 epub 把全书章节都挂在 cove 下）
@@ -1112,7 +1113,8 @@ export class KbBrainDigestService {
     if (!cfg?.enabled || !cfg.digestion.enabled) return { processed: 0, cards: 0 }
     if (await this.costBreakerTripped(kbId, repos.passes, cfg.dailyCostLimit)) return { processed: 0, cards: 0 }
 
-    const batch = opts?.batch ?? 200
+    // 每轮批量可调（env：KB_CARD_BACKFILL_BATCH）——本地小模型/演示场景可调小加快出成果
+    const batch = opts?.batch ?? (Number(process.env.KB_CARD_BACKFILL_BATCH ?? '') || 200)
     const docs = (await repos.docs.findByKnowledgeBaseId(kbId)).filter(
       d => d.brainStatus === 'digested' || d.brainStatus === 'digesting'
     )
