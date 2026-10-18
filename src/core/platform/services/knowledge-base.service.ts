@@ -21,12 +21,9 @@ import {
   matchChapter,
   type ChapterLookup,
 } from '@core/platform/services/kb-chapter-lookup'
-import { parseBrainConfig } from './kb-brain/brain-config'
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
-import { BrainQueryService, type BrainQueryDeps } from './kb-brain/brain-query.service'
-import { defaultBrainLlm } from './kb-brain/llm'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { outboundFetch } from '@core/utils/net-fetch'
@@ -510,21 +507,6 @@ export class KnowledgeBaseService {
       await db.kbChunks.deleteByDocumentId(docId)
       // 章节表冗余存全文，必须随文档一起清理（否则删除后正文仍留在库里）
       if (db.kbChapters) await db.kbChapters.deleteByDocument(docId)
-      // 大脑产物级联（v2 P0 深审 B5）：论断/场面/台账随删，卡片剔引用；各阶段 fail-soft 不阻塞删文档
-      try {
-        const { cleanupBrainArtifactsForDocument } = await import('@core/platform/services/kb-brain/artifact-cleanup')
-        await cleanupBrainArtifactsForDocument(kbId, docId, {
-          atoms: db.kbAtoms ?? null,
-          events: db.kbEvents ?? null,
-          edges: db.kbKnowledgeEdges ?? null,
-          passes: db.kbDigestPasses ?? null,
-          notes: db.kbNotes ?? null,
-          vectors: db.kbVectors ?? null,
-        })
-      } catch (e) {
-        // 大脑清理失败不阻塞删文档主链路（残留可由后续代谢整固收敛）
-        console.warn('[KnowledgeBaseService] 大脑产物级联清理失败（不阻塞）:', e instanceof Error ? e.message : String(e))
-      }
       await db.kbDocuments.delete(docId)
 
       // 使用文档的 chunkCount 字段计算向量数（只有处理完成时才设置）
@@ -994,20 +976,12 @@ export class KnowledgeBaseService {
   private scheduleChapterSummaries(documentId: string): void {
     const db = getCoreDatabaseManager()
     if (!db.kbChapters) return
-    void (async () => {
-      try {
-        const doc = db.kbDocuments ? await db.kbDocuments.findById(documentId) : null
-        if (doc) {
-          const kb = db.knowledgeBases ? await db.knowledgeBases.findById(doc.knowledgeBaseId) : null
-          const cfg = kb?.brainConfig ? parseBrainConfig(kb.brainConfig) : null
-          if (cfg?.enabled && cfg.digestion.enabled) return
-        }
-        const service = new KbChapterSummaryService({ repo: db.kbChapters! })
-        service.scheduleDocumentSummaries(documentId)
-      } catch (e: unknown) {
-        console.warn(`[KB] 章节摘要调度失败（不影响主流程）: ${e instanceof Error ? e.message : String(e)}`)
-      }
-    })()
+    try {
+      const service = new KbChapterSummaryService({ repo: db.kbChapters })
+      service.scheduleDocumentSummaries(documentId)
+    } catch (e: unknown) {
+      console.warn(`[KB] 章节摘要调度失败（不影响主流程）: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   /**
@@ -1274,28 +1248,6 @@ export class KnowledgeBaseService {
   // ==================== 检索 ====================
 
   async search(req: SearchRequest): Promise<{ success: boolean; data?: SearchResult[]; error?: string }> {
-    // 知识大脑（详细设计 §5.1）：include 含 atom/note → 统一池检索；
-    // 缺省/纯 chunk → 走下方存量路径（逐字节旧行为，D4 门线）
-    const include = req.include?.length ? req.include : (['chunk'] as Array<'chunk' | 'atom' | 'note'>)
-    if (include.some((x) => x !== 'chunk')) {
-      const brain = getBrainQueryService(this)
-      if (brain) {
-        return brain.search({
-          knowledgeBaseId: req.knowledgeBaseId,
-          query: req.query,
-          topK: req.topK,
-          include,
-          lensNoteId: req.lensNoteId,
-          embeddingConfig: await this.resolveKbEmbeddingConfig(req.knowledgeBaseId),
-          signal: req.signal,
-          documentIds: req.documentIds,
-          threshold: req.threshold,
-          intent: req.intent ?? detectSynthesizeIntent(req.query),
-          cragEnabled: await this.resolveKbCragEnabled(req.knowledgeBaseId),
-        })
-      }
-      // 旧库未装配大脑仓储 → fail-soft 降级存量路径（等价 include=['chunk']）
-    }
     try {
       const db = getCoreDatabaseManager()
       if (!db.kbChunks || !db.kbDocuments || !db.kbVectors || !db.knowledgeBases) {
@@ -1464,26 +1416,6 @@ export class KnowledgeBaseService {
    * D3 BM25 关键词打分：返回 chunkId -> 分数（未归一）。
    * 依赖倒排索引（文档入库时 buildIndex 写入）；索引缺失/无命中返回空 Map（调用方降级）。
    */
-  /** 读 KB 的 CRAG 开关（brain 查询纠错入参） */
-  private async resolveKbCragEnabled(kbId: string): Promise<boolean> {
-    const db = getCoreDatabaseManager()
-    const kb = await db.knowledgeBases?.findById(kbId)
-    if (!kb?.brainConfig) return false
-    try {
-      const { parseBrainConfig } = await import('./kb-brain/brain-config')
-      return parseBrainConfig(kb.brainConfig)?.crag.enabled ?? false
-    } catch {
-      return false
-    }
-  }
-
-  /** 读 KB 的 embedding 配置（brain 查询的嵌入入参） */
-  private async resolveKbEmbeddingConfig(kbId: string): Promise<string | null> {
-    const db = getCoreDatabaseManager()
-    const kb = await db.knowledgeBases?.findById(kbId)
-    return kb?.embeddingConfig ?? null
-  }
-
   private async bm25Scores(knowledgeBaseId: string, query: string): Promise<Map<string, number>> {
     const db = getCoreDatabaseManager()
     if (!db.kbInvertedIndex) return new Map()
@@ -2273,48 +2205,4 @@ export class KnowledgeBaseService {
       return { success: false, error: e.message }
     }
   }
-}
-
-/* ==================== 知识大脑统一检索池装配（T10） ==================== */
-
-/** 综合型查询轻判（§8.1 路由延伸）：命中比较/方法论类词 → brain 池 chunk 降权 */
-function detectSynthesizeIntent(query: string): 'lookup' | 'synthesize' {
-  return /比较|异同|不同|对比|方法论|套路|规律|总结|归纳|流派|风格|共性|分歧|怎么样|如何写|思路/.test(query)
-    ? 'synthesize'
-    : 'lookup'
-}
-
-let brainQuerySingleton: BrainQueryService | null = null
-
-/** brain 模式检索服务（懒装配；旧库仓储缺失返回 null，调用方降级存量路径） */
-function getBrainQueryService(kbService: KnowledgeBaseService): BrainQueryService | null {
-  const db = getCoreDatabaseManager()
-  if (!db.kbAtoms || !db.kbNotes || !db.kbChunks || !db.kbDocuments) return null
-  // F14 防陈旧闭包：deps 内每次现取 manager（单例只缓存服务对象，不缓存 db 引用）
-  if (brainQuerySingleton) return brainQuerySingleton
-  const inv = (): typeof db.kbInvertedIndex => getCoreDatabaseManager().kbInvertedIndex
-  const deps: BrainQueryDeps = {
-    // 失败抛错（含真实原因），由 BrainQueryService 捕获后降级为纯词法召回并留痕
-    embed: (texts, kb) => kbService.getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
-    searchSimilar: (kbId, vector, topK) => {
-      const vectors = getCoreDatabaseManager().kbVectors
-      if (!vectors) return Promise.resolve([])
-      return vectors.searchSimilar(kbId, vector, topK)
-    },
-    inverted: {
-      findByTerms: (kbId, terms) => inv()?.findByTerms(kbId, terms) ?? Promise.resolve(new Map()),
-      getDocumentFrequencies: (kbId, opts) => inv()?.getDocumentFrequencies(kbId, opts) ?? Promise.resolve(new Map()),
-      getChunkCount: (kbId, opts) => inv()?.getChunkCount(kbId, opts) ?? Promise.resolve(0),
-      getAverageChunkLength: (kbId, opts) => inv()?.getAverageChunkLength(kbId, opts) ?? Promise.resolve(0),
-    },
-    atoms: db.kbAtoms,
-    notes: db.kbNotes,
-    chunks: db.kbChunks,
-    docs: db.kbDocuments,
-    entities: db.kbBrainEntities ?? undefined,
-    edges: db.kbKnowledgeEdges ?? undefined,
-    cragLlm: defaultBrainLlm('kb-brain-adjudicate'),
-  }
-  brainQuerySingleton = new BrainQueryService(deps)
-  return brainQuerySingleton
 }

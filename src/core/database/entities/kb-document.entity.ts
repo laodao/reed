@@ -57,16 +57,7 @@ export class KbDocumentEntity {
   sourceId!: string | null
 
   /** 知识大脑消化状态：pending|digesting|digested|failed|skipped（与 status/progress 并列不混用） */
-  @Column({ name: 'brain_status', type: 'varchar', nullable: true })
-  brainStatus!: string | null
-
   /** 消化进度 0-100 */
-  @Column({ name: 'brain_progress', type: 'integer', nullable: true })
-  brainProgress!: number | null
-
-  @Column({ name: 'brain_error', type: 'text', nullable: true })
-  brainError!: string | null
-
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

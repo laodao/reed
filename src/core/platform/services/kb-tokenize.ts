@@ -3,7 +3,7 @@
  * @module platform/services/kb-tokenize
  *
  * 建索引与查询必须同源（同一套分词与停用词表），知识大脑的论断入池
- * （kb_brain/digest-orchestrator）也复用此模块对 statement 建倒排行。
+ * （倒排行仅供 chunk 检索使用。）
  */
 import nodejieba from 'nodejieba'
 

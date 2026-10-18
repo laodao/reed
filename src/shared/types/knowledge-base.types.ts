@@ -46,10 +46,6 @@ export interface KnowledgeBase {
   embeddingConfig?: string
   /** D2 重排序配置 JSON 字符串（{ providerConfigId, modelId }）；null/空 = 未启用 */
   rerankConfig?: string | null
-  /** 知识大脑配置 JSON（KbBrainConfig）；null/空 = 大脑关闭 */
-  brainConfig?: string | null
-  /** 知识大脑运行态 JSON（KbBrainState） */
-  brainState?: string | null
   /** 所属目录 id（kb_folders；null = 未分类） */
   folderId?: string | null
   /** 切分策略 */
@@ -96,8 +92,6 @@ export interface UpdateKnowledgeBaseRequest {
   description?: string
   /** D2 重排序配置 JSON（null = 关闭 rerank） */
   rerankConfig?: string | null
-  /** 知识大脑配置 JSON（null = 关闭大脑）；写前须过 stringifyBrainConfig 校验 */
-  brainConfig?: string | null
   /** 所属目录 id（null = 移到未分类） */
   folderId?: string | null
 }
@@ -163,10 +157,7 @@ export interface KbDocument {
   /** 错误信息 */
   errorMessage?: string
   /** 知识大脑消化状态（pending|digesting|digested|failed|skipped；undefined=未开始） */
-  brainStatus?: 'pending' | 'digesting' | 'digested' | 'failed' | 'skipped'
   /** 消化进度 0-100 */
-  brainProgress?: number
-  brainError?: string
   /** 元数据（JSON） */
   metadata?: DocumentMetadata
   /** 文档来源（DTO 由 sourceType/sourceId 还原） */
@@ -354,7 +345,7 @@ export interface SearchRequest {
   autoRoute?: boolean
   /**
    * 知识大脑（详细设计 §5.1）：进池的知识层。缺省/['chunk'] = 现行为零变化；
-   * 含 'atom'/'note' 时走 BrainQueryService（论断/卡片与原文统一池检索）。
+   * 'atom'/'note' 为历史大脑检索选项（知识大脑已移除，现恒走 chunk 检索）。
    */
   include?: Array<'chunk' | 'atom' | 'note'>
   /** 视角过滤："取面不取书"——只返回该视角下的观感论断 */

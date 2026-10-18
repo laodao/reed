@@ -1,28 +1,21 @@
 /**
- * 日记消化同步服务（spec 2026-09-24 日记增强 §6.1 P2）
+ * 日记 → 知识库同步服务（spec 2026-09-24 日记增强 §6.1 P2；知识大脑已移除，
+ * 本服务保留「日记条目同步为知识库文档」的 RAG 输入面）
  * @module platform/services/diary-brain-sync.service
- * @description 日记 → 知识大脑的输入面：
- *   opt-in 目录的条目自动注册为「日记」知识库文档（addDocument 幂等 upsert），
- *   触发既有 processDocument → kb:document-completed → 消化管线 → human 论断进提议箱。
+ * @description opt-in 目录的条目自动注册为「日记」知识库文档（addDocument 幂等
+ *   upsert），触发既有 processDocument 文档管线（切片/向量/摘要）。
  *
  * 红线落地：
  *   - 隐私 opt-in：目录级 brain_opt_in 默认关；frontmatter `brain: false` 条目级排除
- *   - 提议制：日记库 autoApproveThreshold 置为不可达（1.01），全部论断进提议箱人批
  *   - 成本适配：正文 <300 字跳过；防抖 5 分钟（连续自动保存只同步最后一次）；
  *     内容未变的条目跳过（会话内记忆，重启后首次保存会幂等重跑一次管线）
  *
- * 已知边界（有意为之，v1）：「日记」库 embedding 留空（BM25 + 论断层先跑），
- * 用户可随时在知识库设置里补配 embedding 获得语义召回；请勿重命名「日记」库。
+ * 已知边界：请勿重命名「日记」库。
  */
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { DiaryService } from '@core/platform/services/diary.service'
-import {
-  defaultBrainConfig,
-  normalizeBrainConfig,
-  stringifyBrainConfig,
-} from '@core/platform/services/kb-brain/brain-config'
 import type { KnowledgeBase } from '@shared/types/knowledge-base.types'
 import type { DiaryEntry, DiaryIpcResponse } from '@shared/types/diary.types'
 
@@ -33,11 +26,6 @@ export const DIARY_KB_MARKER = 'diary-brain-sync'
 export const MIN_SYNC_CONTENT_CHARS = 300
 /** 自动保存防抖：距最后一次编辑 5 分钟才同步 */
 export const SYNC_DEBOUNCE_MS = 5 * 60 * 1000
-/**
- * 提议制闸门：ajv 限 ≤1，取上界 1 = 相似度不可能达到 → 全部论断进提议箱人批
- */
-const PROPOSE_ONLY_THRESHOLD = 1
-
 export class DiaryBrainSyncService {
   private kbService = new KnowledgeBaseService()
   private memoizedKbId: string | null = null
@@ -59,7 +47,6 @@ export class DiaryBrainSyncService {
       if (this.memoizedKbId) {
         const cached = await db.knowledgeBases.findById(this.memoizedKbId)
         if (cached) {
-          this.ensureDiaryBrainConfig(cached)
           return cached
         }
         this.memoizedKbId = null
@@ -71,8 +58,6 @@ export class DiaryBrainSyncService {
       )
       if (!found) return null
       this.memoizedKbId = found.id
-      // 命中即校验/补写红线 brainConfig（防用户自建同名库绕过提议制，见评审 H4）
-      await this.ensureDiaryBrainConfig(found)
       return found
     } catch (error) {
       console.warn('[DiaryBrainSync] findDiaryKnowledgeBase 失败:', error)
@@ -90,43 +75,6 @@ export class DiaryBrainSyncService {
     if (!kb) return { exists: false, hasEmbedding: false }
     const cfg = kb.embeddingConfig ? safeParseEmbedding(kb.embeddingConfig) : null
     return { exists: true, hasEmbedding: !!cfg?.modelId && (cfg.provider === 'local' || !!cfg.providerConfigId), kbId: kb.id }
-  }
-
-  /** 提议制 brainConfig：消化开、阈值取上界（全部人批）、学习/蒸馏关 */
-  private async applyDiaryBrainConfig(kbId: string): Promise<void> {
-    const config = normalizeBrainConfig(defaultBrainConfig(true))
-    config.digestion.enabled = true
-    config.autoApproveThreshold = PROPOSE_ONLY_THRESHOLD
-    config.learning.enabled = false
-    config.distillation.enabled = false
-    await this.kbService.updateKnowledgeBase(kbId, {
-      brainConfig: stringifyBrainConfig(config),
-    })
-  }
-
-  /** 命中已有库时校验红线配置：非提议制/学习误开则纠正（幂等，改错不告知） */
-  private async ensureDiaryBrainConfig(kb: KnowledgeBase): Promise<void> {
-    try {
-      if (!kb.brainConfig) {
-        await this.applyDiaryBrainConfig(kb.id)
-        return
-      }
-      const cfg = safeParseBrain(kb.brainConfig)
-      if (!cfg) {
-        await this.applyDiaryBrainConfig(kb.id)
-        return
-      }
-      if (
-        cfg.autoApproveThreshold !== PROPOSE_ONLY_THRESHOLD ||
-        cfg.learning.enabled ||
-        cfg.distillation.enabled ||
-        !cfg.digestion.enabled
-      ) {
-        await this.applyDiaryBrainConfig(kb.id)
-      }
-    } catch (error) {
-      console.warn('[DiaryBrainSync] ensureDiaryBrainConfig 失败:', error)
-    }
   }
 
   /**
@@ -297,14 +245,6 @@ export class DiaryBrainSyncService {
 function safeParseEmbedding(raw: string): { modelId?: string; provider?: string; providerConfigId?: string } | null {
   try {
     return JSON.parse(raw)
-  } catch {
-    return null
-  }
-}
-
-function safeParseBrain(raw: string): ReturnType<typeof normalizeBrainConfig> | null {
-  try {
-    return normalizeBrainConfig(JSON.parse(raw) as never)
   } catch {
     return null
   }

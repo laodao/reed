@@ -29,9 +29,7 @@ import {
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
 import type { ChatOptions } from '@core/platform/providers/llm/base-provider'
-import { callAIStreamWithBrain, type BrainGenerationDeps } from './longwriting/brain-generation'
 import { parseJsonPayload, extractArrayField } from './longwriting/json-payload'
-import type { ProviderAdapter } from '@core/platform/agent-runtime/provider/provider-adapter'
 import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
@@ -500,27 +498,7 @@ export class LongWritingAIService {
     return fullContent
   }
 
-  // ==================== 大脑工具位生成（拉取式，见 brain-generation） ====================
-
-  /** ProviderAdapter 惰性单例（与工作流 agent 同源模型解析；动态 import 延迟绑定） */
-  private brainAdapterLoader: Promise<ProviderAdapter> | null = null
-
-  /** 大脑工具位生成依赖：回退=callAIStream 原链路；事件走同一 emitter 通道 */
-  private getBrainGenerationDeps(): BrainGenerationDeps {
-    return {
-      resolveModel: async (opts) => {
-        this.brainAdapterLoader ??= import('@core/platform/agent-runtime/provider/provider-adapter').then(
-          (m) => new m.ProviderAdapter(),
-        )
-        return (await this.brainAdapterLoader).resolveModel(opts)
-      },
-      fallback: (eventId, prompt, systemPrompt, maxTokens, providerConfigId, modelId) =>
-        this.callAIStream(eventId, prompt, systemPrompt, maxTokens, providerConfigId, modelId),
-      emit: (eventId, ev) => getEventEmitter().emit(`longwriting:generate:${eventId}`, ev),
-    }
-  }
-
-  /** 章法创作调用（设计卡/正文）统一入口：模型可自主检索大脑，失败回退原链路 */
+  /** 章法创作调用统一入口（原「大脑工具位」已随知识大脑移除；保留签名，调用点不动） */
   private async generateWithBrainTool(
     eventId: string,
     prompt: string,
@@ -532,16 +510,7 @@ export class LongWritingAIService {
     const controller = new AbortController()
     this.abortControllers.set(eventId, controller)
     try {
-      return await callAIStreamWithBrain(
-        eventId,
-        prompt,
-        systemPrompt,
-        maxTokens,
-        providerConfigId,
-        modelId,
-        this.getBrainGenerationDeps(),
-        controller.signal
-      )
+      return await this.callAIStream(eventId, prompt, systemPrompt, maxTokens, providerConfigId, modelId)
     } finally {
       this.abortControllers.delete(eventId)
     }

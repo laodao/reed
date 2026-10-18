@@ -29,9 +29,6 @@ export interface KbChapterRecord {
   summary: string | null
   summaryStatus: ChapterSummaryStatus
   summaryError: string | null
-  /** 章级结构化阅读卡 JSON（v4；默认不随 findByDocument 返回，见 FindChaptersOptions） */
-  brainCard: string | null
-  brainCardHash: string | null
   createdAt: Date
   updatedAt: Date | null
 }
@@ -73,12 +70,6 @@ export interface FindChaptersOptions {
    * 注入、章节树、进度统计、章序判定）只需要元信息，不应为它们付出这个代价。
    */
   includeContent?: boolean
-  /**
-   * 是否返回阅读卡 brainCard（v4）。
-   * 默认 false——卡 JSON 每章 2-4KB，千章书全量 2-4MB，与 content 同量级；
-   * 只有书级漏斗消费方（名册聚合/编年段/覆盖记账）显式 opt-in。
-   */
-  includeCard?: boolean
   /** 分页：每页条数（不传=不分页） */
   limit?: number
   /** 分页：偏移量（不传=0） */
@@ -132,8 +123,6 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
       summary: e.summary ?? null,
       summaryStatus: e.summaryStatus,
       summaryError: e.summaryError ?? null,
-      brainCard: e.brainCard ?? null,
-      brainCardHash: e.brainCardHash ?? null,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt ?? null,
     }
@@ -146,8 +135,7 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
    * 避免每次重处理都重新调 LLM 生成全部摘要；hash 变化/新增章节重置 pending。
    */
   async replaceByDocument(documentId: string, inputs: KbChapterInput[]): Promise<number> {
-    // 复用基线：旧章节中已完成摘要的 contentHash → summary；
-    // v4：阅读卡同 hash 复用（卡只随章内容变化重做，重处理不重产）
+    // 复用基线：旧章节中已完成摘要的 contentHash → summary
     const previous = await this.scoped.find({
       where: { documentId } as FindOptionsWhere<KbChapterEntity>,
     })
@@ -155,12 +143,6 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     for (const row of previous) {
       if (row.summaryStatus === 'done' && row.contentHash && row.summary) {
         reusable.set(row.contentHash, row.summary)
-      }
-    }
-    const reusableCards = new Map<string, { card: string; hash: string }>()
-    for (const row of previous) {
-      if (row.brainCard && row.brainCardHash && row.contentHash) {
-        reusableCards.set(row.contentHash, { card: row.brainCard, hash: row.brainCardHash })
       }
     }
 
@@ -185,9 +167,6 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
       e.summary = reused ?? null
       e.summaryStatus = reused ? 'done' : 'pending'
       e.summaryError = null
-      const reusedCard = inp.contentHash ? reusableCards.get(inp.contentHash) : undefined
-      e.brainCard = reusedCard?.card ?? null
-      e.brainCardHash = reusedCard?.hash ?? null
       e.createdAt = now
       e.updatedAt = now
       return e
@@ -248,10 +227,8 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     opts: FindChaptersOptions,
   ): Promise<KbChapterRecord[]> {
     const columns = opts.includeContent
-      ? undefined // 全列（含 content/brain_card）
-      : opts.includeCard
-        ? [...KbChapterRepository.META_COLUMNS, 'brainCard', 'brainCardHash']
-        : [...KbChapterRepository.META_COLUMNS]
+      ? undefined // 全列（含 content）
+      : [...KbChapterRepository.META_COLUMNS]
     const rows = await this.scoped.find({
       where: { documentId } as FindOptionsWhere<KbChapterEntity>,
       order: { ordering: 'ASC' } as never,
@@ -301,19 +278,6 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     return row ? this.toDto(row) : null
   }
 
-  /**
-   * 章级阅读卡写入（替换式；card=null 清卡——内容重排后旧卡失效的兜底入口）。
-   * 卡的有效性由章级台账（passType='card'）管理，此处只存内容。
-   */
-  async updateBrainCard(
-    id: string,
-    patch: { card: string | null; hash: string | null },
-  ): Promise<void> {
-    await this.scoped.update(
-      { id } as FindOptionsWhere<KbChapterEntity>,
-      { brainCard: patch.card, brainCardHash: patch.hash, updatedAt: new Date() } as never,
-    )
-  }
 
   /** 待生成摘要的章节（文档维度扫描用）。默认不返回正文，摘要调度按需 opt-in。 */
   async findByStatuses(

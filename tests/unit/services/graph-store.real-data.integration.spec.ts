@@ -36,12 +36,11 @@ async function openRealDs(path: string): Promise<DataSource> {
   const { LwGraphEdgeEntity } = await import('@core/database/entities/lw-graph-edge.entity')
   const { LwIpEdgeEntity } = await import('@core/database/entities/lw-ip-edge.entity')
   const { LwWorldEdgeEntity } = await import('@core/database/entities/lw-world-edge.entity')
-  const { KbKnowledgeEdgeEntity } = await import('@core/database/entities/kb-brain/kb-knowledge-edge.entity')
   const { DlRelationEntity } = await import('@core/database/entities/domain-learning/dl-relation.entity')
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: path,
-    entities: [GraphEdgeEntity, LwGraphEdgeEntity, LwIpEdgeEntity, LwWorldEdgeEntity, KbKnowledgeEdgeEntity, DlRelationEntity],
+    entities: [GraphEdgeEntity, LwGraphEdgeEntity, LwIpEdgeEntity, LwWorldEdgeEntity, DlRelationEntity],
     synchronize: false,
   })
   await ds.initialize()
@@ -408,75 +407,6 @@ describe.skipIf(!MAIN_DB)('统一图存储·facade 切换 parity（主库副本�
       expect(await dlRepo.listByProject('dl-parity-p')).toHaveLength(0)
     })
 
-    await ds.destroy()
-  }, 120_000)
-
-  it('kb 仓储：快照/邻域/五元组幂等 parity', async () => {
-    const ds = await openRealDs(MAIN_DB as string)
-    const { KbKnowledgeEdgeRepository } = await import('@core/database/repositories/kb-knowledge-edge.repository')
-    const uidRow = (await ds.query(`SELECT user_id FROM graph_edges LIMIT 1`))[0]
-    await runWithUserAsync(String(uidRow?.user_id ?? ''), async () => {
-      const kbId = String((await ds.query(`SELECT DISTINCT knowledge_base_id FROM kb_knowledge_edges LIMIT 1`))[0].knowledge_base_id)
-      const repo = new KbKnowledgeEdgeRepository(ds)
-      const graph = GraphNames.kb(kbId)
-
-      // graphSnapshot parity：nodes 数 == 老表 distinct 端点，edges == 老表行数
-      const snap = await repo.graphSnapshot(kbId)
-      const oldEdgeCount = Number((await ds.query(`SELECT COUNT(*) n FROM kb_knowledge_edges WHERE knowledge_base_id = ?`, [kbId]))[0].n)
-      const oldNodeCount = Number(
-        (await ds.query(
-          `SELECT COUNT(*) n FROM (
-             SELECT source_id FROM graph_edges WHERE graph_name = ?
-             UNION SELECT target_id FROM graph_edges WHERE graph_name = ?
-           )`,
-          [graph, graph],
-        ))[0].n,
-      )
-      expect(snap.edges).toHaveLength(oldEdgeCount)
-      expect(snap.nodes).toHaveLength(oldNodeCount)
-      // 权重 = confidence
-      const sample = (await ds.query(`SELECT source_id, target_id, confidence FROM graph_edges WHERE graph_name = ? LIMIT 1`, [graph]))[0]
-      const mapped = snap.edges.find(([s]) => s === String(sample.source_id) && snap.edges.length > 0)
-      expect(mapped).toBeTruthy()
-
-      // neighborsOf parity：随机 5 个端点
-      const someIds = ((await ds.query(
-        `SELECT source_id sid FROM graph_edges WHERE graph_name = ? LIMIT 5`,
-        [graph],
-      )) as Array<{ sid: string }>).map((r) => r.sid)
-      const viaFacade = (await repo.neighborsOf(kbId, someIds)).map((e) => e.id).sort()
-      const viaSql = ((await ds.query(
-        `SELECT id FROM graph_edges WHERE graph_name = ? AND (source_id IN (${someIds.map(() => '?').join(',')}) OR target_id IN (${someIds.map(() => '?').join(',')}))`,
-        [graph, ...someIds, ...someIds],
-      )) as Array<{ id: string }>).map((r) => r.id).sort()
-      expect(viaFacade).toEqual(viaSql)
-
-      // createBatch 五元组幂等：把库里已有边原样重放 → 全部 deduped
-      const replay = ((await ds.query(
-        `SELECT source_kind, source_id, relation, target_kind, target_id, evidence, confidence, origin FROM graph_edges WHERE graph_name = ? LIMIT 8`,
-        [graph],
-      )) as Array<Record<string, unknown>>).map((r) => ({
-        sourceKind: String(r.source_kind) as never,
-        sourceId: String(r.source_id),
-        relation: String(r.relation) as never,
-        targetKind: String(r.target_kind) as never,
-        targetId: String(r.target_id),
-        evidence: String(r.evidence ?? ''),
-        confidence: Number(r.confidence ?? 0.7),
-      }))
-      const r1 = await repo.createBatch(kbId, replay)
-      expect(r1.created).toBe(0)
-      expect(r1.deduped).toBe(replay.length)
-
-      // listEntityEdges + 实体合并 redirect 语义
-      const entEdgesBefore = Number(
-        (await ds.query(
-          `SELECT COUNT(*) n FROM graph_edges WHERE graph_name = ? AND source_kind='entity' AND target_kind='entity'`,
-          [graph],
-        ))[0].n,
-      )
-      expect((await repo.listEntityEdges(kbId))).toHaveLength(entEdgesBefore)
-    })
     await ds.destroy()
   }, 120_000)
 })

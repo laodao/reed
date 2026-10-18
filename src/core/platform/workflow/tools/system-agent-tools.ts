@@ -69,7 +69,6 @@ const systemToolsParams = (): import('@shared/types/workflow-params.types').Work
 
 /** 直连白名单（registry 既有工具，聊天宿主直接装配；写/审批工具一律不进） */
 export const SYSTEM_AGENT_TOOL_NAMES = [
-  'kb_brain_query',
   'discover_capabilities',
   'run_workflow',
   'get_workflow_run',
@@ -516,15 +515,6 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
 export function registerSystemAgentTools(deps: SystemAgentToolsDeps): void {
   for (const def of buildSystemAgentToolDefs(deps)) {
     deps.registry.register(def, { source: 'builtin' })
-  }
-  // T17：kb_brain_query（知识大脑检索）——registry 就位后注册（pack activate 时 harness
-  // 尚未装配，盲审 P1-2：注册点必须在组合根）。白名单已含裸名 → chat 宿主自动装配。
-  try {
-    import('@core/platform/services/kb-brain/kb-brain-tools')
-      .then(({ registerKbBrainTools }) => registerKbBrainTools(deps.registry))
-      .catch((e) => logger.warn(`[system-agent] kb_brain_query 注册失败: ${e instanceof Error ? e.message : String(e)}`))
-  } catch (e) {
-    logger.warn(`[system-agent] kb_brain_query 注册失败: ${e instanceof Error ? e.message : String(e)}`)
   }
   logger.info(`[system-agent] 系统工具集已注册（${SYSTEM_AGENT_TOOL_NAMES.length} 个）`)
 }

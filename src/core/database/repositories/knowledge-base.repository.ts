@@ -38,8 +38,6 @@ export class KnowledgeBaseRepository extends BaseRepository<
       embeddingDimension: e.embeddingDimension,
       embeddingConfig: e.embeddingConfig || undefined,
       rerankConfig: e.rerankConfig || undefined,
-      brainConfig: e.brainConfig || undefined,
-      brainState: e.brainState || undefined,
       folderId: e.folderId ?? null,
       documentCount: e.documentCount,
       vectorCount: e.vectorCount,
@@ -107,12 +105,7 @@ export class KnowledgeBaseRepository extends BaseRepository<
     if (request.rerankConfig !== undefined) {
       existing.rerankConfig = request.rerankConfig ?? null
       changed = true
-    }
-    if (request.brainConfig !== undefined) {
-      existing.brainConfig = request.brainConfig ?? null
-      changed = true
-    }
-    if (request.folderId !== undefined) {
+    }    if (request.folderId !== undefined) {
       existing.folderId = request.folderId ?? null
       changed = true
     }
@@ -127,11 +120,6 @@ export class KnowledgeBaseRepository extends BaseRepository<
   async delete(id: string): Promise<boolean> {
     const affected = await this.scoped.delete({ id } as any)
     return affected > 0
-  }
-
-  /** 知识大脑运行态读写（重要性账户/品味侧写；损坏容错在 parseBrainState） */
-  async updateBrainState(id: string, brainState: string): Promise<void> {
-    await this.scoped.update({ id } as any, { brainState, updatedAt: new Date() })
   }
 
   async updateStats(id: string, stats: KnowledgeBaseStats): Promise<void> {

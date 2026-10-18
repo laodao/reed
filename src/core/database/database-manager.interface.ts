@@ -35,19 +35,7 @@ import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index
 import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KbQaPairRepository } from './repositories/kb-qa-pair.repository'
 import type { KbFolderRepository } from './repositories/kb-folder.repository'
-import type { KbAtomRepository } from './repositories/kb-atom.repository'
-import type { KbEntityRepository } from './repositories/kb-entity.repository'
-import type { KbKnowledgeEdgeRepository } from './repositories/kb-knowledge-edge.repository'
 import type { GraphEdgeRepository } from './repositories/graph-edge.repository'
-import type { KbNoteRepository } from './repositories/kb-note.repository'
-import type { KbDigestPassRepository } from './repositories/kb-digest-pass.repository'
-import type { KbNoteReviewRepository } from './repositories/kb-note-review.repository'
-import type { KbEventRepository } from './repositories/kb-event.repository'
-import type { KbDimensionRepository } from './repositories/kb-dimension.repository'
-import type { KbBrainArtifactRepository } from './repositories/kb-brain-artifact.repository'
-import type { KbConsumptionLogRepository } from './repositories/kb-consumption-log.repository'
-import type { KbQaLogRepository } from './repositories/kb-qa-log.repository'
-import type { KbAutomationLogRepository } from './repositories/kb-automation-log.repository'
 import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
 import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
@@ -183,23 +171,11 @@ export interface ICoreDatabaseManager {
   /** 知识库目录（分组/分类，如 it 行业、能源行业） */
   kbFolders: KbFolderRepository | null
   /** 知识大脑：论断/实体/语义边/卡片/消化台账/复习日志（旧库未装配时为 null，渐进启用） */
-  kbAtoms?: KbAtomRepository | null
-  kbBrainEntities?: KbEntityRepository | null
-  kbKnowledgeEdges?: KbKnowledgeEdgeRepository | null
   /** 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md）：graph_edges 单表 + graph_name 区分各业务图 */
   graphEdges?: GraphEdgeRepository | null
-  kbNotes?: KbNoteRepository | null
-  kbDigestPasses?: KbDigestPassRepository | null
-  kbNoteReviews?: KbNoteReviewRepository | null
   /** 知识大脑 v2：场面事件原料（故事轨；旧库未装配时为 null） */
-  kbEvents?: KbEventRepository | null
-  kbDimensions?: KbDimensionRepository | null
   /** 知识大脑 v4：书级过程工件（编年段/卷/名册快照/覆盖账本/审校报告） */
-  kbBrainArtifacts?: KbBrainArtifactRepository | null
-  kbConsumptionLogs?: KbConsumptionLogRepository | null
   /** 知识大脑 v2 P4：质检日志与自动化动作日志（撤销依据） */
-  kbQaLogs?: KbQaLogRepository | null
-  kbAutomationLogs?: KbAutomationLogRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   /** 应用会话消息（独立表，隔离 AI 对话表） */
